@@ -104,6 +104,7 @@ src/
       viewportOverflow.ts
       dedup.ts
       order.ts                          # 정렬과 Issue ID 부여 (PRD 5.3.6)
+      geometry.ts                       # 보이는 영역 계산 (DETECTION_RULES 3.6)
     compare/match.ts                    # Desktop / Mobile 요소 매칭 (PRD 5.6)
     evidence/
       sentences.ts                      # Evidence 문장 템플릿
@@ -257,14 +258,13 @@ pnpm collect <name>    # (T04 이후) Fixture 1개의 수집 결과를 JSON으�
 
 | 실행 환경 | 방식 |
 |---|---|
-| Vercel (검사 기준 환경) | `@sparticuz/chromium` 153에는 폰트 등록 함수가 없다. `executablePath()`가 `/tmp/fonts`(fonts.conf 포함)를 푼 **다음에** `public/fonts/`의 폰트를 `/tmp/fonts/` 아래로 복사하고 브라우저를 실행한다. 먼저 복사하면 압축 해제가 건너뛰어져 fonts.conf가 생기지 않는다(`src/server/browser/fonts.ts`). |
+| Vercel (검사 기준 환경) | `public/fonts/`의 폰트 파일을 `@sparticuz/chromium`의 폰트 등록 기능으로 브라우저 실행 전에 등록한다. |
 | 로컬 Linux (CI 등) | 같은 폰트 디렉터리를 포함한 `fonts.conf`를 만들고, 브라우저 실행 옵션의 `env.FONTCONFIG_FILE`로 넘긴다. |
 | 로컬 macOS (현재 개발 환경) | Chromium의 폰트 대체 순서를 OS가 정하므로 강제하지 않는다. **우회 코드를 만들지 않는다.** 경고 로그만 남긴다. |
 
 - 폰트 파일 원본은 `public/fonts/` 한 곳에만 둔다. 서버 코드는 이 경로의 파일을 읽고, Fixture 페이지는 `/fonts/...` URL로 불러온다. 복사본을 만들지 않는다.
 - **모든 Fixture 페이지는 `@font-face`로 `/fonts/`의 Noto Sans KR을 불러오고, 텍스트에 `font-family: 'Noto Sans KR'`을 명시한다.** 그래서 macOS 로컬과 Vercel에서 Fixture 측정값이 같아야 한다.
-- 로컬과 Vercel의 Fixture 결과가 다르면 폰트 로드 실패를 먼저 의심한다. 실제로 쓰인 폰트는 CDP `CSS.getPlatformFontsForNode`로 확인한다. 해당 텍스트의 `familyName`이 `Noto Sans KR`이어야 한다(`/api/smoke`의 `platformFonts`).
-- `document.fonts.check('16px "Noto Sans KR"')`는 폰트 적용의 근거로 쓰지 않는다. `@font-face`로 등록되지 않은 폰트에는 실제로 없어도 `true`를 돌려준다(T02: macOS에서 실제 렌더링 폰트가 `Apple SD Gothic Neo`인데 `true`).
+- 로컬과 Vercel의 Fixture 결과가 다르면 폰트 로드 실패를 먼저 의심한다(`document.fonts.check('16px "Noto Sans KR"')`).
 - 외부 사이트의 검사 결과는 macOS 로컬과 Vercel에서 다를 수 있다. 기준은 Vercel 결과다. 로컬에서 외부 사이트를 검사한 결과를 근거로 임계값이나 규칙을 조정하지 않는다.
 
 ---
@@ -301,7 +301,7 @@ pnpm collect <name>    # (T04 이후) Fixture 1개의 수집 결과를 JSON으�
 - `src/server/detect`, `src/server/priority`, `src/server/tasks`, `src/server/evidence/sentences.ts`, `src/server/prompt/template.ts`, `src/server/security`의 순수 함수는 Vitest 단위 테스트를 붙인다.
 - 탐지 규칙을 추가하거나 바꾸면 그 규칙을 검증하는 Fixture를 함께 추가하거나 수정한다.
 - `pnpm test:fixtures`의 통과 기준 (PRD 13.2):
-  - Positive Fixture 6개를 모두 기대한 유형과 우선순위로 탐지한다.
+  - Positive Fixture 6개를 모두 기대한 유형과 우선순위로 탐지한다. 기대하지 않은 `needsReview: false` 이슈가 있으면 실패다(허용 이슈 제외, DETECTION_RULES 12.2).
   - Negative Fixture 9개(N-01~N-09)에서는 이슈가 0개다(`needsReview: true`는 허용).
   - 기대 결과는 `tests/fixtures/expected.ts`에 두고, 내용은 DETECTION_RULES 12.2를 따른다.
 - 테스트를 통과시키려고 테스트나 Fixture의 기대값을 바꾸지 않는다. 기대값이 잘못됐다고 판단되면 그 근거를 보고하고 확인을 받는다.

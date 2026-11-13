@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>P-06 · Mobile에서 넘치는 nowrap 제목</title>
+<!--
+  Fixture: P-06 (Positive)
+  검증: PRD 5.3.4(텍스트 영역만 나간 요소를 원인으로 특정), 5.3.5 규칙 4, 5.5.3, 13.1
+        DETECTION_RULES 6.1(extent에 textRects 포함), 6.3, 6.4, 7.5, 9.1 1행, 12.2
+
+  의도:
+  - 기사 제목(data-testid="p06-title", h1)은 white-space: nowrap이다.
+  - Desktop(본문 928px)에서는 한 줄에 들어가고, Mobile(본문 358px)에서는 텍스트 영역만 오른쪽으로
+    약 200px 나가 페이지 가로 스크롤이 생긴다. h1의 박스 자체는 부모 너비라 화면 안이다.
+  - 부모(section, main)는 화면 안이므로 원인 요소는 제목 1개다.
+  - 같은 요소의 Text Overflow가 생기지 않게 만들었다.
+    - clipped: 제목과 조상 모두 overflow: visible
+    - spill: 제목부터 body까지 테두리 박스(배경, border, padding)가 없다. 공통 .page는 padding 대신
+      margin을 쓴다(assets/base.css).
+
+  기대 결과: viewport-overflow / page-scroll 1개, 대상 p06-title, P0, mobile-only
+             같은 요소의 text-overflow 이슈 없음
+
+  Priority 계산 (PRD 5.5.3 1행):
+  - S=4, I=4, base R=5
+  - Reach: 제목 y(약 85px) < Mobile innerHeight 844 → +1, Mobile에서만 발생 → +0
+  - R = min(5+1, 5) = 5
+  - score100 = 4×35 + 4×35 + 5×30 = 430 → P0
+-->
+<link rel="stylesheet" href="/fixtures/assets/base.css">
+<style>
+  .headline {
+    /* 의도한 문제: 긴 제목을 한 줄로 고정 */
+    white-space: nowrap;
+  }
+
+  .article-head .lead {
+    margin-top: 12px;
+  }
+
+  .article-body p + p {
+    margin-top: 12px;
+  }
+</style>
+</head>
+<body>
+  <header class="site-header"><span class="brand">개발 블로그</span></header>
+
+  <main class="page">
+    <section class="article-head">
+      <h1 class="headline" data-testid="p06-title">하반기 프론트엔드 채용 설명회 일정 안내</h1>
+      <p class="lead">설명회는 온라인으로 진행하며, 사전 신청자에게 참여 링크를 보내 드립니다.</p>
+    </section>
+
+    <section class="article-body">
+      <p>이번 설명회에서는 팀 소개, 채용 절차, 과제 전형 안내를 순서대로 진행합니다.</p>
+      <p>질문은 설명회 중 채팅으로 받고, 끝난 뒤 자주 나온 질문을 정리해 이 글에 덧붙이겠습니다.</p>
+    </section>
+  </main>
+</body>
+</html>

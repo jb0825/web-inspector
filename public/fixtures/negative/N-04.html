@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>N-04 · position: sticky 헤더</title>
+<!--
+  Fixture: N-04 (Negative)
+  검증: PRD 5.3.3 제외 조건(fixed/sticky 요소와 일반 흐름 요소의 겹침), 13.1
+        DETECTION_RULES 3.1(fixedOrSticky), 5.5 3번, 12.2
+
+  의도:
+  - 상단 헤더(data-testid="n04-header")는 position: sticky; top: 0이고 반투명이 아닌 배경을 가진다.
+    스크롤하면 본문이 헤더 아래로 지나가지만, 이것은 스크롤에 따라 달라지는 겹침이라 제외된다.
+  - 측정은 맨 위로 스크롤한 상태에서 하므로 헤더와 본문이 실제로 겹치지 않는다. 겹치더라도
+    "정확히 한쪽만 fixedOrSticky"인 쌍은 제외된다.
+  - 헤더 안의 로고와 링크(data-testid="n04-nav-1~3")는 모두 sticky 조상 아래라 서로 비교되지만,
+    flex + gap으로 배치해 서로 겹치지 않는다. Mobile 390px에서도 한 줄에 들어간다.
+  - 본문은 화면 높이의 몇 배로 길게 둔다(sticky가 실제로 동작하는 페이지).
+
+  기대 결과: 이슈 0개 (needsReview: true인 이슈는 허용)
+-->
+<link rel="stylesheet" href="/fixtures/assets/base.css">
+<style>
+  .sticky-header {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 12px 16px;
+    border-bottom: 1px solid #d0d7de;
+    background: #ffffff;
+  }
+
+  .sticky-header .brand {
+    font-weight: 700;
+    font-size: 18px;
+  }
+
+  .sticky-nav {
+    display: flex;
+    gap: 16px;
+  }
+
+  .sticky-nav a {
+    color: #0969da;
+    font-size: 15px;
+    text-decoration: none;
+  }
+
+  .article p + p {
+    margin-top: 16px;
+  }
+
+  .article h2 {
+    margin-top: 32px;
+  }
+</style>
+</head>
+<body>
+  <header class="sticky-header" data-testid="n04-header">
+    <span class="brand">여행 일지</span>
+    <nav class="sticky-nav" aria-label="주요 메뉴">
+      <a href="#day1" data-testid="n04-nav-1">첫째 날</a>
+      <a href="#day2" data-testid="n04-nav-2">둘째 날</a>
+      <a href="#day3" data-testid="n04-nav-3">셋째 날</a>
+    </nav>
+  </header>
+
+  <main class="page article">
+    <h1>제주 3박 4일 기록</h1>
+
+    <h2 id="day1">첫째 날</h2>
+    <p>공항에 도착해 렌터카를 받고 바로 해안 도로를 따라 동쪽으로 달렸습니다. 바람이 강했지만 하늘이 맑아 바다 색이 유난히 진했습니다.</p>
+    <p>점심은 시장 근처 국숫집에서 고기국수를 먹었습니다. 오후에는 오름 하나를 천천히 올랐고, 정상에서 한참 동안 바람을 맞으며 쉬었습니다.</p>
+    <p>저녁에는 숙소 근처 바닷가를 걸었습니다. 해가 지는 시간에 맞춰 나가니 하늘이 분홍빛으로 물들었습니다.</p>
+    <p>숙소로 돌아와 다음 날 일정을 정리했습니다. 비 예보가 있어서 실내 일정을 하나 더 넣어 두었습니다.</p>
+
+    <h2 id="day2">둘째 날</h2>
+    <p>아침부터 비가 내려 미술관에 갔습니다. 관람객이 많지 않아 작품 하나하나를 오래 볼 수 있었습니다.</p>
+    <p>비가 그친 오후에는 숲길을 걸었습니다. 젖은 흙냄새와 나무 향이 진해서 걷는 내내 기분이 좋았습니다.</p>
+    <p>저녁은 흑돼지 구이였습니다. 멜젓에 찍어 먹는 방식이 처음이라 낯설었지만 금방 익숙해졌습니다.</p>
+    <p>밤에는 숙소 마당에서 별을 봤습니다. 구름이 걷히면서 생각보다 많은 별이 보였습니다.</p>
+
+    <h2 id="day3">셋째 날</h2>
+    <p>배를 타고 작은 섬에 들어갔습니다. 자전거를 빌려 섬을 한 바퀴 도는 데 두 시간쯤 걸렸습니다.</p>
+    <p>섬에서 먹은 짬뽕은 해산물이 가득했습니다. 돌아오는 배에서는 다들 피곤해서 조용히 바다만 바라봤습니다.</p>
+    <p>마지막 날 아침에는 일찍 일어나 해돋이를 봤습니다. 짧은 여행이었지만 오래 기억에 남을 것 같습니다.</p>
+    <p>다음에는 서쪽 지역을 중심으로 일정을 짜 볼 생각입니다. 이번에 못 가 본 곳을 목록으로 정리해 두었습니다.</p>
+  </main>
+</body>
+</html>

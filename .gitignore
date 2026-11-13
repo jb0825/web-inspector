@@ -48,3 +48,7 @@ data/
 
 # logs
 *.log
+
+TASKS.md
+# local tool output (fixtures:shots 등)
+.tmp/

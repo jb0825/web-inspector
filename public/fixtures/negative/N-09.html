@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>N-09 · 스크린리더 전용 텍스트와 skip link</title>
+<!--
+  Fixture: N-09 (Negative)
+  검증: PRD 5.3.1 후보 조건(1px 초과 크기, sr-only의 clip 제외), 5.3.4, 13.1
+        DETECTION_RULES 3.2, 12.2
+
+  의도:
+  - skip link(data-testid="n09-skip-link")는 흔히 쓰는 패턴대로 position: absolute; left: -9999px;
+    width: 1px; height: 1px; overflow: hidden이다. 화면 왼쪽 밖에 있지만 너비와 높이가 1px 초과가
+    아니므로 후보 요소가 아니다(PRD 5.3.1). 포커스를 받으면 화면 안으로 들어오지만, 측정 시점에는
+    포커스가 없다.
+  - .sr-only 텍스트(data-testid="n09-sr-only-1~2")는 clip: rect(0, 0, 0, 0)이 적용되어 후보 요소가
+    아니다(PRD 5.3.1 스크린리더 전용 요소 제외). 1px 크기에 텍스트가 길어 실제로는 넘치지만
+    Text Overflow로 잡히지 않는다.
+  - 아이콘 버튼(data-testid="n09-icon-button")의 이름은 .sr-only로만 제공한다. 버튼 자체는 화면 안에 있다.
+
+  기대 결과: 이슈 0개 (needsReview: true인 이슈는 허용)
+-->
+<link rel="stylesheet" href="/fixtures/assets/base.css">
+<style>
+  .skip-link {
+    position: absolute;
+    top: auto;
+    left: -9999px;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+  }
+
+  .skip-link:focus {
+    top: 8px;
+    left: 8px;
+    width: auto;
+    height: auto;
+    padding: 8px 12px;
+    background: #ffffff;
+  }
+
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border-bottom: 1px solid #d0d7de;
+  }
+
+  .toolbar .brand {
+    font-weight: 700;
+    font-size: 18px;
+  }
+
+  .icon-button {
+    position: relative;
+    width: 40px;
+    height: 40px;
+    border: 1px solid #d0d7de;
+    border-radius: 8px;
+    background: #ffffff;
+  }
+
+  /* 돋보기 모양 아이콘 (텍스트 없음) */
+  .icon-button .icon {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    width: 14px;
+    height: 14px;
+    border: 2px solid #1f2328;
+    border-radius: 50%;
+  }
+
+  .content p + p {
+    margin-top: 12px;
+  }
+</style>
+</head>
+<body>
+  <a class="skip-link" href="#main" data-testid="n09-skip-link">본문으로 바로가기</a>
+
+  <header class="toolbar">
+    <span class="brand">시청 소식</span>
+    <button type="button" class="icon-button" data-testid="n09-icon-button">
+      <span class="icon" aria-hidden="true"></span>
+      <span class="sr-only" data-testid="n09-sr-only-1">사이트 검색 열기</span>
+    </button>
+  </header>
+
+  <main id="main" class="page content">
+    <h1>이번 달 시청 소식</h1>
+    <p>다음 달부터 시청 민원실 운영 시간이 오후 일곱 시까지 늘어납니다. 평일에 방문하기 어려운 분들을 위한 조치입니다.</p>
+    <p>
+      공영 주차장 요금이 일부 조정됩니다.
+      <span class="sr-only" data-testid="n09-sr-only-2">요금표는 아래 표에 정리되어 있으며, 스크린리더 사용자는 표 머리글을 기준으로 읽을 수 있습니다.</span>
+      자세한 요금은 시청 누리집에서 확인할 수 있습니다.
+    </p>
+  </main>
+</body>
+</html>

@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>N-07 · 이미지 위의 배지</title>
+<!--
+  Fixture: N-07 (Negative)
+  검증: PRD 5.3.3 제외 조건(이미지가 상대를 완전히 포함), Confidence 하향(absolute + 부모 안), 5.5.4, 13.1
+        DETECTION_RULES 5.5 2번, 5.6 Confidence, 9.4, 12.2
+
+  의도:
+  - 상품 카드 1(data-testid="n07-card-1"): 배지(data-testid="n07-badge-1", position: absolute)가
+    이미지(data-testid="n07-image-1") 안쪽 왼쪽 위에 완전히 들어가 있다. 이미지가 배지 영역 전체를
+    포함하므로 겹침 판정에서 제외된다.
+  - 상품 카드 2(data-testid="n07-card-2"): 카드에 padding이 있고, 배지(data-testid="n07-badge-2")를
+    카드 모서리 기준으로 배치해 이미지(data-testid="n07-image-2") 모서리에 일부만 걸친다.
+    이미지가 배지를 완전히 포함하지 않으므로 겹침 후보가 되지만, 배지가 position: absolute이고
+    부모(카드) 안에 있으므로 Confidence가 0.4로 낮아져 needsReview: true가 된다.
+    (배지는 인터랙티브가 아니라 PRD 5.3.3 인터랙티브 예외에 해당하지 않는다.)
+  - 두 카드 모두 의도된 디자인이므로 needsReview: false인 이슈는 없어야 한다.
+
+  기대 결과: 이슈 0개 (needsReview: true인 이슈는 허용. 카드 2의 배지-이미지 겹침은
+             Desktop/Mobile 모두에서 needsReview: true 이슈 1개로 나올 수 있다)
+-->
+<link rel="stylesheet" href="/fixtures/assets/base.css">
+<style>
+  .product-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+    max-width: 640px;
+  }
+
+  @media (max-width: 480px) {
+    .product-grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+
+  .product-card {
+    border: 1px solid #d0d7de;
+    border-radius: 12px;
+  }
+
+  .product-card h3 {
+    margin-top: 12px;
+  }
+
+  .product-card p {
+    color: #57606a;
+    font-size: 15px;
+  }
+
+  .badge {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: #cf222e;
+    color: #ffffff;
+    font-size: 13px;
+    line-height: 20px;
+    font-weight: 700;
+  }
+
+  /* 카드 1: 배지를 이미지 래퍼 안에 둔다 */
+  .card-1 {
+    overflow: hidden;
+  }
+
+  .card-1 .thumb {
+    position: relative;
+  }
+
+  .card-1 .thumb img {
+    width: 100%;
+    height: 200px;
+    object-fit: cover;
+  }
+
+  .card-1 .info {
+    padding: 0 16px 16px;
+  }
+
+  /* 카드 2: 카드 padding 안에 이미지를 두고, 배지는 카드 모서리 기준으로 둔다 */
+  .card-2 {
+    position: relative;
+    padding: 16px;
+  }
+
+  .card-2 img {
+    width: 100%;
+    height: 200px;
+    object-fit: cover;
+    border-radius: 8px;
+  }
+
+  .card-2 .badge {
+    top: 6px;
+    left: 6px;
+  }
+</style>
+</head>
+<body>
+  <header class="site-header"><span class="brand">리빙 마켓</span></header>
+
+  <main class="page">
+    <section>
+      <h1>이번 주 신상품</h1>
+      <p class="lead">새로 들어온 상품과 할인 중인 상품을 확인하세요.</p>
+    </section>
+
+    <section class="product-grid">
+      <article class="product-card card-1" data-testid="n07-card-1">
+        <div class="thumb">
+          <img src="/fixtures/assets/photo.svg" width="400" height="300" alt="원목 테이블" data-testid="n07-image-1">
+          <span class="badge" data-testid="n07-badge-1">NEW</span>
+        </div>
+        <div class="info">
+          <h3>원목 사이드 테이블</h3>
+          <p>59,000원</p>
+        </div>
+      </article>
+
+      <article class="product-card card-2" data-testid="n07-card-2">
+        <img src="/fixtures/assets/photo.svg" width="400" height="300" alt="패브릭 쿠션" data-testid="n07-image-2">
+        <span class="badge" data-testid="n07-badge-2">20% 할인</span>
+        <h3>패브릭 쿠션 커버</h3>
+        <p>19,000원</p>
+      </article>
+    </section>
+  </main>
+</body>
+</html>

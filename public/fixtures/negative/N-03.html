@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>N-03 · overflow-x: auto 가로 스크롤 캐러셀</title>
+<!--
+  Fixture: N-03 (Negative)
+  검증: PRD 5.3.2 제외 조건(overflow auto/scroll), 5.3.4 제외 조건(가로 스크롤 조상), 13.1
+        DETECTION_RULES 4.1, 6.2, 12.2
+
+  의도:
+  - 캐러셀 트랙(data-testid="n03-track")은 overflow-x: auto인 가로 스크롤 영역이다.
+  - 슬라이드(data-testid="n03-slide-1~6")는 각각 260px 고정 너비라 두 viewport 모두에서 일부가
+    화면 오른쪽 밖에 있다. 가로 스크롤 조상(트랙) 안에 있으므로 Viewport Overflow에서 제외된다.
+  - 트랙 자신은 overflow: auto라 clipped 대상이 아니다.
+  - 트랙은 부모 너비 안에 있으므로 문서 전체의 가로 스크롤(page-scroll)은 생기지 않는다.
+  - 슬라이드 사이에는 gap이 있어 서로 겹치지 않는다.
+
+  기대 결과: 이슈 0개 (needsReview: true인 이슈는 허용)
+-->
+<link rel="stylesheet" href="/fixtures/assets/base.css">
+<style>
+  .carousel-track {
+    display: flex;
+    gap: 16px;
+    overflow-x: auto;
+    padding-bottom: 8px;
+    scroll-snap-type: x mandatory;
+  }
+
+  .slide {
+    flex: 0 0 260px;
+    padding: 20px;
+    border-radius: 12px;
+    background: #f6f8fa;
+    scroll-snap-align: start;
+  }
+
+  .slide p {
+    margin-top: 8px;
+    color: #57606a;
+    font-size: 15px;
+  }
+</style>
+</head>
+<body>
+  <header class="site-header"><span class="brand">레시피 모음</span></header>
+
+  <main class="page">
+    <section>
+      <h1>오늘 저녁 뭐 먹지?</h1>
+      <p class="lead">옆으로 넘겨서 30분 안에 만들 수 있는 요리를 둘러보세요.</p>
+    </section>
+
+    <section aria-label="추천 레시피">
+      <div class="carousel-track" data-testid="n03-track">
+        <div class="slide" data-testid="n03-slide-1"><h3>된장찌개</h3><p>애호박과 두부를 넣은 기본 찌개</p></div>
+        <div class="slide" data-testid="n03-slide-2"><h3>제육볶음</h3><p>고추장 양념으로 빠르게 볶는 요리</p></div>
+        <div class="slide" data-testid="n03-slide-3"><h3>계란말이</h3><p>대파와 당근을 넣은 반찬</p></div>
+        <div class="slide" data-testid="n03-slide-4"><h3>잔치국수</h3><p>멸치 육수로 만드는 따뜻한 국수</p></div>
+        <div class="slide" data-testid="n03-slide-5"><h3>김치볶음밥</h3><p>남은 밥과 김치로 만드는 한 그릇</p></div>
+        <div class="slide" data-testid="n03-slide-6"><h3>감자조림</h3><p>간장으로 졸인 달콤한 반찬</p></div>
+      </div>
+    </section>
+
+    <section class="filler">
+      <h2>장보기 목록 만들기</h2>
+      <p>마음에 드는 레시피를 고르면 필요한 재료를 장보기 목록으로 모아 드립니다.</p>
+    </section>
+  </main>
+</body>
+</html>

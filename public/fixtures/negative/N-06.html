@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>N-06 · 하단 고정 쿠키 동의 배너</title>
+<!--
+  Fixture: N-06 (Negative)
+  검증: PRD 5.3.3 제외 조건(fixed 요소와 일반 흐름 요소의 겹침, 30% overlay), 13.1
+        DETECTION_RULES 3.1(fixedOrSticky, fixedRoot), 5.3, 5.5 3·4번, 12.2
+
+  의도:
+  - 쿠키 배너(data-testid="n06-cookie-banner")는 position: fixed; bottom: 0이다.
+  - 본문이 화면 높이보다 길어서, 측정 시점(scrollY = 0)에 배너가 본문 문단과 실제로 겹친다.
+    fixed 요소와 일반 흐름 요소의 겹침이므로 제외된다.
+  - 배너 면적은 Desktop 약 1440×85(viewport의 약 9%), Mobile 약 390×165(약 20%)로 30% 미만이라
+    overlay로 기록되지 않는다. 그래도 위 제외 조건으로 겹침 판정에서 빠진다.
+  - 배너 안의 문구와 버튼(data-testid="n06-accept", "n06-settings")은 모두 fixed 조상 아래라
+    서로 비교되지만, flex + gap으로 배치해 겹치지 않는다.
+  - 본문 아래쪽에 배너 높이만큼 여백을 두어, 끝까지 스크롤하면 본문을 다 읽을 수 있다.
+
+  기대 결과: 이슈 0개 (needsReview: true인 이슈는 허용)
+-->
+<link rel="stylesheet" href="/fixtures/assets/base.css">
+<style>
+  body {
+    padding-bottom: 200px;
+  }
+
+  /* 글 폭을 줄여 Desktop에서도 본문이 첫 화면 아래까지 이어지게 한다(배너와 실제로 겹치도록). */
+  .content h1,
+  .content p {
+    max-width: 560px;
+  }
+
+  .content p + p {
+    margin-top: 16px;
+  }
+
+  .cookie-banner {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 20px 24px;
+    border-top: 1px solid #d0d7de;
+    background: #ffffff;
+    box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.08);
+  }
+
+  .cookie-banner p {
+    font-size: 15px;
+  }
+
+  .cookie-actions {
+    display: flex;
+    flex-shrink: 0;
+    gap: 8px;
+  }
+
+  .cookie-actions .secondary {
+    background: #6e7781;
+  }
+
+  @media (max-width: 720px) {
+    .cookie-banner {
+      flex-direction: column;
+      align-items: stretch;
+      padding: 16px;
+    }
+  }
+</style>
+</head>
+<body>
+  <header class="site-header"><span class="brand">생활 정보</span></header>
+
+  <main class="page content">
+    <h1>겨울철 실내 습도 관리법</h1>
+    <p>겨울에는 난방 때문에 실내 습도가 30% 아래로 떨어지기 쉽습니다. 습도가 낮으면 피부와 호흡기가 쉽게 건조해집니다.</p>
+    <p>가습기를 쓸 때는 물통을 매일 비우고 말려야 합니다. 고인 물에서는 세균이 빠르게 자라기 때문입니다.</p>
+    <p>가습기가 없다면 젖은 수건을 널어 두거나 실내에 식물을 두는 것도 도움이 됩니다. 다만 효과는 크지 않으니 습도계를 함께 보는 것이 좋습니다.</p>
+    <p>적정 실내 습도는 40~60%입니다. 너무 높으면 결로와 곰팡이가 생기므로 하루 두세 번 짧게 환기해 주세요.</p>
+    <p>환기는 한 번에 10분 정도가 적당합니다. 맞바람이 통하도록 양쪽 창문을 함께 열면 짧은 시간에도 공기가 잘 바뀝니다.</p>
+    <p>빨래를 실내에서 말리면 습도를 높이는 데 도움이 됩니다. 다만 환기가 안 되는 방에서는 냄새가 날 수 있으니 주의하세요.</p>
+    <p>잠자는 동안에는 습도가 더 떨어지기 쉽습니다. 침실에는 작은 가습기를 두고 머리맡에서 조금 떨어진 곳에 놓으세요.</p>
+    <p>아이나 어르신이 있는 집은 습도 변화에 더 민감합니다. 습도계를 눈에 잘 띄는 곳에 두고 수시로 확인하세요.</p>
+    <p>습도를 관리하면 정전기도 줄어듭니다. 겨울철 문고리에서 느끼는 따끔함이 줄어드는 것도 작은 변화입니다.</p>
+    <p>마지막으로, 실내 온도를 너무 높이지 않는 것도 중요합니다. 온도가 높을수록 같은 수분량에서 상대 습도는 더 낮아집니다.</p>
+  </main>
+
+  <div class="cookie-banner" role="dialog" aria-label="쿠키 사용 동의" data-testid="n06-cookie-banner">
+    <p data-testid="n06-cookie-text">이 사이트는 더 나은 서비스를 위해 쿠키를 사용합니다. 자세한 내용은 개인정보 처리방침에서 확인할 수 있습니다.</p>
+    <div class="cookie-actions">
+      <button type="button" class="btn" data-testid="n06-accept">모두 동의</button>
+      <button type="button" class="btn secondary" data-testid="n06-settings">설정</button>
+    </div>
+  </div>
+</body>
+</html>
