@@ -19,6 +19,7 @@ import {
 } from '@/server/detect/constants';
 import { InspectionError } from '@/server/errors';
 import { collectInPage } from './inpage/collectInPage';
+import { roundMeasure } from './round';
 import { inPageResultSchema } from './schemas';
 import type { CollectedElement, CollectedViewport, InPageArgs, InPageResult } from './types';
 
@@ -65,12 +66,7 @@ export function parseInPageResult(value: unknown): InPageResult {
   return parsed.data;
 }
 
-/** PRD 5.3.1: 소수 둘째 자리 반올림. -0은 0으로 둔다(JSON 비교를 단순하게 하기 위해). */
-export function roundMeasure(value: number, decimals: number = MEASURE_DECIMALS): number {
-  const factor = 10 ** decimals;
-  const rounded = Math.round(value * factor) / factor;
-  return rounded === 0 ? 0 : rounded;
-}
+export { roundMeasure };
 
 function roundRect(rect: Rect, decimals: number): Rect {
   return {

@@ -3,6 +3,28 @@ import type { Viewport } from '@/types/inspection';
 // 탐지와 측정의 임계값은 이 파일 한 곳에 둔다(AGENTS.md 6장, DETECTION_RULES 2장).
 // 나머지 상수는 해당 기능을 구현하는 작업에서 추가한다.
 
+// ── 판정 (PRD 5.3, 5.5.4 / DETECTION_RULES 2장) ──
+
+/** PRD 5.3.1: 모든 크기 비교의 서브픽셀 허용치 */
+export const TOLERANCE_PX = 1;
+/** PRD 5.3.3: 작은 쪽 면적 대비 겹침 비율 */
+export const OVERLAP_MIN_RATIO = 0.2;
+/** PRD 5.3.3: 겹침 면적 */
+export const OVERLAP_MIN_AREA_PX2 = 100;
+/** PRD 5.3.3: viewport 면적 대비 이 비율 이상을 덮는 fixed 요소는 overlay */
+export const OVERLAY_MIN_VIEWPORT_RATIO = 0.3;
+/** PRD 5.3.3: 부모 안의 absolute 요소가 겹치면 낮추는 Confidence */
+export const ABSOLUTE_IN_PARENT_CONFIDENCE = 0.4;
+/** PRD 5.5.4: Confidence가 이 값보다 작으면 Needs Review */
+export const NEEDS_REVIEW_BELOW = 0.5;
+/** 이슈의 기본 Confidence */
+export const DEFAULT_CONFIDENCE = 1;
+
+/** PRD 5.4.1: cropRect */
+export const CROP_PADDING_PX = 24;
+export const CROP_MIN_WIDTH_PX = 320;
+export const CROP_MIN_HEIGHT_PX = 160;
+
 // ── 수집 (PRD 5.3.1, 5.4.2, 5.7.2 / DETECTION_RULES 2장, 3장) ──
 
 /** PRD 5.3.1: viewport당 검사 후보 최대 개수 */
