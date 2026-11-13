@@ -25,7 +25,7 @@ import { buildViewportResult, finalizeIssues } from '@/server/evidence/finalize'
 import { assertInspectionInvariants } from '@/server/store/invariants';
 import type { Inspection, Issue, Viewport, ViewportResult } from '@/types/inspection';
 import { FIXTURE_EXPECTATIONS, type ExpectedIssue, type FixtureExpectation } from './expected';
-import { start } from './server';
+import { fixtureGuard, start } from './server';
 
 const REPORT_DIR = path.join(process.cwd(), '.tmp', 'fixtures-report');
 
@@ -83,7 +83,7 @@ async function collectOne(
   url: string,
   viewport: Viewport,
 ): Promise<{ collected: CollectedViewport; screenshot: CapturedScreenshot }> {
-  const context = await createViewportContext(browser, viewport);
+  const context = await createViewportContext(browser, viewport, fixtureGuard(url));
   try {
     const { page } = await openAndStabilize(context, url);
     const collected = await collectViewport(page, viewport);
@@ -322,7 +322,6 @@ async function main(): Promise<void> {
   const errors: string[] = [];
 
   try {
-    // TODO(T08): localhost allowlist — routeGuard가 붙으면 이 하네스가 허용 목록을 인자로 넘긴다
     browser = await launchBrowser();
     for (let round = 1; round <= repeat; round += 1) {
       const runs: { run: FixtureRun; verdict: Verdict }[] = [];

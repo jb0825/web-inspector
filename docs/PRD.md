@@ -720,6 +720,7 @@ Viewport별 오류와 AI 분석 상태를 따로 기록하고(8.2), 최상위 `s
 | `STORAGE_FAILED` | 검사 | Redis 또는 Blob 저장 실패 |
 | `AI_FAILED` | AI 단계 | `analysis.error`에만 쓴다. Inspection 자체의 실패 코드가 아니다 |
 | `INTERNAL_ERROR` | 공통 | 그 밖의 예상하지 못한 오류 |
+| `NAVIGATION_FAILED` | viewport | `goto`가 네트워크 오류로 실패(DNS 조회 실패, 연결 거부, TLS 오류 등). 메시지에 오류 종류를 포함한다. 요청 단계의 DNS 조회 실패는 `INVALID_URL`이다 |
 
 ---
 
@@ -1062,6 +1063,11 @@ URL과 네트워크:
 - DNS 조회 결과 중 하나라도 차단 대상이면 차단한다. 조회 결과는 검사 1회 안에서 호스트별로 캐시한다.
 - WebSocket 요청(`ws:`, `wss:`)은 route로 검사되지 않으므로 `context.routeWebSocket`으로 모두 차단한다.
 - `file:`, `data:`(최상위 탐색), `chrome:`, `blob:`(최상위 탐색) 같은 스킴은 차단한다.
+- 점이 없는 호스트 이름(예: `metadata`, `intranet`)은 차단한다. IP 리터럴은 예외다.
+- 추가 차단 범위: `240.0.0.0/4`, `255.255.255.255`, `198.18.0.0/15`
+- NAT64(`64:ff9b::/96`), 6to4(`2002::/16`), IPv4-compatible(`::/96`) 주소는 안에 든 IPv4로 판정한다(IPv4-mapped와 같은 방식).
+- 시간 제한: DNS 조회 1회 5초, 서버가 대신 받는 요청(`route.fetch`) 1회 15초
+- 리다이렉트는 서버가 hop마다 검사하며 대신 요청한다. 동영상·오디오 요청(`resourceType: media`)은 메모리 보호를 위해 불러오지 않는다.
 - **남는 위험:** route에서 DNS를 조회한 뒤 Chromium이 다시 DNS를 조회하므로, 그 사이에 결과를 바꾸는 DNS rebinding은 완전히 막을 수 없다. MVP에서는 이 위험을 받아들이고 10장에 적는다.
 - **테스트 예외:** 로컬 Fixture 테스트는 `localhost`를 검사해야 한다. 허용 목록은 테스트 하네스가 검사 함수에 인자로만 넘길 수 있고, API route는 이 인자를 절대 넘기지 않는다. 환경변수로 차단을 끄는 방식은 쓰지 않는다.
 
@@ -1118,6 +1124,7 @@ URL과 네트워크:
 | meta viewport 없음 | Mobile에서 layout viewport가 390px이 아니게 된다. | 측정한 `layoutWidth` 기준으로 판정하고 결과에 안내한다. |
 | DNS rebinding | route 검사 뒤 Chromium의 재조회 결과가 바뀌면 막을 수 없다. | MVP에서는 위험을 받아들이고, 정식 서비스에서는 네트워크 수준 격리를 검토한다. |
 | 실행 환경 차이 | 서버리스 Chromium은 실제 기기의 Safari나 Chrome과 렌더링이 다를 수 있다. | Chromium 기준 결과라는 점을 명시한다. |
+| 서버 경유 요청 | 리다이렉트를 hop마다 검사하려고 서버가 대신 요청하므로, TLS·HTTP 특성이 브라우저 직접 요청과 달라 봇 차단 결과가 다를 수 있다. 응답은 함수 메모리에 버퍼링된다. | 동영상·오디오는 불러오지 않는다. 크기를 CSS로 정하지 않은 video는 레이아웃이 실제와 다를 수 있다. |
 
 ---
 

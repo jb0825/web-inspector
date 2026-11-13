@@ -1,6 +1,7 @@
 import 'server-only';
 import { errors, type BrowserContext, type Page } from 'playwright-core';
 import { InspectionError } from '@/server/errors';
+import { getRouteGuard, type RouteGuard } from '@/server/security/routeGuard';
 
 // PRD 5.2.2 렌더링 안정화 절차, 시간 제한은 PRD 8.1.3.
 
@@ -87,20 +88,35 @@ function isPageCrash(error: unknown): boolean {
   return error instanceof Error && /crash|Target (page, context or browser )?closed/i.test(error.message);
 }
 
-async function navigate(page: Page, url: string, timeoutMs: number): Promise<number | null> {
+/** PRD 5.1: 최상위 문서가 차단되면 BLOCKED_TARGET. 메시지에는 호스트도 넣지 않는다(사유만) */
+function assertNotBlocked(guard: RouteGuard): void {
+  const block = guard.topLevelBlock;
+  if (block) throw new InspectionError('BLOCKED_TARGET', `Top-level document blocked (${block.reason}${block.viaRedirect ? ', redirect' : ''})`);
+}
+
+/** goto 오류 메시지의 net::ERR_* 이름. 없으면 null (순수 함수, 단위 테스트 대상) */
+export function navigationNetError(error: unknown): string | null {
+  return error instanceof Error ? (error.message.match(/net::ERR_[A-Z_]+/)?.[0] ?? null) : null;
+}
+
+async function navigate(guard: RouteGuard, page: Page, url: string, timeoutMs: number): Promise<number | null> {
   try {
-    const response = await page.goto(url, { waitUntil: 'load', timeout: timeoutMs });
+    const { response } = await guard.goto(page, url, { timeoutMs });
+    assertNotBlocked(guard);
     return response ? response.status() : null;
   } catch (error) {
+    assertNotBlocked(guard);
+    if (error instanceof InspectionError) throw error;
     if (error instanceof errors.TimeoutError) {
       throw new InspectionError('NAVIGATION_TIMEOUT', `Navigation timed out after ${timeoutMs}ms`, { cause: error });
     }
     if (isPageCrash(error)) {
       throw new InspectionError('BROWSER_CRASH', 'Page crashed during navigation', { cause: error });
     }
-    // net::ERR_* 등. PRD 6.2.4에 맞는 코드가 없어 INTERNAL_ERROR로 둔다(보고 대상).
-    const reason = error instanceof Error ? (error.message.match(/net::ERR_[A-Z_]+/)?.[0] ?? 'unknown') : 'unknown';
-    throw new InspectionError('INTERNAL_ERROR', `Navigation failed: ${reason}`, { cause: error });
+    // PRD 6.2.4: 네트워크 오류(net::ERR_*: DNS 조회 실패, 연결 거부, TLS 오류 등)는 NAVIGATION_FAILED. 메시지에 오류 종류를 넣는다
+    const netError = navigationNetError(error);
+    if (netError) throw new InspectionError('NAVIGATION_FAILED', `Navigation failed: ${netError}`, { cause: error });
+    throw new InspectionError('INTERNAL_ERROR', 'Navigation failed: unknown', { cause: error });
   }
 }
 
@@ -148,22 +164,25 @@ export async function openAndStabilize(
   url: string,
   budget: StabilizeBudget = DEFAULT_STABILIZE_BUDGET,
 ): Promise<StabilizedPage> {
+  // createViewportContext로 만든 context만 받는다. guard 없이 외부 URL을 열지 않는다(PRD 8.6)
+  const guard = getRouteGuard(context);
+  if (!guard) throw new InspectionError('INTERNAL_ERROR', 'Route guard is not attached to the browser context');
   const page = await context.newPage();
   try {
-    return { page, meta: await stabilize(page, url, budget) };
+    return { page, meta: await stabilize(guard, page, url, budget) };
   } catch (error) {
     await page.close().catch(() => undefined);
     throw error;
   }
 }
 
-async function stabilize(page: Page, url: string, budget: StabilizeBudget): Promise<StabilizeMeta> {
+async function stabilize(guard: RouteGuard, page: Page, url: string, budget: StabilizeBudget): Promise<StabilizeMeta> {
   const steps: StepTiming[] = [];
   const skippedSteps: StabilizeStep[] = [];
 
   // 1. goto (PRD 5.2.2 1단계)
   const gotoStart = Date.now();
-  const httpStatus = await navigate(page, url, budget.navigationMs);
+  const httpStatus = await navigate(guard, page, url, budget.navigationMs);
   steps.push({ step: 'goto', durationMs: Date.now() - gotoStart, outcome: 'completed' });
   if (httpStatus !== null && isHttpErrorStatus(httpStatus)) {
     throw new InspectionError('HTTP_ERROR', `HTTP ${httpStatus}`);
@@ -232,5 +251,7 @@ async function stabilize(page: Page, url: string, budget: StabilizeBudget): Prom
     steps.push({ step, durationMs: Date.now() - start, outcome });
   }
 
+  // 안정화 중 스크립트가 메인 프레임을 금지 대상으로 옮기려 한 경우도 최상위 문서 차단이다(PRD 5.1)
+  assertNotBlocked(guard);
   return { finalUrl: page.url(), httpStatus, steps, skippedSteps, autoScroll: autoScrollResult };
 }

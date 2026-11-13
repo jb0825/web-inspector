@@ -1,5 +1,5 @@
 // Fixture를 열어 안정화와 수집(T04)까지만 실행하고, CollectedViewport를 JSON으로 저장한다.
-// Fixture만 대상으로 한다. 외부 URL은 받지 않는다(routeGuard는 T08).
+// Fixture만 대상으로 한다. 외부 URL은 받지 않는다. guard는 Fixture 서버 호스트만 허용한다(PRD 8.6 테스트 예외).
 //
 // 실행 (node --conditions=react-server: server-only를 빈 모듈로 불러온다, AGENTS.md 10장)
 //   pnpm collect <Fixture ID> [--viewport desktop|mobile]
@@ -15,7 +15,7 @@ import { collectViewport } from '@/server/collect/collect';
 import type { CollectedViewport } from '@/server/collect/types';
 import type { Viewport } from '@/types/inspection';
 import { FIXTURE_EXPECTATIONS, type FixtureExpectation } from '../tests/fixtures/expected';
-import { start } from '../tests/fixtures/server';
+import { fixtureGuard, start } from '../tests/fixtures/server';
 
 const OUT_DIR = path.join(process.cwd(), '.tmp', 'collect');
 const VIEWPORTS: Viewport[] = ['desktop', 'mobile'];
@@ -65,7 +65,7 @@ async function countOutOfScope(page: Page): Promise<RunResult['scope']> {
 }
 
 async function runOnce(browser: Browser, baseUrl: string, fixture: FixtureExpectation, viewport: Viewport): Promise<RunResult> {
-  const context = await createViewportContext(browser, viewport);
+  const context = await createViewportContext(browser, viewport, fixtureGuard(baseUrl));
   try {
     const { page, meta } = await openAndStabilize(context, `${baseUrl}${fixture.path}`);
     const started = Date.now();

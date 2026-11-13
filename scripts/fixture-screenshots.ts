@@ -9,7 +9,7 @@ import { launchBrowser } from '@/server/browser/launch';
 import { createViewportContext } from '@/server/browser/devices';
 import type { Viewport } from '@/types/inspection';
 import { FIXTURE_EXPECTATIONS } from '../tests/fixtures/expected';
-import { start } from '../tests/fixtures/server';
+import { fixtureGuard, start } from '../tests/fixtures/server';
 
 const OUT_DIR = path.join(process.cwd(), '.tmp', 'fixture-shots');
 const VIEWPORT_ORDER: Viewport[] = ['desktop', 'mobile'];
@@ -51,7 +51,7 @@ async function main(): Promise<void> {
 
   try {
     for (const viewport of VIEWPORT_ORDER) {
-      const context = await createViewportContext(browser, viewport);
+      const context = await createViewportContext(browser, viewport, fixtureGuard(server.baseUrl));
       try {
         for (const fixture of FIXTURE_EXPECTATIONS) {
           const page = await context.newPage();
