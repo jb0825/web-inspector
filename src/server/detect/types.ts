@@ -1,4 +1,4 @@
-import type { IssueType, Rect, RelatedElement, Viewport } from '@/types/inspection';
+import type { Issue, IssueType, Priority, Rect, RelatedElement, Viewport, ViewportTag } from '@/types/inspection';
 
 // viewport 하나 안에서 탐지 함수가 만드는 이슈 후보. 서버 안에서만 쓴다(AGENTS.md 3.1).
 // T06(Dedup·병합·ID), T07(Evidence·Priority)이 이 타입만 보고 IssueOccurrence를 만들 수 있게
@@ -61,8 +61,42 @@ export interface ViewportOverflowIssue extends RawIssueBase {
 
 export type RawIssue = TextOverflowIssue | OverlapIssue | ViewportOverflowIssue;
 
+/**
+ * 병합(DETECTION_RULES 7.3) 뒤의 이슈. 필드 이름은 Issue(src/types/inspection.ts)와 같다.
+ * occurrences는 [desktop, mobile] 순서의 RawIssue이고, 모두 같은 type/subtype이다.
+ */
+export interface MergedIssue {
+  type: IssueType;
+  subtype: RawIssue['subtype'];
+  viewports: Viewport[];
+  /** 한 viewport가 실패한 검사에서는 null (PRD 5.6) */
+  viewportTag: ViewportTag | null;
+  occurrences: RawIssue[];
+  /** Viewport Overflow만. occurrences[0]의 값 */
+  affectedDescendants?: number;
+  /** occurrence 중 최솟값 (DETECTION_RULES 9.4) */
+  confidence: number;
+  needsReview: boolean;
+}
+
+/** Priority(DETECTION_RULES 9장)까지 계산한 이슈 */
+export interface ScoredIssue extends MergedIssue {
+  scores: Issue['scores'];
+  priority: Priority;
+}
+
+/**
+ * buildIssues(pipeline.ts)의 결과. ID와 유형 간 연결까지 끝났다.
+ * T07(Evidence)이 title, selector, sourceHints, occurrence의 selector·evidenceText·cropRect 등을 채워 Issue로 만든다.
+ */
+export interface DetectedIssue extends ScoredIssue {
+  id: string;
+  /** ID 오름차순 (DOMAIN_MODEL S-6) */
+  relatedIssueIds: string[];
+}
+
 /** 상대 요소 index. Overlap은 relatedIndex, 그 밖은 relatedElements[0], 없으면 -1 */
-function relatedIndexOf(issue: RawIssue): number {
+export function relatedIndexOf(issue: RawIssue): number {
   if (issue.type === 'element-overlap') return issue.relatedIndex;
   return issue.relatedElements[0]?.index ?? -1;
 }
