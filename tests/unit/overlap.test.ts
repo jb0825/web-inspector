@@ -44,7 +44,7 @@ describe('overlap (DETECTION_RULES 12.1)', () => {
       delta: {},
     });
     // (91 - 64) × (44 - 8) = 972, 작은 쪽 91 × 44 = 4004 → 24.28%
-    expect(issues[0].measured).toEqual({ intersectionArea: 972, overlapRatioPercent: 24.28 });
+    expect(issues[0].measured).toEqual({ intersectionArea: 972, overlapRatioPercent: 24.28, overlapTargetCount: 1 });
   });
 
   it('absolute 배지(부모 안) → 0.4', () => {
@@ -154,6 +154,29 @@ describe('overlap (DETECTION_RULES 12.1)', () => {
     const hidden = img(2, r(200, 0, 100, 100), [1]);
     const other = text(3, r(200, 0, 100, 100));
     expect(detectOverlap(collected('desktop', [box, hidden, other])).issues).toEqual([]);
+  });
+
+  it('대상 요소 기준 묶기: 대표는 교차 면적 최대, relatedElements 최대 5개, overlapTargetCount', () => {
+    // 넓은 이미지 a(index 1)가 서로 떨어진 이미지 7개(index 2~8)와 아래쪽 50px씩 겹친다
+    const base = img(1, r(0, 0, 1000, 100));
+    const widths = [10, 20, 20, 5, 30, 15, 25];
+    const others = widths.map((w, i) => img(2 + i, r(i * 140, 50, w * 4, 100)));
+    const { issues } = detectOverlap(collected('desktop', [base, ...others]));
+    expect(issues).toHaveLength(1);
+    const [issue] = issues;
+    // 교차 면적 = 너비(w × 4) × 50 → 30(6번) > 25(8번) > 20(3번, 4번) > 15(7번) > 10 > 5
+    expect(issue.relatedIndex).toBe(6);
+    expect(issue.relatedElements.map((e) => e.index)).toEqual([6, 8, 3, 4, 7]);
+    expect(issue.relatedElements.every((e) => e.role === 'overlap-target')).toBe(true);
+    expect(issue.measured).toEqual({ intersectionArea: 6000, overlapRatioPercent: 50, overlapTargetCount: 7 });
+  });
+
+  it('대상 요소 기준 묶기: subtype이 다르면 따로 만든다', () => {
+    const button = el({ index: 1, tag: 'button', rect: r(0, 0, 200, 40), flags: { interactive: true }, textRects: [r(10, 10, 100, 20)] });
+    const other = el({ index: 2, tag: 'button', rect: r(100, 0, 200, 40), flags: { interactive: true }, textRects: [r(110, 10, 100, 20)] });
+    const image = img(3, r(150, 20, 200, 100));
+    const { issues } = detectOverlap(collected('desktop', [button, other, image]));
+    expect(issues.map((i) => `${i.elementIndex}:${i.subtype}:${i.relatedIndex}`)).toEqual(['1:interactive:2', '1:other:3', '2:other:3']);
   });
 
   it('lineHeight 파싱', () => {

@@ -58,6 +58,10 @@ export interface Inspection {
     analyzedIssueCount: number;
     error?: InspectionErrorInfo;
   };
+  /** 상한(PRD 5.3.7)을 적용하기 전, viewport 간 병합까지 끝난 이슈 수 */
+  issuesDetected: number;
+  /** issuesDetected > issues.length */
+  issuesTruncated: boolean;
   issues: Issue[];
   tasks: DevTask[];
 }

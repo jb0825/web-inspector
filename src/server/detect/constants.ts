@@ -19,6 +19,10 @@ export const ABSOLUTE_IN_PARENT_CONFIDENCE = 0.4;
 export const NEEDS_REVIEW_BELOW = 0.5;
 /** 이슈의 기본 Confidence */
 export const DEFAULT_CONFIDENCE = 1;
+/** DETECTION_RULES 5.6: 겹침 이슈 하나의 relatedElements 최대 개수 (대표 상대 요소 포함) */
+export const MAX_OVERLAP_TARGETS = 5;
+/** PRD 5.3.7: 검사 1회에 저장하는 이슈 최대 개수 (viewport 간 병합 뒤, score100 순으로 선택) */
+export const MAX_ISSUES = 200;
 
 /** PRD 5.4.1: cropRect */
 export const CROP_PADDING_PX = 24;

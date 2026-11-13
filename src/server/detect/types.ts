@@ -41,10 +41,14 @@ export type TextOverflowIssue =
     })
   | (RawIssueBase & { type: 'text-overflow'; subtype: 'spill' });
 
+/**
+ * (viewport, 대상 요소 a, subtype)마다 하나다(DETECTION_RULES 5.6).
+ * measured에는 대표 쌍의 intersectionArea, overlapRatioPercent와 전체 상대 요소 수 overlapTargetCount가 있다.
+ */
 export interface OverlapIssue extends RawIssueBase {
   type: 'element-overlap';
   subtype: SubtypeByType['element-overlap'];
-  /** 상대 요소 b의 index. relatedElements[0]과 같다 */
+  /** 대표 상대 요소의 index(교차 면적 최대, 같으면 index가 작은 쪽). relatedElements[0]과 같다 */
   relatedIndex: number;
 }
 

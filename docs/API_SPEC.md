@@ -254,9 +254,9 @@ GET /api/inspections/9b1f2c4e-6a0d-4c1e-9f8a-2d7e5b3c1a90
 
 | status | 채워지는 필드 |
 |---|---|
-| `pending` | 기본 필드만. `viewports`/`viewportErrors`는 모두 `null`, `issues`/`tasks`는 빈 배열 |
+| `pending` | 기본 필드만. `viewports`/`viewportErrors`는 모두 `null`, `issues`/`tasks`는 빈 배열, `issuesDetected`는 0, `issuesTruncated`는 `false` |
 | `running` | + `step`, `startedAt` |
-| `analyzing` | + `finalUrl`, `viewports`, `viewportErrors`, `issues`(AI 필드 제외), `analysis.status: running` |
+| `analyzing` | + `finalUrl`, `viewports`, `viewportErrors`, `issues`(AI 필드 제외), `issuesDetected`, `issuesTruncated`, `analysis.status: running` |
 | `completed` / `partial` | + `issues[].analysis` 또는 `analysisSkippedReason`, `tasks`, `completedAt` |
 | `failed` | + `error`, `completedAt`. 실패한 viewport의 `viewportErrors` |
 
@@ -278,6 +278,8 @@ GET /api/inspections/9b1f2c4e-6a0d-4c1e-9f8a-2d7e5b3c1a90
   },
   "viewportErrors": { "desktop": null, "mobile": null },
   "analysis": { "status": "running", "analyzedIssueCount": 0 },
+  "issuesDetected": 1,
+  "issuesTruncated": false,
   "issues": [
     {
       "id": "ISS-001",

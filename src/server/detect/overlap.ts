@@ -5,6 +5,7 @@ import type { Rect } from '@/types/inspection';
 import {
   ABSOLUTE_IN_PARENT_CONFIDENCE,
   DEFAULT_CONFIDENCE,
+  MAX_OVERLAP_TARGETS,
   OVERLAP_MIN_AREA_PX2,
   OVERLAP_MIN_RATIO,
   OVERLAY_MIN_VIEWPORT_RATIO,
@@ -182,9 +183,10 @@ export function detectOverlap(c: CollectedViewport): { issues: OverlapIssue[]; o
     items.push(toItem(el, rects));
   }
 
-  // DETECTION_RULES 5.4: (top, index) 오름차순 sweep
+  // DETECTION_RULES 5.4: (top, index) 오름차순 sweep.
+  // 쌍 목록을 쌓지 않고 (대상 요소 a, subtype)별로 상위 MAX_OVERLAP_TARGETS개 쌍과 전체 개수만 유지한다(5.6).
   items.sort((x, y) => (x.top !== y.top ? x.top - y.top : x.el.index - y.el.index));
-  const issues: OverlapIssue[] = [];
+  const groups = new Map<string, OverlapGroup>();
   let active: Item[] = [];
   for (const current of items) {
     active = active.filter((item) => item.bottom > current.top);
@@ -196,6 +198,7 @@ export function detectOverlap(c: CollectedViewport): { issues: OverlapIssue[]; o
       const smaller = Math.min(current.area, other.area);
       if (overlapArea < OVERLAP_MIN_AREA_PX2 && overlapArea < smaller * OVERLAP_MIN_RATIO) continue;
 
+      // 대상은 문서 순서가 앞인 요소 a (DETECTION_RULES 5.6)
       const [a, b] = current.el.index < other.el.index ? [current.el, other.el] : [other.el, current.el];
       const subtype = subtypeOf(a, b, lookup);
       let confidence = DEFAULT_CONFIDENCE;
@@ -203,29 +206,81 @@ export function detectOverlap(c: CollectedViewport): { issues: OverlapIssue[]; o
       if (subtype !== 'interactive' && (isAbsoluteInParent(a, lookup) || isAbsoluteInParent(b, lookup))) {
         confidence = ABSOLUTE_IN_PARENT_CONFIDENCE;
       }
-      issues.push({
-        viewport: c.viewport,
-        type: 'element-overlap',
-        subtype,
-        elementIndex: a.index,
-        relatedIndex: b.index,
-        boundingBox: { ...a.rect }, // DETECTION_RULES 5.6: 마커가 요소 위치를 가리키게 한다
-        measured: {
-          intersectionArea: roundMeasure(overlapArea),
-          overlapRatioPercent: roundMeasure(smaller > 0 ? (overlapArea / smaller) * 100 : 0),
-        },
-        expected: {
-          minRatioPercent: roundMeasure(OVERLAP_MIN_RATIO * 100),
-          minAreaPx2: OVERLAP_MIN_AREA_PX2,
-        },
-        delta: {},
-        relatedElements: [{ role: 'overlap-target', index: b.index }],
+      addToGroup(groups, a, subtype, {
+        index: b.index,
+        area: overlapArea,
+        ratioPercent: smaller > 0 ? (overlapArea / smaller) * 100 : 0,
         confidence,
       });
     }
     active.push(current);
   }
 
+  const issues = [...groups.values()].map((group): OverlapIssue => {
+    const representative = group.targets[0];
+    return {
+      viewport: c.viewport,
+      type: 'element-overlap',
+      subtype: group.subtype,
+      elementIndex: group.el.index,
+      relatedIndex: representative.index,
+      boundingBox: { ...group.el.rect }, // DETECTION_RULES 5.6: 마커가 요소 위치를 가리키게 한다
+      measured: {
+        intersectionArea: roundMeasure(representative.area),
+        overlapRatioPercent: roundMeasure(representative.ratioPercent),
+        overlapTargetCount: group.count,
+      },
+      expected: {
+        minRatioPercent: roundMeasure(OVERLAP_MIN_RATIO * 100),
+        minAreaPx2: OVERLAP_MIN_AREA_PX2,
+      },
+      delta: {},
+      relatedElements: group.targets.map((target) => ({ role: 'overlap-target', index: target.index })),
+      // 측정값과 같은 쌍의 값을 쓴다(Evidence 문장과 Confidence가 같은 쌍을 가리키게)
+      confidence: representative.confidence,
+    };
+  });
+
+  // Map 순회 순서가 아니라 명시적인 키로 정렬한다(DETECTION_RULES 11장)
   issues.sort(compareRawIssues);
   return { issues, overlaysDetected: overlays.map((el) => el.selector) };
+}
+
+interface OverlapTarget {
+  index: number;
+  area: number;
+  ratioPercent: number;
+  confidence: number;
+}
+
+interface OverlapGroup {
+  el: CollectedElement;
+  subtype: SubtypeByType['element-overlap'];
+  /** 교차 면적 내림차순, 같으면 index 오름차순. 최대 MAX_OVERLAP_TARGETS개 */
+  targets: OverlapTarget[];
+  /** 전체 상대 요소 수 */
+  count: number;
+}
+
+/** 대표 상대 요소: 교차 면적이 가장 큰 것, 같으면 index가 작은 것 */
+function compareTargets(x: OverlapTarget, y: OverlapTarget): number {
+  return x.area !== y.area ? y.area - x.area : x.index - y.index;
+}
+
+function addToGroup(
+  groups: Map<string, OverlapGroup>,
+  el: CollectedElement,
+  subtype: SubtypeByType['element-overlap'],
+  target: OverlapTarget,
+): void {
+  const key = `${el.index}|${subtype}`;
+  let group = groups.get(key);
+  if (!group) {
+    group = { el, subtype, targets: [], count: 0 };
+    groups.set(key, group);
+  }
+  group.count += 1;
+  group.targets.push(target);
+  group.targets.sort(compareTargets);
+  if (group.targets.length > MAX_OVERLAP_TARGETS) group.targets.length = MAX_OVERLAP_TARGETS;
 }
