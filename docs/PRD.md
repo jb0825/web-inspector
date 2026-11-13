@@ -25,6 +25,7 @@
 - 샘플 리포트를 정적 데이터로 제공 (8.1.4)
 - Fixture 보완: P-02 배치 조건, P-03·P-06 판정 기준, Negative Fixture N-08·N-09 추가 (13장)
 - 문서 내 잘못된 절 참조 수정 (8.3 → 8.6)
+- 로컬 개발 환경(macOS)의 폰트 처리 방식과 Fixture 폰트 규칙 명시 (5.2.3, 13.1)
 
 ### Changelog (v1.0 → v1.1)
 
@@ -212,7 +213,9 @@ Requirements:
 
 - 서버리스 Chromium에는 CJK 폰트가 없다. 브라우저를 띄우기 전에 Noto Sans KR(또는 Noto Sans CJK)을 로드한다.
 - 폰트가 없으면 한글이 □로 렌더링되고 Text Overflow 측정값이 틀어지므로, 이 처리는 Must 요구사항이다.
-- 로컬 실행 환경에도 같은 폰트를 로드한다. 로컬 OS 폰트로 측정하면 Fixture 결과가 Vercel과 달라질 수 있기 때문이다.
+- 폰트 파일은 저장소의 `public/fonts/`에 한 벌만 둔다. Vercel과 로컬 Linux에서는 브라우저가 이 파일을 쓰도록 강제한다.
+- 로컬 macOS에서는 Chromium의 폰트 대체 순서를 OS가 정하므로 강제하지 않는다. 대신 모든 Fixture 페이지가 `@font-face`로 같은 폰트 파일을 불러와 텍스트에 직접 적용한다(13.1). 이렇게 하면 OS와 관계없이 Fixture 측정값이 같아진다.
+- 외부 사이트의 검사 결과는 로컬 OS에 따라 달라질 수 있다. 기준은 Vercel 환경의 결과다.
 
 #### 5.2.4 Requirements
 
@@ -1157,6 +1160,7 @@ AI는 검사 결과를 대체하지 않는다. 수집된 데이터를 바탕으�
 
 - 로컬: `pnpm test:fixtures`가 로컬 브라우저로 Fixture를 검사하고 기대 결과와 비교한다. `localhost` 접근은 테스트 하네스의 허용 목록 인자로만 허용한다(8.6).
 - 배포: 배포된 서비스로 Fixture URL을 검사해 같은 기준으로 평가한다.
+- 모든 Fixture 페이지는 `@font-face`로 `/fonts/`의 Noto Sans KR을 불러오고, 텍스트에 `font-family: 'Noto Sans KR'`을 명시한다(5.2.3). 로컬(macOS)과 Vercel의 결과가 같아야 한다.
 
 **Positive Fixtures (탐지해야 함)**
 

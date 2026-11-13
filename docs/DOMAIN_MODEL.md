@@ -305,7 +305,7 @@ export const inspectionSchema = z.strictObject({ /* … */ }) satisfies z.ZodTyp
 | 브라우저 → `page.evaluate` 반환값 | `src/server/collect/schemas.ts` | 해당 viewport `DETECTION_FAILED` |
 | AI 응답 | `src/server/ai/schemas.ts` + 입력에 없는 ID 버림 | 1회 재시도 후 "AI 분석 없음" (PRD 5.7.4) |
 | Redis → 서버 | `src/server/store/schemas.ts` | 500 `INTERNAL_ERROR` |
-| 환경변수 | `src/server/env.ts` | 시작 시 오류 |
+| 환경변수 | `src/server/env.ts` (용도별 getter) | getter를 처음 호출할 때 오류. import 시점에는 검증하지 않는다(AGENTS.md 5장) |
 | 서버 → 클라이언트 응답 | 검증하지 않음 (같은 타입을 공유) | — |
 | 탐지 결과 → 저장 | 운영 중 검증하지 않음. 테스트에서 `assertInspectionInvariants` | — |
 
