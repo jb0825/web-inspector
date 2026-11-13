@@ -104,6 +104,7 @@ src/
       viewportOverflow.ts
       dedup.ts
       order.ts                          # 정렬과 Issue ID 부여 (PRD 5.3.6)
+      geometry.ts                       # 보이는 영역 계산 (DETECTION_RULES 3.6)
     compare/match.ts                    # Desktop / Mobile 요소 매칭 (PRD 5.6)
     evidence/
       sentences.ts                      # Evidence 문장 템플릿
@@ -301,7 +302,7 @@ pnpm collect <name>    # (T04 이후) Fixture 1개의 수집 결과를 JSON으�
 - `src/server/detect`, `src/server/priority`, `src/server/tasks`, `src/server/evidence/sentences.ts`, `src/server/prompt/template.ts`, `src/server/security`의 순수 함수는 Vitest 단위 테스트를 붙인다.
 - 탐지 규칙을 추가하거나 바꾸면 그 규칙을 검증하는 Fixture를 함께 추가하거나 수정한다.
 - `pnpm test:fixtures`의 통과 기준 (PRD 13.2):
-  - Positive Fixture 6개를 모두 기대한 유형과 우선순위로 탐지한다.
+  - Positive Fixture 6개를 모두 기대한 유형과 우선순위로 탐지한다. 기대하지 않은 `needsReview: false` 이슈가 있으면 실패다(허용 이슈 제외, DETECTION_RULES 12.2).
   - Negative Fixture 9개(N-01~N-09)에서는 이슈가 0개다(`needsReview: true`는 허용).
   - 기대 결과는 `tests/fixtures/expected.ts`에 두고, 내용은 DETECTION_RULES 12.2를 따른다.
 - 테스트를 통과시키려고 테스트나 Fixture의 기대값을 바꾸지 않는다. 기대값이 잘못됐다고 판단되면 그 근거를 보고하고 확인을 받는다.

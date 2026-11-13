@@ -1,0 +1,136 @@
+/*
+ * Fixture 공통 스타일 (AGENTS.md 7.1, PRD 5.2.3, 13.1)
+ * - 폰트는 /fonts/의 Noto Sans KR 한 벌만 쓴다. 복사본을 만들지 않는다.
+ * - font-display: block: 폰트가 늦게 와도 대체 폰트로 측정되지 않게 한다.
+ * - 애니메이션, 트랜지션, 외부 리소스를 쓰지 않는다.
+ * - 이 파일의 공통 요소(헤더, 문단, 섹션)는 Desktop 1440 / Mobile 390 모두에서
+ *   넘침, 겹침, 화면 이탈이 없어야 한다. 의도한 문제는 각 페이지의 <style>에서만 만든다.
+ */
+
+@font-face {
+  font-family: 'Noto Sans KR';
+  src: url('/fonts/NotoSansKR-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+
+@font-face {
+  font-family: 'Noto Sans KR';
+  src: url('/fonts/NotoSansKR-Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+/* button, input은 글꼴을 상속하지 않으므로 모든 요소에 직접 지정한다. */
+body,
+body * {
+  font-family: 'Noto Sans KR';
+}
+
+body {
+  margin: 0;
+  color: #1f2328;
+  background: #ffffff;
+  font-size: 16px;
+  line-height: 1.6;
+  /* 긴 한글 문장과 URL이 Mobile 390px에서 줄바꿈되도록 한다. */
+  overflow-wrap: break-word;
+  word-break: keep-all;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+h1 {
+  font-size: 28px;
+  line-height: 1.3;
+  font-weight: 700;
+}
+
+h2 {
+  font-size: 20px;
+  line-height: 1.4;
+  font-weight: 700;
+}
+
+h3 {
+  font-size: 17px;
+  line-height: 1.4;
+  font-weight: 700;
+}
+
+img {
+  display: block;
+}
+
+/*
+ * 본문 컨테이너는 padding 대신 margin으로 여백을 둔다. padding이 있으면 DETECTION_RULES 3.3의
+ * "테두리 박스"가 되어, 화면 밖으로 나간 텍스트(P-06)가 의도하지 않은 spill로도 잡힌다.
+ * Desktop: 가운데 928px, Mobile: 좌우 16px
+ */
+.page {
+  margin: 24px max(16px, calc((100% - 928px) / 2)) 64px;
+}
+
+.page > * + * {
+  margin-top: 24px;
+}
+
+.site-header {
+  padding: 16px;
+  border-bottom: 1px solid #d0d7de;
+}
+
+.site-header .brand {
+  font-weight: 700;
+  font-size: 18px;
+}
+
+.lead {
+  color: #57606a;
+}
+
+/* 의도한 문제가 들어가지 않는 보조 문단. Mobile에서 줄바꿈만 한다. */
+.filler p + p {
+  margin-top: 12px;
+}
+
+.btn {
+  display: inline-block;
+  padding: 10px 16px;
+  border: 0;
+  border-radius: 8px;
+  background: #0969da;
+  color: #ffffff;
+  font-size: 16px;
+  line-height: 1.5;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

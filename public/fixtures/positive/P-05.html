@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>P-05 · 고정 높이 카드 밖으로 넘친 본문</title>
+<!--
+  Fixture: P-05 (Positive)
+  검증: PRD 5.3.2(spill, 테두리 박스), 5.5.3(spill 행, Reach 보정), 13.1
+        DETECTION_RULES 4.2, 7.3, 9.1 7행, 9.2, 12.2
+
+  의도:
+  - 공지 카드(data-testid="p05-card")는 height: 120px로 고정되어 있고 배경색과 padding이 있다(테두리 박스).
+  - 카드 안 본문(data-testid="p05-card-text")은 여러 줄이라 카드 아래쪽으로 넘쳐 보인다.
+  - 본문과 카드 사이(양 끝 포함)에 overflow가 visible이 아닌 요소가 없으므로 spill이다.
+  - 카드 너비를 360px로 고정해 두 viewport에서 줄바꿈과 넘침이 같다. 두 viewport 모두에서
+    발생하고 data-testid로 매칭되어 이슈 1개(both)로 합쳐진다.
+  - 카드는 문서 y ≥ 900px에 둔다(.intro-block의 min-height). 두 viewport 모두 첫 화면 밖이라
+    Reach +1(첫 화면)이 붙지 않는다. 붙으면 R=5, score100=325(P1)가 되어 spill 행(P2)을 확인할 수 없다.
+  - 넘친 본문이 다음 콘텐츠와 겹치지 않도록 카드 아래에 여백(.notice padding-bottom)을 충분히 둔다.
+
+  기대 결과: text-overflow / spill 1개, 대상 p05-card-text, 상대(테두리 박스) p05-card, P2, both
+
+  Priority 계산 (PRD 5.5.3 7행: spill):
+  - S=2, I=3, base R=3
+  - Reach: 본문 y ≥ 900 ≥ innerHeight(900 / 844) → +0, 두 viewport 모두 발생 → +1
+  - R = 4
+  - score100 = 2×35 + 3×35 + 4×30 = 295 → P2
+-->
+<link rel="stylesheet" href="/fixtures/assets/base.css">
+<style>
+  /* 공지 카드를 첫 화면 아래로 내리기 위한 소개 영역 */
+  .intro-block {
+    min-height: 900px;
+  }
+
+  .intro-block p + p {
+    margin-top: 12px;
+  }
+
+  .notice {
+    /* 넘친 본문이 다음 섹션과 겹치지 않게 한다 */
+    padding-bottom: 200px;
+  }
+
+  .notice-card {
+    width: 100%;
+    max-width: 360px;
+    /* 의도한 문제: 콘텐츠 양과 관계없이 높이 고정 */
+    height: 120px;
+    margin-top: 12px;
+    padding: 16px;
+    border-radius: 8px;
+    background: #fff8c5;
+  }
+
+  .notice-card p {
+    margin-top: 4px;
+    font-size: 15px;
+  }
+</style>
+</head>
+<body>
+  <header class="site-header"><span class="brand">고객센터</span></header>
+
+  <main class="page">
+    <section class="intro-block">
+      <h1>무엇을 도와드릴까요?</h1>
+      <p class="lead">자주 묻는 질문과 서비스 공지를 확인할 수 있습니다.</p>
+      <p>주문, 배송, 반품에 관한 질문은 대부분 아래 공지에서 답을 찾을 수 있습니다.</p>
+    </section>
+
+    <section class="notice">
+      <h2>서비스 공지</h2>
+      <div class="notice-card" data-testid="p05-card">
+        <h3>배송 일정 변경 안내</h3>
+        <p data-testid="p05-card-text">연휴 기간에는 택배사 사정으로 배송이 평소보다 이삼일 늦어질 수 있습니다. 연휴 전날 오후 두 시 이후 주문은 연휴가 끝난 다음 날부터 순서대로 출고됩니다. 급한 주문은 연휴 전에 미리 해 주시기 바랍니다.</p>
+      </div>
+    </section>
+
+    <section class="filler">
+      <h2>문의하기</h2>
+      <p>평일 오전 아홉 시부터 오후 여섯 시까지 채팅으로 상담할 수 있습니다.</p>
+    </section>
+  </main>
+</body>
+</html>

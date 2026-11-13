@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>N-08 · 둥근 카드 안에서 잘린 큰 이미지</title>
+<!--
+  Fixture: N-08 (Negative)
+  검증: PRD 5.3.2(clipped의 텍스트 조건), 5.3.4 제외 조건(가로 클립 조상), 13.1
+        DETECTION_RULES 4.1("texts is empty → continue"), 6.2, 12.2
+
+  의도:
+  - 기사 카드(data-testid="n08-card-1~2")는 border-radius + overflow: hidden이다.
+  - 카드 안 이미지(data-testid="n08-image-1~2")는 카드보다 30% 넓고 좌우로 15%씩 튀어나오게
+    배치해(object-fit 대신 넓은 이미지를 가운데 정렬) 카드 경계에서 잘린다.
+    카드의 scrollWidth가 clientWidth보다 크지만, 넘친 것은 이미지뿐이고 텍스트는 카드 padding box
+    안에 있으므로 clipped가 아니다.
+  - Mobile에서 이미지 왼쪽 끝은 화면 왼쪽 밖(음수 x)이다. 카드가 가로 클립 조상이므로 Viewport
+    Overflow에서 제외된다.
+  - 이미지는 가로로만 넘치고 세로 높이는 고정이라, 카드 안 텍스트와 겹치지 않는다.
+  - 카드는 세로로 한 줄씩 쌓는다. 옆에 다른 카드를 두면 잘려서 보이지 않는 이미지 부분(rect는
+    잘리기 전 크기)이 옆 카드와 겹친 것으로 측정될 수 있기 때문이다(보고서 참고).
+
+  기대 결과: 이슈 0개 (needsReview: true인 이슈는 허용)
+-->
+<link rel="stylesheet" href="/fixtures/assets/base.css">
+<style>
+  .card-list {
+    max-width: 480px;
+  }
+
+  .card-list > * + * {
+    margin-top: 32px;
+  }
+
+  .media-card {
+    border: 1px solid #d0d7de;
+    border-radius: 16px;
+    overflow: hidden;
+  }
+
+  .media-card img {
+    width: 130%;
+    max-width: none;
+    height: 200px;
+    /* 그림이 요소 전체를 채워야 카드 경계에서 실제로 잘려 보인다 */
+    object-fit: cover;
+    /* 좌우 15%씩 카드 밖으로 나가게 가운데 정렬 */
+    margin-left: -15%;
+  }
+
+  .media-card .body {
+    padding: 16px;
+  }
+
+  .media-card p {
+    margin-top: 8px;
+    color: #57606a;
+    font-size: 15px;
+  }
+</style>
+</head>
+<body>
+  <header class="site-header"><span class="brand">주말 나들이</span></header>
+
+  <main class="page">
+    <section>
+      <h1>가까운 공원 산책 코스</h1>
+      <p class="lead">도심에서 한 시간 안에 갈 수 있는 공원을 소개합니다.</p>
+    </section>
+
+    <section class="card-list">
+      <article class="media-card" data-testid="n08-card-1">
+        <img src="/fixtures/assets/photo.svg" width="400" height="300" alt="호숫가 산책로" data-testid="n08-image-1">
+        <div class="body">
+          <h3 data-testid="n08-title-1">호수공원 한 바퀴</h3>
+          <p data-testid="n08-text-1">호수를 따라 4km 산책로가 이어집니다. 벤치가 많아 쉬어 가기 좋습니다.</p>
+        </div>
+      </article>
+
+      <article class="media-card" data-testid="n08-card-2">
+        <img src="/fixtures/assets/photo.svg" width="400" height="300" alt="숲속 오솔길" data-testid="n08-image-2">
+        <div class="body">
+          <h3 data-testid="n08-title-2">숲길 따라 걷기</h3>
+          <p data-testid="n08-text-2">경사가 완만해 아이와 함께 걷기 좋습니다. 입구 근처에 주차장이 있습니다.</p>
+        </div>
+      </article>
+    </section>
+  </main>
+</body>
+</html>

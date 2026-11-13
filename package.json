@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "next typegen && tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "fixtures:shots": "node --conditions=react-server --import tsx scripts/fixture-screenshots.ts"
   },
   "dependencies": {
     "@sparticuz/chromium": "153.0.0",
@@ -31,6 +32,7 @@
     "eslint-config-next": "16.4.6",
     "playwright": "1.63.0",
     "tailwindcss": "4.3.3",
+    "tsx": "4.23.15",
     "typescript": "^5",
     "vitest": "^5.1.0"
   },

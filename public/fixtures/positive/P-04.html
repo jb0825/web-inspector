@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>P-04 · overflow-x: hidden에 가려진 이미지</title>
+<!--
+  Fixture: P-04 (Positive)
+  검증: PRD 5.3.4(hidden-clip, page-scroll보다 먼저 판정), 5.5.3(hidden-clip 행), 13.1
+        DETECTION_RULES 6.1~6.4, 7.3, 9.1 4행, 9.2, 12.2
+
+  의도:
+  - body { overflow-x: hidden }이라 페이지 가로 스크롤은 생기지 않는다.
+  - 프로모션 이미지(data-testid="p04-image", 400×300 로컬 SVG)는 부모(.promo-media) 오른쪽 끝에서
+    100px 안쪽에서 시작하므로 부모 밖으로 300px 나간다. 화면 기준으로는 Desktop(부모 오른쪽 끝 1184px)에서
+    1484px까지(44px 이탈), Mobile(374px)에서 674px까지(284px 이탈) 나가 실제로 잘린다.
+  - body만 overflow-x: hidden이면 Chromium은 documentElement.scrollWidth에 넘친 너비를 그대로 보고한다
+    (T03 측정: Desktop 1484, Mobile 674 안팎). 사용자는 가로로 스크롤할 수 없다. 그래서 hidden-clip을
+    page-scroll보다 먼저 판정해야 한다(PRD 5.3.4, DETECTION_RULES 6.4).
+  - 부모(.promo-media)는 화면 안이므로 원인 요소는 이미지 1개다.
+  - 이미지와 html/body 사이에 가로 클립 조상(html, body 제외)이 없다(DETECTION_RULES 6.2).
+  - 두 viewport 모두에서 발생하고 data-testid로 매칭되어 이슈 1개(both)로 합쳐진다.
+  - DETECTION_RULES 12.2는 "1개 이상"이지만, 이 페이지는 원인 요소를 1개만 두어 정확히 1개를 기대한다.
+
+  기대 결과: viewport-overflow / hidden-clip 1개, 대상 p04-image, P1, both
+
+  Priority 계산 (PRD 5.5.3 4행: hidden-clip):
+  - S=3, I=4, base R=4
+  - Reach: 이미지 y(약 280px) < innerHeight(900 / 844) → +1, 두 viewport 모두 발생 → +1
+  - R = min(4+2, 5) = 5
+  - score100 = 3×35 + 4×35 + 5×30 = 395 → P1
+-->
+<link rel="stylesheet" href="/fixtures/assets/base.css">
+<style>
+  /* 의도한 문제: 넘친 콘텐츠를 가로 스크롤 없이 잘라 버린다 */
+  body {
+    overflow-x: hidden;
+  }
+
+  .promo p {
+    margin-top: 8px;
+    color: #57606a;
+  }
+
+  .promo-media {
+    margin-top: 16px;
+  }
+
+  .promo-image {
+    width: 400px;
+    height: 300px;
+    max-width: none;
+    /* 부모 오른쪽 끝 100px 안쪽에서 시작하므로 항상 300px이 부모 밖으로, 두 viewport 모두 화면 밖으로 나간다 */
+    margin-left: calc(100% - 100px);
+  }
+</style>
+</head>
+<body>
+  <header class="site-header"><span class="brand">여행 기획전</span></header>
+
+  <main class="page">
+    <section class="promo">
+      <h2>이번 주 추천 여행지</h2>
+      <p>가을 단풍이 가장 아름다운 산책길을 모았습니다. 숙소와 교통편을 한 번에 예약할 수 있습니다.</p>
+      <div class="promo-media">
+        <img class="promo-image" src="/fixtures/assets/photo.svg" width="400" height="300" alt="산과 호수 풍경" data-testid="p04-image">
+      </div>
+    </section>
+
+    <section class="filler">
+      <h2>예약 안내</h2>
+      <p>출발 3일 전까지는 수수료 없이 취소할 수 있습니다. 그 뒤에는 숙소 규정에 따라 수수료가 붙습니다.</p>
+    </section>
+  </main>
+</body>
+</html>

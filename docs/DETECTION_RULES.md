@@ -1,8 +1,14 @@
 # AI Website Inspector — Detection Rules
 
-> Version: 2.0
+> Version: 2.1
 > Status: Draft
 > Related Documents: PRD.md (v1.2), AGENTS.md
+
+### Changelog (v2.0 → v2.1)
+
+- 추가: 보이는 영역 계산(3.6). `overflow`로 잘려 보이지 않는 텍스트·요소 영역을 Overlap 영역(5.1)과 Viewport Overflow 범위(6.1)에서 제외한다.
+- 수정: Positive Fixture 판정. 기대하지 않은 이슈 중 `needsReview: false`인 것은 실패로 본다. 허용 이슈(`allowed`)를 둔다(12.2).
+- 추가: 단위 테스트 케이스(12.1), 새 파일 `src/server/detect/geometry.ts`
 
 ### Changelog (v1.0 → v2.0)
 
@@ -61,6 +67,7 @@ v1.0(Detection Guide)은 PRD v1.1 이전 기준이라 PRD와 충돌했다. v2.0�
 ```
 
 - `order.ts`는 AGENTS.md 3장 구조에 없는 새 파일이다. ID 부여를 Dedup과 분리해 단위 테스트하기 위해서다.
+- `geometry.ts`(3.6)는 `overlap.ts`와 `viewportOverflow.ts`가 함께 쓰는 보이는 영역 계산 순수 함수다.
 - 탐지 함수의 형태는 `(collected: CollectedViewport) => RawIssue[]`이다(AGENTS.md 9장).
 
 ---
@@ -204,6 +211,38 @@ PRD 5.4.1: 안정적인 속성을 먼저 쓴다. 문서 안에서 유일해야 �
 
 `landmark`가 없을 때 태그 이름을 대신 쓰는 것은 PRD에 없는 결정이다. 태스크 그룹화(PRD 5.8.1)에서 "landmark 없음" 그룹이 지나치게 커지지 않게 하기 위해서다.
 
+### 3.6 보이는 영역 (`src/server/detect/geometry.ts`)
+
+`Range.getClientRects()`와 border box는 `overflow`로 잘려 화면에 보이지 않는 부분까지 포함한다. ellipsis 제목의 숨겨진 글자, line-clamp로 숨긴 줄, 카드 밖으로 잘린 이미지가 그 예다. 이 부분이 겹침이나 화면 이탈로 다시 잡히지 않도록, 판정 전에 보이는 영역으로 자른다.
+
+```text
+clipChain(el, includeSelf) :=
+  [el(includeSelf일 때만), ...el.ancestorIndices의 후보 조상(가까운 순)]
+  단, position: fixed인 요소(자신 포함)를 만나면 그 요소까지만 포함하고 멈춘다
+  // fixed 요소는 조상의 overflow에 잘리지 않는다
+
+clipRects(rects, chain):
+  for c in chain:
+    if c.style.overflowX != 'visible': 각 rect의 가로 범위를 c.paddingBox의 [left, right]로 자른다
+    if c.style.overflowY != 'visible': 각 rect의 세로 범위를 c.paddingBox의 [top, bottom]으로 자른다
+  너비 또는 높이가 0 이하가 된 rect는 버린다
+
+visibleTextRects(el) = clipRects(el.textRects, clipChain(el, includeSelf = true))
+visibleRect(el)      = clipRects([el.rect], clipChain(el, includeSelf = false))[0] 또는 없음
+// 요소 자신의 overflow는 자기 border box를 자르지 않는다
+```
+
+- `overflow` 값이 `hidden`, `clip`, `auto`, `scroll`이면 모두 자른다. 축별로 따로 판정한다.
+- 적용하는 곳: Overlap 비교 영역(5.1), Viewport Overflow 넘침 범위(6.1)
+- 적용하지 않는 곳:
+  - Text Overflow `clipped`(4.1): 잘린 사실 자체를 탐지하므로 잘리기 전 값을 쓴다.
+  - Text Overflow `spill`(4.2): 경로에 `overflow`가 `visible`이 아닌 요소가 있으면 이미 판정하지 않는다.
+- `-webkit-line-clamp`는 보통 `overflow: hidden`과 함께 쓰이므로 이 규칙으로 숨겨진 줄이 빠진다. `overflow: visible`이면 Chromium에서도 줄이 보이므로 자르지 않는다.
+- **한계 (MVP에서 받아들임):**
+  - 후보 조상만 확인한다. 후보가 아닌 조상(크기 1px 이하 등)의 `overflow`는 반영하지 않는다.
+  - `position: absolute` 요소는 실제로는 위치 기준(containing block)이 아닌 조상의 `overflow`에 잘리지 않지만, DOM 조상 순서로 근사한다.
+  - 스크롤 컨테이너 안의 내용은 측정 시점의 스크롤 위치 기준이다.
+
 ---
 
 ## 4. Text Overflow (PRD 5.3.2)
@@ -268,8 +307,9 @@ for T in 텍스트 요소:
 - 대상: 텍스트 요소, 인터랙티브 요소, `img`, `video`, `canvas` 중 **다른 비교 대상을 자손으로 갖지 않는 요소**(말단)
   - 예외: 인터랙티브 요소는 자손에 텍스트 요소가 있어도 대상에 넣는다. 둘은 조상/자손 관계라 서로 비교되지 않는다.
 - 영역:
-  - 텍스트 요소(인터랙티브가 아닌 것): `textRects`에 line-height 보정(5.2)을 적용한 rect 목록
-  - 그 밖: `rect` 하나
+  - 텍스트 요소(인터랙티브가 아닌 것): `textRects`에 line-height 보정(5.2)을 적용한 뒤 보이는 영역으로 자른(3.6) rect 목록
+  - 그 밖: `visibleRect(el)` 하나(3.6)
+  - 자른 결과 영역이 비면 그 요소는 비교 대상에서 뺀다. 화면에 보이지 않기 때문이다.
 - 면적: 영역 rect 면적의 합
 
 ### 5.2 line-height 보정 (PRD 5.3.3)
@@ -354,11 +394,13 @@ if subtype != 'interactive':                     // PRD 5.3.3 예외: 인터랙�
 ### 6.1 넘침 범위 (`extent`)
 
 ```text
-extent(el) = union(el.rect, ...el.textRects)
+extent(el) = union(el.rect, ...visibleTextRects(el))     // 3.6
 isOut(el)  = extent.right > layoutWidth + TOLERANCE_PX || extent.left < -TOLERANCE_PX
 ```
 
 텍스트 rect를 포함하는 이유: `white-space: nowrap` 제목처럼 박스는 화면 안이지만 글자만 밖으로 나가는 경우를 잡기 위해서다(PRD 5.3.4).
+
+`visibleTextRects`를 쓰는 이유: `text-overflow: ellipsis` 제목처럼 요소 자신의 `overflow`로 잘려 보이지 않는 글자는 화면 밖으로 나간 것이 아니다(N-02). 조상의 가로 클립은 6.2에서 요소 전체가 제외되므로, 여기서 실제로 영향을 주는 것은 요소 자신의 `overflow`다.
 
 ### 6.2 제외
 
@@ -583,8 +625,9 @@ Priority는 Confidence와 관계없이 9.3으로 계산한다(PRD 5.5.4).
 | 모듈 | 필수 케이스 |
 |---|---|
 | `textOverflow` | clipped x/y/양축 · 이미지만 넘친 overflow hidden 카드는 없음 · ellipsis/line-clamp 제외 · overflow auto 제외 · 중첩 clipped는 깊은 쪽만 · spill 기본 · 테두리 박스 없음 · 중간에 overflow hidden 있으면 spill 아님 |
-| `overlap` | 버튼 두 개 → interactive, Confidence 1.0 · absolute 배지(부모 안) → 0.4 · 조상/자손 제외 · img 위 텍스트 제외 · sticky와 일반 요소 제외 · fixed끼리 탐지 · 30% overlay 기록과 제외 · line-height 보정으로 인접 줄 오탐 없음 · 20%와 100px² 경계값 |
-| `viewportOverflow` | page-scroll 원인 1개와 affectedDescendants · nowrap 텍스트만 넘친 제목이 원인 · 캐러셀(overflow-x auto 조상) 제외 · hidden-clip · 왼쪽 이탈은 element-out · fixed 요소는 page-scroll 아님 |
+| `geometry` | 자신의 overflow hidden으로 잘린 텍스트 rect · 조상 체인에 따른 자르기 · 축별 자르기(overflowX만 hidden) · fixed 요소에서 체인 중단 · 완전히 잘린 rect 제거 · `visibleRect`는 자신의 overflow에 잘리지 않음 |
+| `overlap` | 버튼 두 개 → interactive, Confidence 1.0 · absolute 배지(부모 안) → 0.4 · 조상/자손 제외 · img 위 텍스트 제외 · sticky와 일반 요소 제외 · fixed끼리 탐지 · 30% overlay 기록과 제외 · line-height 보정으로 인접 줄 오탐 없음 · 20%와 100px² 경계값 · line-clamp로 숨겨진 줄과 아래 요소는 겹침 아님 · overflow hidden 카드 밖으로 잘린 img는 잘린 영역만 비교 · 완전히 잘린 요소는 비교 대상 아님 |
+| `viewportOverflow` | page-scroll 원인 1개와 affectedDescendants · nowrap 텍스트만 넘친 제목이 원인 · ellipsis 제목(자신의 overflow hidden)은 이탈 아님 · 캐러셀(overflow-x auto 조상) 제외 · hidden-clip · 왼쪽 이탈은 element-out · fixed 요소는 page-scroll 아님 |
 | `dedup` / `match` | 3가지 매칭 기준과 1:1 보장 · 병합 후 viewportTag · 규칙 4 연결 |
 | `order` | 정렬 키 5단계 각각 · 입력 순서를 섞어도 같은 ID |
 | `score` | 점수표 9행 · Reach 보정 상한 · **S=I=R=3 → P1** · 경계 399/400, 299/300 |
@@ -602,10 +645,15 @@ Priority는 Confidence와 관계없이 9.3으로 계산한다(PRD 5.5.4).
 | P-03 | `element-overlap/interactive` 1개, P0, Confidence 1.0 | 같은 부모 안 absolute 버튼 두 개 |
 | P-04 | `viewport-overflow/hidden-clip` 1개 이상 | `body { overflow-x: hidden }` + 오른쪽으로 나간 `img` |
 | P-05 | `text-overflow/spill` 1개 | 배경색이 있는 고정 높이 카드, 카드와 본문 사이에 overflow hidden 없음 |
-| P-06 | `viewport-overflow/page-scroll` 1개(원인 = 제목), 같은 요소의 `text-overflow`는 없거나 `relatedIssueIds`로 연결 | `white-space: nowrap` 제목, Mobile에서만 넘침 |
+| P-06 | `viewport-overflow/page-scroll` 1개(원인 = 제목), 같은 요소의 `text-overflow`는 없거나 `relatedIssueIds`로 연결(`allowed`) | `white-space: nowrap` 제목, Mobile에서만 넘침 |
 | N-01 ~ N-09 | 이슈 0개 (`needsReview: true` 허용) | PRD 13.1 |
 
-- Positive는 "기대한 이슈가 있다"를 확인한다. 다른 이슈가 함께 나오면 실패로 보지 않지만 로그에 남긴다. 각 Fixture는 다른 문제가 생기지 않게 최소한으로 만든다.
+- Positive 판정:
+  - 기대 이슈(`expected`)는 모두 같은 type, subtype, priority, viewportTag, 대상 요소(`data-testid`)로 `needsReview: false`인 상태로 탐지되어야 한다.
+  - 기대하지 않은 이슈 중 `needsReview: false`인 것이 있으면 **실패**한다. Positive 페이지는 의도한 문제 외에는 이슈가 없도록 만들었으므로, 추가 이슈는 탐지 코드의 오탐이거나 Fixture의 잘못이다. 어느 쪽인지 확인하고 고친다.
+  - 기대하지 않은 이슈 중 `needsReview: true`인 것은 실패로 보지 않고 로그에 남긴다(Negative 기준과 같다).
+  - 허용 이슈(`allowed`)에 적힌 이슈는 나와도, 나오지 않아도 통과한다. PRD가 결과를 둘 중 하나로 허용한 경우에만 쓴다(예: P-06의 연결된 `text-overflow`).
+- 각 Fixture는 의도한 문제 외에 다른 문제가 생기지 않게 최소한으로 만든다.
 - Fixture의 기본 스타일은 CJK 폰트(Noto Sans KR)를 쓴다(PRD 5.2.3).
 - 결과는 README에 표로 기록한다(PRD 13.2).
 
@@ -640,8 +688,11 @@ PRD에 없던 구현 결정이다. AGENTS.md 6장에 따라 보고 대상이다.
 9. 새 파일 `src/server/detect/order.ts`, `src/server/collect/types.ts`(1.3, 3.1).
 10. `spill`의 테두리 박스를 "조상"이 아니라 "자신 또는 조상"에서 찾는다(4.2). 배경이 있는 버튼 밖으로 글자가 넘치는 경우를 잡기 위해서다. PRD 5.3.2도 같이 고쳤다.
 11. `hidden-clip` 판정을 `page-scroll`보다 먼저 한다(6.4).
+12. Overlap 영역과 Viewport Overflow 범위는 `overflow`로 잘린 부분을 뺀 보이는 영역으로 계산한다(3.6). PRD 5.3.3, 5.3.4의 "의도된 디자인 제외"를 구현하는 방법이다.
+13. Positive Fixture에서 기대하지 않은 `needsReview: false` 이슈는 실패로 본다. 허용 이슈(`allowed`)를 둔다(12.2).
+14. 새 파일 `src/server/detect/geometry.ts`(3.6).
 
 ---
 
-**Document Status:** Draft v2.0
+**Document Status:** Draft v2.1
 **Next Step:** DOMAIN_MODEL을 PRD v1.2 8.2 기준으로 다시 작성한다.

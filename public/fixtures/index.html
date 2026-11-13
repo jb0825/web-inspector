@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fixture 목록</title>
+<!--
+  Fixture 15종 목록 (PRD 13.1, DETECTION_RULES 12.2).
+  기대 결과의 기준은 tests/fixtures/expected.ts다. 이 표를 고치면 그 파일과 맞는지 확인한다.
+  이 페이지는 Fixture가 아니라 검사 대상이 아니다.
+-->
+<link rel="stylesheet" href="/fixtures/assets/base.css">
+<style>
+  .fixture-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 15px;
+  }
+
+  .fixture-table th,
+  .fixture-table td {
+    padding: 8px;
+    border-bottom: 1px solid #d0d7de;
+    text-align: left;
+    vertical-align: top;
+  }
+
+  .fixture-table code {
+    font-family: 'Noto Sans KR';
+    font-size: 14px;
+  }
+
+  /* Mobile에서는 표를 세로 목록으로 바꾼다 */
+  @media (max-width: 720px) {
+    .fixture-table thead {
+      display: none;
+    }
+
+    .fixture-table tr,
+    .fixture-table td {
+      display: block;
+    }
+
+    .fixture-table tr {
+      padding: 8px 0;
+      border-bottom: 1px solid #d0d7de;
+    }
+
+    .fixture-table td {
+      padding: 2px 0;
+      border: 0;
+    }
+  }
+</style>
+</head>
+<body>
+  <header class="site-header"><span class="brand">AI Website Inspector · Fixtures</span></header>
+
+  <main class="page">
+    <section>
+      <h1>Fixture 15종</h1>
+      <p class="lead">Positive는 기대한 이슈가 정확히 그것만 탐지되어야 하고, Negative는 이슈가 0개여야 합니다(needsReview: true는 허용).</p>
+    </section>
+
+    <section>
+      <h2>Positive</h2>
+      <table class="fixture-table">
+        <thead>
+          <tr><th>ID</th><th>내용</th><th>기대 결과</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><a href="/fixtures/positive/P-01.html">P-01</a></td>
+            <td>Mobile에서 width: 600px 고정 박스</td>
+            <td>viewport-overflow · page-scroll 1개, P0, mobile-only (원인 1개만)</td>
+          </tr>
+          <tr>
+            <td><a href="/fixtures/positive/P-02.html">P-02</a></td>
+            <td>고정 너비 버튼 안의 긴 한글 텍스트, Mobile에서만 잘림, 첫 화면 아래</td>
+            <td>text-overflow · clipped 1개, P1, mobile-only</td>
+          </tr>
+          <tr>
+            <td><a href="/fixtures/positive/P-03.html">P-03</a></td>
+            <td>같은 부모 안의 absolute 버튼 두 개가 겹침</td>
+            <td>element-overlap · interactive 1개, P0, both, Confidence 1.0</td>
+          </tr>
+          <tr>
+            <td><a href="/fixtures/positive/P-04.html">P-04</a></td>
+            <td>body overflow-x: hidden + 화면 밖으로 나간 이미지</td>
+            <td>viewport-overflow · hidden-clip 1개, P1, both</td>
+          </tr>
+          <tr>
+            <td><a href="/fixtures/positive/P-05.html">P-05</a></td>
+            <td>고정 높이 카드 밖으로 넘친 본문, 첫 화면 아래</td>
+            <td>text-overflow · spill 1개, P2, both</td>
+          </tr>
+          <tr>
+            <td><a href="/fixtures/positive/P-06.html">P-06</a></td>
+            <td>white-space: nowrap 제목이 Mobile에서 넘침</td>
+            <td>viewport-overflow · page-scroll 1개(원인 = 제목), P0, mobile-only</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Negative</h2>
+      <table class="fixture-table">
+        <thead>
+          <tr><th>ID</th><th>내용</th><th>기대 결과</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><a href="/fixtures/negative/N-01.html">N-01</a></td><td>Hero 배경 이미지 위의 텍스트</td><td>이슈 0개</td></tr>
+          <tr><td><a href="/fixtures/negative/N-02.html">N-02</a></td><td>ellipsis가 적용된 카드 제목, line-clamp 설명</td><td>이슈 0개</td></tr>
+          <tr><td><a href="/fixtures/negative/N-03.html">N-03</a></td><td>overflow-x: auto 가로 스크롤 캐러셀</td><td>이슈 0개</td></tr>
+          <tr><td><a href="/fixtures/negative/N-04.html">N-04</a></td><td>position: sticky 헤더</td><td>이슈 0개</td></tr>
+          <tr><td><a href="/fixtures/negative/N-05.html">N-05</a></td><td>transform으로 숨겨진 오프캔버스 메뉴</td><td>이슈 0개</td></tr>
+          <tr><td><a href="/fixtures/negative/N-06.html">N-06</a></td><td>쿠키 동의 배너 (fixed, 하단)</td><td>이슈 0개</td></tr>
+          <tr><td><a href="/fixtures/negative/N-07.html">N-07</a></td><td>이미지 위의 배지 (absolute, 부모 안)</td><td>이슈 0개 (Needs Review 1개 허용)</td></tr>
+          <tr><td><a href="/fixtures/negative/N-08.html">N-08</a></td><td>overflow: hidden 둥근 카드 안에서 잘린 큰 이미지</td><td>이슈 0개</td></tr>
+          <tr><td><a href="/fixtures/negative/N-09.html">N-09</a></td><td>.sr-only 텍스트와 left: -9999px skip link</td><td>이슈 0개</td></tr>
+        </tbody>
+      </table>
+    </section>
+  </main>
+</body>
+</html>

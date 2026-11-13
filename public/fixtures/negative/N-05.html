@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>N-05 · transform으로 숨긴 오프캔버스 메뉴</title>
+<!--
+  Fixture: N-05 (Negative)
+  검증: PRD 5.3.1 후보 조건(visibility, aria-hidden), 5.3.4 제외 조건(오프캔버스 메뉴), 13.1
+        DETECTION_RULES 3.2, 6.2, 12.2
+
+  의도:
+  - 오프캔버스 메뉴(data-testid="n05-drawer")는 position: fixed; right: 0이고
+    transform: translateX(100%)로 화면 오른쪽 밖에 숨어 있다.
+  - 닫힌 상태에서는 visibility: hidden + aria-hidden="true"라 메뉴와 그 안의 링크 모두 후보 요소가 아니다.
+    따라서 화면 밖에 있어도 Viewport Overflow로 잡히지 않는다.
+  - fixed 요소라 문서의 가로 스크롤 너비를 늘리지 않는다.
+  - 메뉴 열기 버튼(data-testid="n05-menu-button")은 JS 없이 닫힌 상태만 보여 준다.
+    이 Fixture는 정적이어야 하므로 열고 닫는 동작은 넣지 않는다.
+
+  기대 결과: 이슈 0개 (needsReview: true인 이슈는 허용)
+-->
+<link rel="stylesheet" href="/fixtures/assets/base.css">
+<style>
+  .top-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border-bottom: 1px solid #d0d7de;
+  }
+
+  .top-bar .brand {
+    font-weight: 700;
+    font-size: 18px;
+  }
+
+  .menu-button {
+    padding: 6px 12px;
+    border: 1px solid #d0d7de;
+    border-radius: 8px;
+    background: #ffffff;
+    color: #1f2328;
+    font-size: 15px;
+  }
+
+  .drawer {
+    position: fixed;
+    top: 0;
+    right: 0;
+    width: 280px;
+    height: 100%;
+    padding: 24px;
+    background: #ffffff;
+    box-shadow: -4px 0 16px rgba(0, 0, 0, 0.15);
+    /* 닫힌 상태: 화면 오른쪽 밖으로 밀어 두고 보이지 않게 한다 */
+    transform: translateX(100%);
+    visibility: hidden;
+  }
+
+  .drawer ul {
+    margin: 16px 0 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .drawer li + li {
+    margin-top: 12px;
+  }
+
+  .content p + p {
+    margin-top: 12px;
+  }
+</style>
+</head>
+<body>
+  <header class="top-bar">
+    <span class="brand">동네 서점</span>
+    <button type="button" class="menu-button" aria-expanded="false" aria-controls="drawer" data-testid="n05-menu-button">메뉴</button>
+  </header>
+
+  <nav id="drawer" class="drawer" aria-hidden="true" aria-label="전체 메뉴" data-testid="n05-drawer">
+    <h2>전체 메뉴</h2>
+    <ul>
+      <li><a href="#new" data-testid="n05-drawer-link-1">새로 들어온 책</a></li>
+      <li><a href="#events" data-testid="n05-drawer-link-2">이번 달 행사</a></li>
+      <li><a href="#visit" data-testid="n05-drawer-link-3">찾아오는 길</a></li>
+    </ul>
+  </nav>
+
+  <main class="page content">
+    <h1 id="new">이번 주 새로 들어온 책</h1>
+    <p>소설 여섯 권과 에세이 네 권이 새로 들어왔습니다. 매장 입구 쪽 서가에 따로 모아 두었습니다.</p>
+    <p id="events">이번 달에는 작가와의 만남을 두 번 엽니다. 자리가 한정되어 있어 매장에서 미리 신청해 주세요.</p>
+    <p id="visit">지하철역 2번 출구에서 걸어서 5분 거리입니다. 주말에는 오후 여덟 시까지 문을 엽니다.</p>
+  </main>
+</body>
+</html>

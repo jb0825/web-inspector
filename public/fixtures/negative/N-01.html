@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>N-01 · Hero 배경 이미지 위의 텍스트</title>
+<!--
+  Fixture: N-01 (Negative)
+  검증: PRD 5.3.3 제외 조건 2(이미지·배경 이미지가 상대를 완전히 포함하는 의도된 오버레이), 13.1
+        DETECTION_RULES 5.1, 5.5 2번, 12.2
+
+  의도:
+  - Hero(data-testid="n01-hero")는 position: absolute인 <img>(data-testid="n01-hero-image")를 배경으로
+    깔고, 그 위에 제목, 문단, 버튼을 올린다. 이미지 rect가 텍스트와 버튼 영역을 완전히 포함하므로
+    겹침에서 제외된다.
+  - 아래 배너(data-testid="n01-banner")는 CSS background-image를 쓴다. 배경은 요소가 아니라서
+    비교 대상이 아니고, 배너 안 텍스트끼리는 겹치지 않는다.
+  - 텍스트는 Hero 안에서 줄바꿈되어 Hero 영역(테두리 박스) 밖으로 나가지 않는다.
+
+  기대 결과: 이슈 0개 (needsReview: true인 이슈는 허용)
+-->
+<link rel="stylesheet" href="/fixtures/assets/base.css">
+<style>
+  .hero {
+    position: relative;
+    min-height: 420px;
+    padding: 48px 24px;
+    border-radius: 16px;
+    background: #1f3a5f;
+    color: #ffffff;
+  }
+
+  .hero-image {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 16px;
+  }
+
+  /* 이미지 위에 올라가는 콘텐츠. absolute 이미지보다 뒤에 오고 position이 있어 위에 그려진다. */
+  .hero-content {
+    position: relative;
+    max-width: 560px;
+  }
+
+  .hero-content p {
+    margin: 16px 0 24px;
+    font-size: 17px;
+  }
+
+  .banner {
+    padding: 32px 24px;
+    border-radius: 16px;
+    background-color: #1f3a5f;
+    background-image: url('/fixtures/assets/hero.svg');
+    background-size: cover;
+    background-position: center;
+    color: #ffffff;
+  }
+
+  .banner p {
+    margin-top: 8px;
+  }
+</style>
+</head>
+<body>
+  <header class="site-header"><span class="brand">클라우드 노트</span></header>
+
+  <main class="page">
+    <section class="hero" data-testid="n01-hero">
+      <img class="hero-image" src="/fixtures/assets/hero.svg" width="1440" height="600" alt="" data-testid="n01-hero-image">
+      <div class="hero-content">
+        <h1 data-testid="n01-hero-title">생각을 정리하는 가장 빠른 방법</h1>
+        <p data-testid="n01-hero-text">메모, 할 일, 문서를 한곳에 모으고 어느 기기에서든 이어서 작성하세요.</p>
+        <a class="btn" href="#start" data-testid="n01-hero-cta">무료로 시작하기</a>
+      </div>
+    </section>
+
+    <section class="banner" data-testid="n01-banner">
+      <h2>팀 요금제 출시</h2>
+      <p>팀원 5명까지 첫 3개월 동안 무료로 쓸 수 있습니다.</p>
+    </section>
+
+    <section class="filler" id="start">
+      <h2>시작하는 방법</h2>
+      <p>계정을 만들고 첫 노트를 작성해 보세요. 기존 메모 앱의 내용은 가져오기 기능으로 옮길 수 있습니다.</p>
+    </section>
+  </main>
+</body>
+</html>
