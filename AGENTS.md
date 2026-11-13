@@ -92,6 +92,7 @@ src/
       fonts.ts                          # CJK 폰트 로드
       stabilize.ts                      # PRD 5.2.2 렌더링 안정화 절차
       devices.ts                        # Desktop / Mobile context 설정
+      screenshot.ts                     # 전체 페이지 스크린샷, PNG 헤더에서 실제 크기 읽기 (PRD 5.2.4)
     collect/
       inpage/                           # page.evaluate로 실행되는 브라우저 내부 코드
       collect.ts                        # viewport별 측정 데이터 수집, 반올림, 후보 정리
@@ -113,6 +114,8 @@ src/
       sentences.ts                      # Evidence 문장 템플릿
       sourceHints.ts
       crop.ts                           # cropRect 계산 (순수 함수, 이미지를 만들지 않음, PRD 5.4.1)
+      title.ts                          # Issue Title 템플릿 (PRD 5.4.4)
+      finalize.ts                       # finalizeIssues(중간 이슈 → Issue), buildViewportResult
     priority/
       rules.ts                          # S/I/R 규칙 표 (PRD 5.5.3)
       score.ts
@@ -132,7 +135,7 @@ src/
       redis.ts                          # 읽기·쓰기, 동시 실행 슬롯, analyze 잠금, 멈춘 검사 처리
       blob.ts
       schemas.ts                        # Redis에서 읽은 Inspection 문서 검증
-      invariants.ts                     # assertInspectionInvariants (테스트용, DOMAIN_MODEL 3장)
+      invariants.ts                     # assertInspectionInvariants(inspection, 'browser' | 'final') (테스트용, DOMAIN_MODEL 3장)
 
   types/                                # 서버와 클라이언트가 함께 쓰는 타입 (런타임 코드 없음)
     inspection.ts                       # PRD 8.2 데이터 모델 (단일 기준)
