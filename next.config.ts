@@ -16,9 +16,12 @@ const nextConfig: NextConfig = {
   // pnpm 심볼릭 링크 구조와 런타임 경로 계산 때문에 트레이싱에서 빠질 수 있는 파일을 포함시킨다.
   // - @sparticuz/chromium/bin: Chromium, 폰트 설정, swiftshader 압축 파일
   // - public/fonts: Vercel에서 등록할 Noto Sans KR (AGENTS.md 7.1)
+  // - playwright-core/browsers.json: coreBundle.js가 import 시점에 계산한 경로로 읽어서 트레이서가
+  //   찾지 못한다. 빠지면 route 모듈 로드 단계에서 실패해 본문 없는 500이 난다(T02 Vercel 확인).
   outputFileTracingIncludes: {
     "/api/**": [
       "./node_modules/@sparticuz/chromium/bin/**/*",
+      "./node_modules/playwright-core/browsers.json",
       "./public/fonts/*.ttf",
       "./public/fonts/OFL.txt",
     ],
