@@ -32,6 +32,8 @@ const internalSchema = z.object({
     z.string().min(16),
   ),
   VERCEL_AUTOMATION_BYPASS_SECRET: optionalString,
+  // Vercel 시스템 환경변수: 현재 배포의 호스트(프로토콜 없음). /analyze 내부 호출 주소에 쓴다(PRD 8.1.2)
+  VERCEL_URL: optionalString,
 });
 
 const storeSchema = z.object({
@@ -55,6 +57,8 @@ export interface RuntimeEnv {
 export interface InternalEnv {
   INTERNAL_API_SECRET: string;
   VERCEL_AUTOMATION_BYPASS_SECRET?: string;
+  /** Vercel에서만 있다. 예: web-inspector-abc123.vercel.app */
+  VERCEL_URL?: string;
 }
 
 export interface StoreEnv {

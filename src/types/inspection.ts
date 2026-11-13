@@ -151,6 +151,8 @@ export interface Issue {
     cssProblem: string;
     fixDirection: string;
     suggestedFix: string;
+    /** PRD 5.7.1: 규칙 기반 분석('rule') 또는 AI 분석('ai') */
+    source: 'rule' | 'ai';
   };
   analysisSkippedReason?: 'needs-review' | 'limit-exceeded' | 'ai-failed';
 }

@@ -165,8 +165,8 @@ Website URL → Browser Rendering → Measurement → Rule-based Detection
 
 | 구분 | 항목 |
 |---|---|
-| **Must** | URL 검사, Desktop/Mobile 렌더링, 탐지 3종, 중복 제거, Evidence와 하이라이트 스크린샷, 규칙 기반 우선순위(Needs Review 분류 포함), AI 원인 분석, 태스크 생성, 프롬프트 생성과 복사, 진행 상태 polling, Vercel 배포, 샘플 리포트 |
-| **Should** | 단계별 진행 표시, Category/Priority 필터, Desktop/Mobile 비교 태그, 결과 공유 URL, Needs Review 태스크 표시 토글 |
+| **Must** | URL 검사, Desktop/Mobile 렌더링, 탐지 3종, 중복 제거, Evidence와 하이라이트 스크린샷, 규칙 기반 우선순위(Needs Review 분류 포함), 규칙 기반 원인 분석, 태스크 생성, 프롬프트 생성과 복사, 진행 상태 polling, Vercel 배포, 샘플 리포트 |
+| **Should** | AI 원인 분석 보강, 단계별 진행 표시, Category/Priority 필터, Desktop/Mobile 비교 태그, 결과 공유 URL, Needs Review 태스크 표시 토글 |
 | **Won't (MVP)** | 최근 검사 내역, Viewport 사용자 설정 UI, 검사 취소, AI 재분석 요청, 이슈 상태 관리(Open/Ignored/Resolved), 사용자 인증 및 9장의 항목 |
 
 ### 5.1 Feature 1. Website URL Inspection
@@ -497,6 +497,13 @@ Reach 보정 (최대 5, 위 표의 R에 더한다):
 | **코드 (결정적)** | 탐지, 측정값, Evidence 문장, Issue Title, Selector, Issue ID, 우선순위, 태스크 그룹 구성, Acceptance Criteria, 최종 프롬프트 조립 |
 | **AI (보조)** | 원인 분석, 원인의 확실성 표시, 수정 방향, 권장 CSS 수정안, 태스크 제목과 설명 |
 
+**분석 방식 (MVP):** 원인 분석은 규칙 기반 분석을 기본으로 한다. 코드가 측정값과 `computedStyle`로 원인 후보를 판정해 `Issue.analysis`를 채운다(`source: 'rule'`). AI 분석은 후순위 작업이며, 연동되면 같은 필드를 AI 결과로 바꾸고(`source: 'ai'`), AI가 실패한 이슈는 규칙 분석 결과를 그대로 쓴다.
+
+- 규칙 분석의 `certainty`는 `likely` 또는 `uncertain`만 쓴다. 계산된 CSS 값으로는 작성자가 쓴 원래 값(고정 px인지 %인지)을 알 수 없기 때문이다.
+- 맞는 규칙이 없으면 `certainty: 'uncertain'`으로 두고, 확인한 CSS 값을 근거로 적는다.
+- 규칙 분석은 같은 입력에 항상 같은 결과를 낸다(12.2 Deterministic Core).
+- 태스크 제목은 템플릿으로 만든다(`titleSource: 'template'`).
+
 AI의 출력은 구조화된 JSON으로만 받는다. 측정값과 ID는 AI 출력에서 가져오지 않고, 항상 코드가 원본 데이터에서 직접 넣는다.
 
 #### 5.7.2 AI 입력 (이슈별, 크기 제한 있음)
@@ -620,7 +627,7 @@ Priority: {priority} | Viewport: {viewportTag}
 - Attributes: {stableAttributes}
 - HTML: `{htmlSnippet}`
 
-### Likely Root Cause ({certainty})
+### Likely Root Cause ({certainty}, {source: rule → "rule-based" / ai → "AI"})
 {rootCause}
 
 ### Required Changes
@@ -770,7 +777,7 @@ Viewport별 오류와 AI 분석 상태를 따로 기록하고(8.2), 최상위 `s
 - 하이라이트 스크린샷 (occurrence별, 5.4.1)
 - Evidence 문장과 측정값 표 (occurrence별)
 - Selector, Source Hints
-- Root Cause Analysis (certainty 배지 포함) 또는 "AI 분석 없음"
+- Root Cause Analysis: certainty 배지와 출처("규칙 기반 분석" / "AI 분석") 표시
 - Suggested Fix
 - 관련 Development Task 링크
 
@@ -847,9 +854,10 @@ Viewport별 오류와 AI 분석 상태를 따로 기록하고(8.2), 최상위 `s
 - analyze 함수가 즉시 202로 응답하고 자기 `after()`에서 작업하는 이유: create 함수가 AI 단계가 끝날 때까지 붙잡히지 않게 하기 위해서다.
 
 `/analyze` 내부 호출 규칙:
-- 호출 URL은 현재 배포의 절대 URL로 만든다(요청 헤더의 host 또는 Vercel 시스템 환경변수 기반).
+- 호출 URL은 현재 배포의 절대 URL로 만든다. 1순위는 검사 요청이 들어온 주소(요청 헤더의 host)이고, host를 알 수 없을 때만 Vercel 시스템 환경변수 `VERCEL_URL`을 쓴다. 배포별 생성 주소(`VERCEL_URL`)는 기본 배포 보호에서 production 배포도 보호 대상이라 401로 막힐 수 있다.
 - Preview 배포에 Deployment Protection이 켜져 있으면 내부 호출이 401로 막힌다. Protection Bypass for Automation 헤더를 함께 보낸다.
-- 내부 호출이 실패하면 1회 재시도하고, 그래도 실패하면 `analysis.status: 'failed'`, `error.code: 'AI_FAILED'`로 저장하고 `partial`로 끝낸다.
+- 내부 호출이 확실히 실패하면(202가 아닌 응답, 연결 거부 등) 1회 재시도하고, 그래도 실패하면 `analysis.status: 'failed'`, `error.code: 'AI_FAILED'`로 저장하고 `partial`로 끝낸다.
+- 응답 대기가 시간 초과면 다시 시도하지 않고 문서도 쓰지 않는다. analyze가 실제로 시작되었을 수 있기 때문이다. 정말 실행되지 않았다면 300초 뒤 멈춘 검사 처리(DOMAIN_MODEL 4.4)가 `partial`로 보여준다.
 - analyze는 `status: analyzing`이고 `analysis.status: 'pending'`일 때만 작업한다. 그 밖의 경우 409를 반환한다(중복 실행 방지).
 
 #### 8.1.3 시간 예산 (브라우저 검사 함수, 총 300초 안에서)
@@ -883,7 +891,7 @@ type Priority = 'P0' | 'P1' | 'P2' | 'P3';
 type InspectionStatus = 'pending' | 'running' | 'analyzing' | 'completed' | 'partial' | 'failed';
 type ErrorCode =
   | 'INVALID_URL' | 'BLOCKED_TARGET' | 'TOO_MANY_INSPECTIONS'
-  | 'NAVIGATION_TIMEOUT' | 'HTTP_ERROR' | 'BROWSER_CRASH' | 'DETECTION_FAILED'
+  | 'NAVIGATION_TIMEOUT' | 'NAVIGATION_FAILED' | 'HTTP_ERROR' | 'BROWSER_CRASH' | 'DETECTION_FAILED'
   | 'TIME_BUDGET_EXCEEDED' | 'STORAGE_FAILED' | 'AI_FAILED' | 'INTERNAL_ERROR';
 
 interface InspectionErrorInfo { code: ErrorCode; message: string }
@@ -982,6 +990,7 @@ interface Issue {
     cssProblem: string;
     fixDirection: string;
     suggestedFix: string;
+    source: 'rule' | 'ai';              // 5.7.1
   };
   analysisSkippedReason?: 'needs-review' | 'limit-exceeded' | 'ai-failed';
 }

@@ -88,11 +88,11 @@ Inspection (Redis 문서 1개, 집합의 루트)
 | I-2 | `status = failed`이면 `error`가 있다. 그 밖의 상태에서는 `error`가 없다. |
 | I-3 | `pending`, `running`에서는 `issues`와 `tasks`가 비어 있고 `viewports`가 모두 `null`이다. |
 | I-4 | `analyzing`, `completed`, `partial`에서는 `viewports` 중 하나 이상이 `null`이 아니다. |
-| I-5 | 브라우저 단계가 끝난 뒤(`analyzing` 이후, 또는 `failed`)에는 각 viewport에 대해 `viewports[v]`와 `viewportErrors[v]` 중 정확히 하나만 `null`이 아니다. 단, 렌더링 전에 실패한 `failed`는 둘 다 `null`일 수 있다. |
+| I-5 | 브라우저 단계가 끝난 뒤(`analyzing` 이후, 또는 `failed`)에는 각 viewport에 대해 `viewports[v]`와 `viewportErrors[v]` 중 정확히 하나만 `null`이 아니다. 단, 렌더링 전에 실패한 `failed`는 둘 다 `null`일 수 있다. 브라우저 실행 실패, 결과 저장 실패(`STORAGE_FAILED`), 예상하지 못한 오류로 끝난 `failed`도 같다. 이때 `viewports`, `viewportErrors`, `issues`는 모두 비운다. |
 | I-6 | `completed`이면 `viewportErrors`가 모두 `null`이고 `analysis.status`는 `completed` 또는 `skipped`다. |
 | I-7 | `partial`이면 `viewportErrors`에 `null`이 아닌 값이 있거나 `analysis.status = failed`다. |
 | I-8 | `completed`, `partial`, `failed`이면 `completedAt`이 있다. |
-| I-9 | `issues.length = 0`이고 브라우저 단계가 끝났으면 `analysis.status`는 `skipped`이고 `tasks`는 비어 있다. |
+| I-9 | `issues.length = 0`이고 AI 단계가 끝났으면(`completed`, `partial`) `analysis.status`는 `skipped`이고 `tasks`는 비어 있다. `analyzing`에서는 이슈가 0개여도 `analysis.status`가 `pending`/`running`이다(이슈 0개도 analyze를 호출하고, skipped 처리는 analyze가 한다). |
 | I-10 | `analysis.error`가 있으면 `analysis.status = failed`이고 `error.code = AI_FAILED`다. |
 | I-11 | `issues.length ≤ MAX_ISSUES(200)`, `issuesDetected ≥ issues.length`, `issuesTruncated = issuesDetected > issues.length`다(PRD 5.3.7). `pending`, `running`에서는 `issuesDetected = 0`이다. |
 
@@ -185,7 +185,10 @@ stateDiagram-v2
 | `pending`, `running` | `createdAt`에서 300초 이상 지남 | `failed`, `error.code = TIME_BUDGET_EXCEEDED` |
 | `analyzing` | `updatedAt`에서 300초 이상 지남 | `partial`, `analysis.status = failed`, `analysis.error.code = AI_FAILED` |
 
-300초는 함수 `maxDuration`과 같은 값이다. 이 규칙은 `src/server/store/redis.ts`의 읽기 함수 한 곳에만 둔다. 화면이 영원히 진행 중으로 남지 않게 하기 위해서다.
+- `analyzing`을 `partial`로 보여줄 때, `analysis`도 `analysisSkippedReason`도 없는 이슈에는 `analysisSkippedReason`을 채운다(needsReview면 `needs-review`, 아니면 `ai-failed`). AI 단계가 끝난 문서의 S-10을 지키기 위해서다.
+- `completedAt`은 기준 시각(`createdAt` 또는 `updatedAt`) + 300초로 둔다. 같은 문서는 몇 번 읽어도 같은 응답이 된다.
+
+300초는 함수 `maxDuration`과 같은 값이다. 이 규칙(`src/server/status.ts`의 `applyStaleRule`)은 `src/server/store/redis.ts`의 읽기 함수 한 곳에서만 적용한다. 화면이 영원히 진행 중으로 남지 않게 하기 위해서다.
 
 ---
 
@@ -340,6 +343,8 @@ PRD에 없던 결정이다(AGENTS.md 6장).
 10. 공유 URL로 페이지 텍스트 일부와 스크린샷이 공개된다는 점을 안내한다(8장).
 11. 새 파일: `src/server/store/invariants.ts`, `src/server/store/schemas.ts`, `src/server/collect/schemas.ts`, `src/schemas/inspectionRequest.ts`, `src/schemas/enums.ts`
 12. 이슈 수 상한 관련 불변 조건 I-11, 겹침 이슈 묶기 관련 불변 조건 S-13을 추가했다(PRD 5.3.3, 5.3.7).
+13. I-9는 AI 단계가 끝난 문서에만 적용한다. 브라우저 실행·결과 저장 실패로 끝난 `failed`는 viewport 결과와 이슈를 비운다(I-5). 멈춘 `analyzing`을 보여줄 때 이슈의 skip 사유를 채운다(4.4). (T09)
+14. 스크린샷 업로드가 실패한 viewport는 `STORAGE_FAILED`로 처리하고, 남은 viewport의 수집 데이터로 이슈를 다시 만든다. `screenshotUrl`이 없는 `ViewportResult`를 만들지 않는다. (T09)
 
 ---
 
