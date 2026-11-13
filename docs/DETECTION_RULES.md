@@ -18,6 +18,7 @@
 - 추가: 검사 1회당 이슈 상한 `MAX_ISSUES = 200`, 처리 순서를 병합 → Priority → 상한 → ID → 연결 → Evidence로 변경(1.3, 7.6)
 - 명시: 비교 대상 "말단"의 해석(5.1), 제외 조건 2의 영역 기준(5.5), `rootClip`이면 `unexplainedPageScroll`이 아님(6.4)
 - 추가: 새 파일 `src/server/detect/pipeline.ts`(`buildIssues`)와 병합 뒤 중간 타입(1.3, 1.5), 매칭 기준 적용 순서(7.2), 규칙 2의 동점 처리(7.1)
+- 명시: Evidence 문장의 세부 규칙(양쪽 element-out, hidden-clip 값, 비율 반올림, 20자 기준), cropRect 반올림(8.1, 8.3), Evidence 단계 함수 `finalizeIssues`(1.3)
 
 ### Changelog (v1.0 → v2.0)
 
@@ -73,10 +74,10 @@ v1.0(Detection Guide)은 PRD v1.1 이전 기준이라 PRD와 충돌했다. v2.0�
   → capIssues (MAX_ISSUES, 7.6)       src/server/detect/order.ts
   → orderAndAssignIds                 src/server/detect/order.ts
   → linkRelated (규칙 4)               src/server/detect/dedup.ts
-  → buildEvidence                     src/server/evidence/*.ts
+  → finalizeIssues (Evidence, 8장)     src/server/evidence/finalize.ts
 ```
 
-`src/server/detect/pipeline.ts`의 `buildIssues({ desktop, mobile })`가 `detectTextOverflow`부터 `linkRelated`까지를 한 번에 실행한다. 각 입력은 `CollectedViewport | null`(실패한 viewport는 `null`)이다. viewport 하나의 탐지와 Dedup 규칙 2는 `detectViewport(c)`로 따로 부를 수 있다(10장: 예외가 나면 그 viewport만 `null`로 처리하기 위해서).
+`src/server/detect/pipeline.ts`의 `buildIssues({ desktop, mobile })`가 `detectTextOverflow`부터 `linkRelated`까지를 한 번에 실행한다. Evidence 단계는 스크린샷 크기가 필요하므로 따로 부른다: `finalizeIssues(buildIssues(…).issues, { desktop: { collected, screenshot }, mobile: … })`가 `Issue[]`를 만든다(AI 필드 제외). 각 입력은 `CollectedViewport | null`(실패한 viewport는 `null`)이다. viewport 하나의 탐지와 Dedup 규칙 2는 `detectViewport(c)`로 따로 부를 수 있다(10장: 예외가 나면 그 viewport만 `null`로 처리하기 위해서).
 
 - `order.ts`는 AGENTS.md 3장 구조에 없는 새 파일이다. ID 부여를 Dedup과 분리해 단위 테스트하기 위해서다.
 - `geometry.ts`(3.6)는 `overlap.ts`와 `viewportOverflow.ts`가 함께 쓰는 보이는 영역 계산 순수 함수다.
@@ -224,6 +225,7 @@ interface CollectedElement {
 | cropRect 경계 (8.3) | 저장된 스크린샷의 실제 크기 `screenshotWidth × screenshotHeight` |
 
 `innerWidth`/`innerHeight`는 기록과 진단용으로만 남긴다.
+루트가 가로를 자르는 페이지(`rootClip`)의 스크린샷 너비는 `layoutWidth`다(PRD 5.2.4).
 
 ### 3.2 후보 선정 (PRD 5.3.1)
 
@@ -633,7 +635,13 @@ issuesTruncated = issuesDetected > MAX_ISSUES
 - 두 축이 모두 넘친 `clipped`는 두 문장을 공백으로 잇는다.
 - 방향 목록: `왼쪽`, `오른쪽`, `위쪽`, `아래쪽` 중 delta가 있는 것을 이 순서로 `, `로 연결
 - `{a 대상}`: `tag "textSnippet 앞 20자"`, 텍스트가 없으면 selector
-- `affectedDescendants`가 있으면 문장 끝에 ` 하위 요소 {N}개가 함께 화면 밖으로 나갑니다.`를 붙인다.
+- `affectedDescendants`가 있으면 문장 끝에 ` 하위 요소 {N}개가 함께 화면 밖으로 나갑니다.`를 붙인다. 0이면 붙이지 않는다.
+- `overlapRatioPercent`도 다른 숫자처럼 `Math.round`한 정수로 넣는다.
+- `element-out`이 양쪽으로 모두 나갔으면 오른쪽 문장 다음에 왼쪽 문장을 공백으로 잇는다.
+- `hidden-clip`의 값은 `overflowRight`가 있으면 그 값, 없으면 `overflowLeft`다.
+- `spill`의 `{B 태그}`는 `relatedElements[0]`(bordered-ancestor)의 태그다.
+- "앞 20자"는 코드 포인트 기준이다(이모지를 반으로 자르지 않는다). 말줄임표는 붙이지 않는다.
+- 문장은 occurrence마다 그 viewport의 측정값으로 만든다. 병합된 이슈는 occurrence마다 문장이 다를 수 있다.
 
 ### 8.2 Issue Title (PRD 5.4.4)
 
@@ -647,12 +655,25 @@ type 라벨: `Text Overflow`, `Element Overlap`, `Viewport Overflow`. Overlap의
 ### 8.3 `cropRect` (`src/server/evidence/crop.ts`)
 
 ```text
-box = occurrence.boundingBox (Overlap은 a.rect ∪ b.rect)
+box = occurrence.boundingBox
+if type == element-overlap:    box = a.rect ∪ b.rect
+if type == viewport-overflow:  box = box ∪ ([measured.elementLeft, measured.elementRight] × box의 세로 범위)
+if subtype == spill:           box = box ∪ ([textLeft, textRight] × [textTop, textBottom])
+// clipped는 잘린 글자가 화면에 보이지 않으므로 넓히지 않는다
 r = box를 사방 CROP_PADDING_PX만큼 확장
 r의 너비가 CROP_MIN_WIDTH_PX보다 작으면 중심 기준으로 넓힘, 높이도 같은 방식
 r을 [0, screenshotWidth] × [0, screenshotHeight] 안으로 이동 (크기가 더 크면 잘라냄)   // 3.1.1: 실제 스크린샷 크기
 if box.y >= screenshotHeight: cropRect = null
 ```
+
+- Overlap의 b는 대표 상대 요소(`relatedElements[0]`)다.
+- `box`는 크롭으로 **무엇을 보여줄지**만 정한다. 하이라이트 위치인 `boundingBox`는 요소의 rect 그대로다.
+- Viewport Overflow와 `spill`은 넘친 범위까지 `box`를 넓힌다. 글자가 요소 박스 밖으로 나간 모습이 이 이슈의 핵심 증거이기 때문이다(P-06: 박스 너비 358px, 글자 오른쪽 끝 493px).
+- 좌표와 크기는 `MEASURE_DECIMALS` 자리로 반올림한다. 반올림 뒤 끝이 경계를 넘으면 시작을 당겨 크기(최소 320×160)를 유지한다.
+- 경계로 쓰는 스크린샷 크기는 PNG 헤더에서 읽은 실제 크기다(`src/server/browser/screenshot.ts`).
+  - Mobile에서 페이지가 축소되면 `layoutWidth`보다 넓다(P-01: 616×1334).
+  - 루트가 가로를 자르는 페이지(`rootClip`)는 스크린샷 너비가 `layoutWidth`다(PRD 5.2.4). 사용자가 볼 수 없는 영역을 보여주지 않기 위해서다.
+- `boundingBox`는 스크린샷 밖으로 나갈 수 있다(예: `hidden-clip`). 화면은 하이라이트 박스를 크롭 영역 안으로 잘라 그린다.
 
 ### 8.4 `computedStyle`
 
@@ -821,6 +842,12 @@ PRD에 없던 구현 결정이다. AGENTS.md 6장에 따라 보고 대상이다.
 28. 규칙 2에서 delta가 큰 RawIssue를 통째로 남기고, 같으면 출력 순서가 앞인 것을 남긴다(7.1).
 29. 병합된 Viewport Overflow 이슈의 `affectedDescendants`는 `occurrences[0]`의 값이다(1.5).
 30. `test:fixtures`는 기대 이슈의 `relatedTestId`, `confidence`, `scores`(expected.ts에 값이 있는 경우)까지 비교하고, 허용 이슈(`allowed`)가 나오면 같은 요소의 주 이슈와 `relatedIssueIds`로 연결되어 있는지 확인한다(12.2).
+31. Evidence 문장의 세부 규칙: 비율도 정수 반올림, 양쪽 `element-out`은 두 문장, `hidden-clip`은 `overflowRight` 우선, "20자"는 코드 포인트 기준, `affectedDescendants`가 0이면 문구 생략(8.1).
+32. cropRect 반올림 방식(8.3).
+33. 새 파일 `src/server/browser/screenshot.ts`(`captureFullPage`, `readPngSize`), `src/server/evidence/title.ts`, `src/server/evidence/finalize.ts`(`finalizeIssues`, `buildViewportResult`). 스크린샷 시간 제한 `SCREENSHOT_TIMEOUT_MS = 10s`(PRD 8.1.3 "측정과 스크린샷 20s" 안의 몫).
+34. `ViewportResult.documentHeight`는 스크린샷 촬영 시점의 값이다. `screenshotTruncated`와 같은 기준이어야 V-2가 성립하기 때문이다.
+35. `rootClip` 페이지의 스크린샷 너비를 `layoutWidth`로 자른다(PRD 5.2.4).
+36. Viewport Overflow와 `spill`의 크롭 기준 박스에 넘침 범위를 포함한다(8.3).
 
 ---
 

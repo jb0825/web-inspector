@@ -230,6 +230,7 @@ Requirements:
 - 두 환경의 검사 결과를 따로 저장한다.
 - 같은 페이지의 Desktop / Mobile 결과를 비교한다(5.6 참고).
 - 스크린샷을 볼 수 있게 한다.
+- `html` 또는 `body`가 `overflow-x: hidden`/`clip`이면 스크린샷 너비를 `layoutWidth`로 자른다. 사용자가 볼 수 없는 영역을 보여주지 않기 위해서다. 그 밖의 경우(예: Mobile 축소로 넓어진 페이지)는 실제 페이지 너비대로 찍는다.
 
 ### 5.3 Feature 3. UI Issue Detection
 

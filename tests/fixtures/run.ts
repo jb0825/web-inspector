@@ -3,27 +3,40 @@
 // 실행 (node --conditions=react-server: server-only를 빈 모듈로 불러온다, AGENTS.md 10장)
 //   pnpm test:fixtures                 15개 전체
 //   pnpm test:fixtures P-01 N-07       일부만
-//   pnpm test:fixtures --repeat 2      전체를 두 번 실행하고 buildIssues 결과가 같은지 확인한다
+//   pnpm test:fixtures --repeat 2      전체를 두 번 실행하고 buildIssues·finalizeIssues 결과가 같은지 확인한다
+//
+// 각 Fixture의 스크린샷과 확인용 HTML(cropRect와 boundingBox)을 .tmp/fixtures-report/에 저장한다.
 //
 // 하나라도 실패하면 종료 코드 1이다.
 
+import { mkdir, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 import type { Browser } from 'playwright-core';
 import { createViewportContext } from '@/server/browser/devices';
 import { launchBrowser } from '@/server/browser/launch';
+import { captureFullPage, type CapturedScreenshot } from '@/server/browser/screenshot';
 import { openAndStabilize } from '@/server/browser/stabilize';
 import { collectViewport } from '@/server/collect/collect';
 import type { CollectedViewport } from '@/server/collect/types';
 import { buildLookup } from '@/server/detect/geometry';
 import { buildIssues, type BuildIssuesResult } from '@/server/detect/pipeline';
 import type { DetectedIssue } from '@/server/detect/types';
-import type { Viewport } from '@/types/inspection';
+import { buildViewportResult, finalizeIssues } from '@/server/evidence/finalize';
+import { assertInspectionInvariants } from '@/server/store/invariants';
+import type { Inspection, Issue, Viewport, ViewportResult } from '@/types/inspection';
 import { FIXTURE_EXPECTATIONS, type ExpectedIssue, type FixtureExpectation } from './expected';
 import { start } from './server';
+
+const REPORT_DIR = path.join(process.cwd(), '.tmp', 'fixtures-report');
 
 interface FixtureRun {
   fixture: FixtureExpectation;
   collected: Record<Viewport, CollectedViewport>;
+  screenshots: Record<Viewport, CapturedScreenshot>;
   result: BuildIssuesResult;
+  /** finalizeIssues 결과 (result.issues와 같은 순서) */
+  issues: Issue[];
+  viewportResults: Record<Viewport, ViewportResult>;
   /** Desktop + Mobile의 열기·안정화·수집 시간 */
   browserMs: number;
   buildMs: number;
@@ -65,11 +78,18 @@ function parseArgs(argv: string[]): { fixtures: FixtureExpectation[]; repeat: nu
   return { fixtures, repeat };
 }
 
-async function collectOne(browser: Browser, url: string, viewport: Viewport): Promise<CollectedViewport> {
+async function collectOne(
+  browser: Browser,
+  url: string,
+  viewport: Viewport,
+): Promise<{ collected: CollectedViewport; screenshot: CapturedScreenshot }> {
   const context = await createViewportContext(browser, viewport);
   try {
     const { page } = await openAndStabilize(context, url);
-    return await collectViewport(page, viewport);
+    const collected = await collectViewport(page, viewport);
+    // 수집 직후 같은 page로 찍는다
+    const screenshot = await captureFullPage(page, viewport, collected);
+    return { collected, screenshot };
   } finally {
     await context.close();
   }
@@ -82,9 +102,55 @@ async function runFixture(browser: Browser, baseUrl: string, fixture: FixtureExp
   const mobile = await collectOne(browser, `${baseUrl}${fixture.path}`, 'mobile');
   const browserMs = performance.now() - started;
   const buildStarted = performance.now();
-  const result = buildIssues({ desktop, mobile });
+  const result = buildIssues({ desktop: desktop.collected, mobile: mobile.collected });
+  const issues = finalizeIssues(result.issues, {
+    desktop: { collected: desktop.collected, screenshot: desktop.screenshot },
+    mobile: { collected: mobile.collected, screenshot: mobile.screenshot },
+  });
   const buildMs = performance.now() - buildStarted;
-  return { fixture, collected: { desktop, mobile }, result, browserMs, buildMs };
+  const viewportResult = (v: Viewport, c: { collected: CollectedViewport; screenshot: CapturedScreenshot }) => {
+    const detection = result.viewports[v];
+    if (!detection) throw new Error(`${v} detection missing`);
+    return buildViewportResult(c.collected, c.screenshot, detection, `${fixture.id}-${v}.png`);
+  };
+  const viewportResults = { desktop: viewportResult('desktop', desktop), mobile: viewportResult('mobile', mobile) };
+  // DOMAIN_MODEL 3장: 브라우저 단계 결과의 불변 조건. 위반하면 예외 → 실패
+  assertInspectionInvariants(toInspection(fixture, viewportResults, result, issues), 'browser');
+  return {
+    fixture,
+    collected: { desktop: desktop.collected, mobile: mobile.collected },
+    screenshots: { desktop: desktop.screenshot, mobile: mobile.screenshot },
+    result,
+    issues,
+    viewportResults,
+    browserMs,
+    buildMs,
+  };
+}
+
+/** 불변 조건 검사용 Inspection. 시각과 ID는 고정값이다(결정성 비교를 위해) */
+function toInspection(
+  fixture: FixtureExpectation,
+  viewports: Record<Viewport, ViewportResult>,
+  result: BuildIssuesResult,
+  issues: Issue[],
+): Inspection {
+  const at = '2000-01-01T00:00:00.000Z';
+  return {
+    id: `fixture-${fixture.id}`,
+    url: fixture.path,
+    status: 'analyzing',
+    createdAt: at,
+    startedAt: at,
+    updatedAt: at,
+    viewports,
+    viewportErrors: { desktop: null, mobile: null },
+    analysis: { status: 'pending', analyzedIssueCount: 0 },
+    issuesDetected: result.issuesDetected,
+    issuesTruncated: result.issuesTruncated,
+    issues,
+    tasks: [],
+  };
 }
 
 /** 요소 index를 data-testid로 (없으면 selector) */
@@ -194,9 +260,22 @@ function printFixture(run: FixtureRun, verdict: Verdict): void {
         verdict: verdict.reviewOnly.includes(i) ? 'needs-review(로그)' : verdict.allowedSeen.includes(i) ? 'allowed' : [...verdict.matched.values()].includes(i) ? 'expected' : 'unexpected',
       })),
     );
+    for (const issue of run.issues) {
+      console.log(`  ${issue.id} ${issue.title}`);
+      for (const o of issue.occurrences) {
+        console.log(`    [${o.viewport}] ${o.evidenceText}`);
+        console.log(`      boundingBox=${JSON.stringify(o.boundingBox)} cropRect=${JSON.stringify(o.cropRect)}`);
+      }
+    }
   } else {
     console.log('실제: 이슈 0개');
   }
+  const vr = run.viewportResults;
+  console.log(
+    (['desktop', 'mobile'] as const)
+      .map((v) => `${v}: screenshot ${vr[v].screenshotWidth}×${vr[v].screenshotHeight} layoutWidth=${vr[v].layoutWidth} documentHeight=${vr[v].documentHeight} truncated=${vr[v].screenshotTruncated}`)
+      .join(' | '),
+  );
   const extra = (['desktop', 'mobile'] as const)
     .map((v) => {
       const d = result.viewports[v];
@@ -252,7 +331,10 @@ async function main(): Promise<void> {
           const run = await runFixture(browser, server.baseUrl, fixture);
           const verdict = judge(run);
           runs.push({ run, verdict });
-          if (round === 1) printFixture(run, verdict);
+          if (round === 1) {
+            printFixture(run, verdict);
+            await writeReport(run, verdict);
+          }
         } catch (error) {
           errors.push(`${fixture.id} (round ${round}): ${error instanceof Error ? error.message : String(error)}`);
         }
@@ -272,7 +354,8 @@ async function main(): Promise<void> {
   for (const runs of rounds.slice(1)) {
     for (const { run } of runs) {
       const base = first.find((r) => r.run.fixture.id === run.fixture.id);
-      if (base && JSON.stringify(base.run.result) !== JSON.stringify(run.result)) nondeterministic.push(run.fixture.id);
+      if (base && (JSON.stringify(base.run.result) !== JSON.stringify(run.result) || JSON.stringify(base.run.issues) !== JSON.stringify(run.issues)))
+        nondeterministic.push(run.fixture.id);
     }
   }
 
@@ -288,6 +371,20 @@ async function main(): Promise<void> {
       buildMs: Number(run.buildMs.toFixed(1)),
     })),
   );
+  console.log('\n=== 스크린샷');
+  console.table(
+    first.flatMap(({ run }) =>
+      (['desktop', 'mobile'] as const).map((v) => ({
+        fixture: run.fixture.id,
+        viewport: v,
+        screenshot: `${run.viewportResults[v].screenshotWidth}×${run.viewportResults[v].screenshotHeight}`,
+        layoutWidth: run.viewportResults[v].layoutWidth,
+        documentHeight: run.viewportResults[v].documentHeight,
+        truncated: run.viewportResults[v].screenshotTruncated,
+      })),
+    ),
+  );
+  console.log(`확인용 HTML: ${path.relative(process.cwd(), REPORT_DIR)}/{ID}.html`);
   const totalBrowser = first.reduce((sum, r) => sum + r.run.browserMs, 0);
   if (first.length > 0) console.log(`Fixture 1개당 평균 검사 시간(Desktop + Mobile): ${(totalBrowser / first.length).toFixed(0)}ms`);
   console.log(`\n${markdownSummary(first)}\n`);
@@ -309,3 +406,58 @@ main().catch((error: unknown) => {
   console.error(error);
   process.exit(1);
 });
+
+const escapeHtml = (text: string) =>
+  text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+/**
+ * 사람이 cropRect와 Evidence 문장을 눈으로 확인하기 위한 HTML. 제품 UI가 아니다.
+ * 크롭 이미지를 새로 만들지 않고, 전체 스크린샷을 CSS로 cropRect만큼 잘라 보여준다(PRD 5.4.1).
+ */
+async function writeReport(run: FixtureRun, verdict: Verdict): Promise<void> {
+  await mkdir(REPORT_DIR, { recursive: true });
+  const id = run.fixture.id;
+  for (const v of ['desktop', 'mobile'] as const) {
+    await writeFile(path.join(REPORT_DIR, `${id}-${v}.png`), run.screenshots[v].png);
+  }
+  const sections = run.issues.map((issue) => {
+    const occurrences = issue.occurrences.map((o) => {
+      const vr = run.viewportResults[o.viewport];
+      const meta = `<p class="meta">${o.viewport} · boundingBox ${escapeHtml(JSON.stringify(o.boundingBox))} · cropRect ${escapeHtml(JSON.stringify(o.cropRect))}</p>`;
+      if (!o.cropRect) return `${meta}<p class="evidence">${escapeHtml(o.evidenceText)}</p><p class="out">스크린샷 범위 밖</p>`;
+      const c = o.cropRect;
+      const b = o.boundingBox;
+      const related = o.relatedElements
+        .map((r) => `<div class="box related" style="left:${r.boundingBox.x - c.x}px;top:${r.boundingBox.y - c.y}px;width:${r.boundingBox.width}px;height:${r.boundingBox.height}px"></div>`)
+        .join('');
+      return `${meta}<p class="evidence">${escapeHtml(o.evidenceText)}</p>
+<div class="crop" style="width:${c.width}px;height:${c.height}px">
+  <img src="${escapeHtml(vr.screenshotUrl)}" style="left:${-c.x}px;top:${-c.y}px;width:${vr.screenshotWidth}px;height:${vr.screenshotHeight}px" alt="">
+  ${related}
+  <div class="box" style="left:${b.x - c.x}px;top:${b.y - c.y}px;width:${b.width}px;height:${b.height}px"></div>
+</div>`;
+    });
+    return `<section><h2>${escapeHtml(issue.id)} · ${escapeHtml(issue.priority)} · ${escapeHtml(String(issue.viewportTag))}${issue.needsReview ? ' · Needs Review' : ''}</h2>
+<p class="title">${escapeHtml(issue.title)}</p>
+${occurrences.join('\n')}</section>`;
+  });
+  const html = `<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>${escapeHtml(id)} fixture report</title>
+<style>
+body { font-family: system-ui, sans-serif; margin: 24px; color: #111; }
+section { margin-bottom: 40px; border-top: 1px solid #ddd; padding-top: 12px; }
+.title { font-weight: 600; }
+.meta { color: #666; font-size: 12px; font-family: ui-monospace, monospace; }
+.crop { position: relative; overflow: hidden; outline: 1px solid #999; max-width: none; }
+.crop img { position: absolute; max-width: none; }
+.box { position: absolute; outline: 2px solid #e5484d; background: rgba(229, 72, 77, 0.12); }
+.box.related { outline: 2px dashed #0090ff; background: transparent; }
+.out { color: #b45309; }
+</style></head><body>
+<h1>${escapeHtml(id)} [${verdict.pass ? 'PASS' : 'FAIL'}] ${escapeHtml(run.fixture.description)}</h1>
+<p>${(['desktop', 'mobile'] as const).map((v) => `${v}: ${run.viewportResults[v].screenshotWidth}×${run.viewportResults[v].screenshotHeight} (layoutWidth ${run.viewportResults[v].layoutWidth}, truncated ${run.viewportResults[v].screenshotTruncated})`).join(' · ')}</p>
+${sections.length > 0 ? sections.join('\n') : '<p>이슈 0개</p>'}
+</body></html>
+`;
+  await writeFile(path.join(REPORT_DIR, `${id}.html`), html);
+}

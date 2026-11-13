@@ -75,7 +75,10 @@ Inspection (Redis 문서 1개, 집합의 루트)
 
 ## 3. 불변 조건
 
-`src/server/store/invariants.ts`의 `assertInspectionInvariants(inspection)`가 아래 조건을 검사한다. 단위 테스트, Fixture 테스트, 샘플 리포트 검증에서 실행한다. 운영 중 저장할 때는 실행하지 않는다. 코드 버그 하나로 정상적인 검사 결과 전체가 실패 처리되지 않게 하기 위해서다.
+`src/server/store/invariants.ts`의 `assertInspectionInvariants(inspection, stage)`가 아래 조건을 검사한다. 단위 테스트, Fixture 테스트, 샘플 리포트 검증에서 실행한다. 운영 중 저장할 때는 실행하지 않는다. 코드 버그 하나로 정상적인 검사 결과 전체가 실패 처리되지 않게 하기 위해서다.
+
+- `stage`는 `'browser'`(AI 단계 전) 또는 `'final'`(AI 단계 후)이다. S-9, S-10은 AI 단계 이후에만 성립하므로, `'browser'`에서는 대신 `analysis`와 `analysisSkippedReason`이 모두 비어 있는지 확인한다(4.2).
+- 위반이 있으면 조건 ID와 값을 담은 `InvariantError`를 던진다. 위반 목록만 필요하면 `findInspectionViolations`를 쓴다.
 
 ### 3.1 Inspection
 
