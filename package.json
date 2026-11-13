@@ -9,7 +9,8 @@
     "lint": "eslint",
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
-    "fixtures:shots": "node --conditions=react-server --import tsx scripts/fixture-screenshots.ts"
+    "collect": "node --conditions=react-server --import tsx scripts/collect.ts",
+    "fixtures:shots":"node --conditions=react-server --import tsx scripts/fixture-screenshots.ts"
   },
   "dependencies": {
     "@sparticuz/chromium": "153.0.0",

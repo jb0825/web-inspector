@@ -66,13 +66,15 @@ export interface ViewportResult {
   /** 설정값 (1440 / 390) */
   width: number;
   height: number;
-  /** 측정값 */
+  /** 측정값 (기록용, 판정에 쓰지 않음, PRD 5.2.1) */
   innerWidth: number;
   /** document.documentElement.clientWidth */
   layoutWidth: number;
   hasMetaViewport: boolean;
   documentHeight: number;
   screenshotUrl: string;
+  /** 저장된 스크린샷 너비 (CSS px). Mobile 축소 시 layoutWidth보다 넓을 수 있다 */
+  screenshotWidth: number;
   /** 저장된 스크린샷 높이 (CSS px) */
   screenshotHeight: number;
   screenshotTruncated: boolean;

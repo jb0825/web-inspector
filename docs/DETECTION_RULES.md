@@ -9,6 +9,9 @@
 - 추가: 보이는 영역 계산(3.6). `overflow`로 잘려 보이지 않는 텍스트·요소 영역을 Overlap 영역(5.1)과 Viewport Overflow 범위(6.1)에서 제외한다.
 - 수정: Positive Fixture 판정. 기대하지 않은 이슈 중 `needsReview: false`인 것은 실패로 본다. 허용 이슈(`allowed`)를 둔다(12.2).
 - 추가: 단위 테스트 케이스(12.1), 새 파일 `src/server/detect/geometry.ts`
+- 추가: `CollectedViewport.elementsTruncated`, `viewportSize`(3.1)
+- 수정: 자신 또는 조상의 `opacity`가 0이면 서브트리 전체를 후보에서 뺀다(3.2)
+- 수정: 판정에 `innerWidth`/`innerHeight`를 쓰지 않는다. 첫 화면 판정과 overlay 면적은 설정 viewport 크기, cropRect 경계는 실제 스크린샷 크기를 쓴다(3.1, 5.3, 8.3, 9.2)
 
 ### Changelog (v1.0 → v2.0)
 
@@ -110,8 +113,9 @@ v1.0(Detection Guide)은 PRD v1.1 이전 기준이라 PRD와 충돌했다. v2.0�
 ```ts
 interface CollectedViewport {
   viewport: 'desktop' | 'mobile';
-  innerWidth: number;
-  innerHeight: number;
+  viewportSize: { width: number; height: number };  // 설정값 (PRD 5.2.1: 1440×900 / 390×844). 판정 기준 크기
+  innerWidth: number;             // 기록용. 판정에 쓰지 않는다 (3.1.1)
+  innerHeight: number;            // 기록용. 판정에 쓰지 않는다 (3.1.1)
   layoutWidth: number;            // document.documentElement.clientWidth
   documentScrollWidth: number;    // document.documentElement.scrollWidth
   documentHeight: number;
@@ -119,6 +123,7 @@ interface CollectedViewport {
   rootOverflowX: { html: string; body: string };
   hasCanvas: boolean;
   totalCandidates: number;        // 자르기 전 후보 수
+  elementsTruncated: boolean;     // totalCandidates > MAX_CANDIDATES
   elements: CollectedElement[];   // 문서 순서, 최대 MAX_CANDIDATES개
 }
 
@@ -156,6 +161,20 @@ interface CollectedElement {
 - 좌표는 모두 문서 기준이다. 측정은 맨 위로 스크롤한 상태(PRD 5.2.2 4단계 뒤)에서 한다.
 - `collect.ts`는 숫자를 `MEASURE_DECIMALS` 자리로 반올림한다. 판정은 반올림한 값으로 한다.
 - 수집 함수는 `page.evaluate`에 넘기는 독립 함수다. 바깥 변수와 import를 쓰지 않고, 상수는 인자로 받는다.
+- `viewportSize`는 브라우저에서 측정하지 않고 `collect.ts`가 `devices.ts`의 설정값으로 채운다.
+
+#### 3.1.1 판정 기준 크기
+
+`window.innerWidth`/`innerHeight`는 visual viewport 크기라서 페이지 확대·축소에 따라 달라진다. Mobile 에뮬레이션에서 콘텐츠가 가로로 넘치면 Chromium이 페이지를 축소해 보여주므로 값이 커진다(P-01 실측: 616×1334). 같은 기기라도 페이지 내용에 따라 기준이 바뀌므로 판정에 쓰지 않는다.
+
+| 용도 | 기준 |
+|---|---|
+| 가로 비교 (화면 이탈, page-scroll) | `layoutWidth` (PRD 5.2.1) |
+| 첫 화면 판정 (Reach 보정, 9.2) | `viewportSize.height` (PRD 5.5.3의 "해당 viewport height") |
+| overlay 면적 비율 (5.3) | `layoutWidth × viewportSize.height` |
+| cropRect 경계 (8.3) | 저장된 스크린샷의 실제 크기 `screenshotWidth × screenshotHeight` |
+
+`innerWidth`/`innerHeight`는 기록과 진단용으로만 남긴다.
 
 ### 3.2 후보 선정 (PRD 5.3.1)
 
@@ -165,13 +184,14 @@ interface CollectedElement {
 candidate(el) :=
   computed.display != 'none'
   && computed.visibility != 'hidden'
-  && computed.opacity > 0
+  && 자신과 모든 조상의 computed.opacity > 0                            // PRD 10장: opacity는 상속되지 않으므로 조상까지 확인
   && rect.width > MIN_ELEMENT_SIZE_PX && rect.height > MIN_ELEMENT_SIZE_PX
   && 조상에 [aria-hidden="true"] 없음
   && 자신과 조상이 script, style, noscript, template, svg 내부가 아님 (svg 요소 자신은 후보 가능)
   && 자신과 조상에 clip: rect(0, 0, 0, 0) 또는 clip-path: inset(50%) 없음   // PRD 5.3.1: sr-only 제외
 ```
 
+- 조상 중 하나라도 `opacity`가 0이면 그 서브트리 전체를 후보에서 뺀다. 스크롤 연동 애니메이션처럼 투명한 부모 안의 자식은 화면에 보이지 않기 때문이다(PRD 10장).
 - 후보가 `MAX_CANDIDATES`를 넘으면 앞에서부터 자르고 `elementsTruncated = true`로 둔다.
 - `html`, `body`는 후보에 넣지 않는다. 대신 `rootOverflowX`와 문서 크기를 따로 수집한다.
 
@@ -323,7 +343,7 @@ if style.lineHeight != 'normal' and rect.height > lineHeightPx:
 ### 5.3 Overlay 처리
 
 ```text
-overlays = elements where flags.fixedRoot && (rect 면적 / (innerWidth × innerHeight)) >= OVERLAY_MIN_VIEWPORT_RATIO
+overlays = elements where flags.fixedRoot && (rect 면적 / (layoutWidth × viewportSize.height)) >= OVERLAY_MIN_VIEWPORT_RATIO   // 3.1.1
 ```
 
 - `overlaysDetected`에 selector를 기록한다.
@@ -538,7 +558,7 @@ type 라벨: `Text Overflow`, `Element Overlap`, `Viewport Overflow`. Overlap의
 box = occurrence.boundingBox (Overlap은 a.rect ∪ b.rect)
 r = box를 사방 CROP_PADDING_PX만큼 확장
 r의 너비가 CROP_MIN_WIDTH_PX보다 작으면 중심 기준으로 넓힘, 높이도 같은 방식
-r을 [0, innerWidth] × [0, screenshotHeight] 안으로 이동 (크기가 더 크면 잘라냄)
+r을 [0, screenshotWidth] × [0, screenshotHeight] 안으로 이동 (크기가 더 크면 잘라냄)   // 3.1.1: 실제 스크린샷 크기
 if box.y >= screenshotHeight: cropRect = null
 ```
 
@@ -572,7 +592,7 @@ PRD 5.7.2 화이트리스트 값을 그대로 넣는다. 수집 단계에서 이
 
 ```text
 R = base R
-if occurrences 중 하나라도 boundingBox.y < 해당 viewport의 innerHeight: R += 1
+if occurrences 중 하나라도 boundingBox.y < 해당 viewport의 viewportSize.height: R += 1   // 3.1.1, PRD 5.5.3
 if occurrences.length == 2: R += 1
 R = min(R, REACH_MAX)
 ```
@@ -630,9 +650,9 @@ Priority는 Confidence와 관계없이 9.3으로 계산한다(PRD 5.5.4).
 | `viewportOverflow` | page-scroll 원인 1개와 affectedDescendants · nowrap 텍스트만 넘친 제목이 원인 · ellipsis 제목(자신의 overflow hidden)은 이탈 아님 · 캐러셀(overflow-x auto 조상) 제외 · hidden-clip · 왼쪽 이탈은 element-out · fixed 요소는 page-scroll 아님 |
 | `dedup` / `match` | 3가지 매칭 기준과 1:1 보장 · 병합 후 viewportTag · 규칙 4 연결 |
 | `order` | 정렬 키 5단계 각각 · 입력 순서를 섞어도 같은 ID |
-| `score` | 점수표 9행 · Reach 보정 상한 · **S=I=R=3 → P1** · 경계 399/400, 299/300 |
+| `score` | 점수표 9행 · Reach 보정 상한 · **S=I=R=3 → P1** · 경계 399/400, 299/300 · 첫 화면 판정이 `innerHeight`가 아니라 `viewportSize.height` 기준 |
 | `sentences` | subtype별 템플릿 · 반올림 · affectedDescendants 문구 |
-| `crop` | 패딩, 최소 크기, 경계 안으로 이동, 범위 밖 null |
+| `crop` | 패딩, 최소 크기, 경계 안으로 이동, 범위 밖 null · 스크린샷 너비가 `layoutWidth`보다 넓은 경우(Mobile 축소) |
 
 ### 12.2 Fixture 테스트 (`pnpm test:fixtures`)
 
@@ -691,6 +711,9 @@ PRD에 없던 구현 결정이다. AGENTS.md 6장에 따라 보고 대상이다.
 12. Overlap 영역과 Viewport Overflow 범위는 `overflow`로 잘린 부분을 뺀 보이는 영역으로 계산한다(3.6). PRD 5.3.3, 5.3.4의 "의도된 디자인 제외"를 구현하는 방법이다.
 13. Positive Fixture에서 기대하지 않은 `needsReview: false` 이슈는 실패로 본다. 허용 이슈(`allowed`)를 둔다(12.2).
 14. 새 파일 `src/server/detect/geometry.ts`(3.6).
+15. `CollectedViewport`에 `elementsTruncated`, `viewportSize`를 둔다(3.1).
+16. 자신 또는 조상의 `opacity`가 0이면 서브트리 전체를 후보에서 뺀다(3.2).
+17. 판정에 `innerWidth`/`innerHeight`를 쓰지 않는다. overlay 면적은 `layoutWidth × viewportSize.height`, cropRect 경계는 실제 스크린샷 크기를 쓴다(3.1.1).
 
 ---
 
