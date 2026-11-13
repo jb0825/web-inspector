@@ -7,14 +7,16 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run"
   },
   "dependencies": {
+    "@sparticuz/chromium": "153.0.0",
     "@upstash/redis": "^1.41.0",
     "@vercel/blob": "^2.9.0",
     "lucide-react": "^1.72.0",
     "next": "16.4.6",
+    "playwright-core": "1.63.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "server-only": "^0.0.1",
@@ -27,10 +29,13 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.4.6",
-    "playwright": "^1.65.0",
+    "playwright": "1.63.0",
     "tailwindcss": "4.3.3",
     "typescript": "^5",
     "vitest": "^5.1.0"
+  },
+  "engines": {
+    "node": "24.x"
   },
   "packageManager": "pnpm@10.32.1"
 }
