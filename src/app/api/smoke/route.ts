@@ -10,6 +10,7 @@ import { createViewportContext, VIEWPORTS } from '@/server/browser/devices';
 import { getLaunchTarget, launchBrowser } from '@/server/browser/launch';
 import { SCREENSHOT_MAX_HEIGHT } from '@/server/detect/constants';
 import { getInternalEnv } from '@/server/env';
+import { createHostChecker } from '@/server/security/ssrf';
 import type { Viewport } from '@/types/inspection';
 
 export const runtime = 'nodejs';
@@ -238,7 +239,8 @@ export async function GET(request: Request): Promise<Response> {
     browser = await launchBrowser();
     const launchMs = Math.round(performance.now() - launchStartedAt);
 
-    const context = await createViewportContext(browser, viewport);
+    // setContent만 쓰지만 연결 누락이 없도록 guard를 붙인다. 허용 목록은 넘기지 않는다(PRD 8.6)
+    const context = await createViewportContext(browser, viewport, { checker: createHostChecker() });
     const page = await context.newPage();
     await page.setContent(buildHtml({ meta, tall }), { waitUntil: 'load', timeout: SET_CONTENT_TIMEOUT_MS });
     const raw = await page

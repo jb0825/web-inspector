@@ -1,5 +1,6 @@
 import 'server-only';
 import { devices, type Browser, type BrowserContext, type BrowserContextOptions } from 'playwright-core';
+import { attachRouteGuard, type RouteGuardOptions } from '@/server/security/routeGuard';
 import type { Viewport } from '@/types/inspection';
 
 // PRD 5.2.1 Viewport 설정
@@ -48,11 +49,22 @@ export function buildContextOptions(viewport: Viewport): BrowserContextOptions {
   };
 }
 
+/**
+ * guard는 필수다. 요청 검사 없이 context를 만드는 경로를 두지 않는다(PRD 8.6, AGENTS.md 8장).
+ * 연결된 guard는 getRouteGuard(context)로 얻는다.
+ */
 export async function createViewportContext(
   browser: Browser,
   viewport: Viewport,
+  guard: RouteGuardOptions,
 ): Promise<BrowserContext> {
   const context = await browser.newContext(buildContextOptions(viewport));
-  // TODO(T08): context.route('**/*', routeGuard) + context.routeWebSocket 전체 차단 (PRD 8.6)
+  try {
+    // page를 만들기 전에 연결한다. routeWebSocket은 연결 뒤에 만든 WebSocket에만 적용된다
+    await attachRouteGuard(context, guard);
+  } catch (error) {
+    await context.close().catch(() => undefined);
+    throw error;
+  }
   return context;
 }

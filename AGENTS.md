@@ -156,7 +156,8 @@ public/fixtures/                        # 모든 페이지가 /fonts/의 폰트�
 public/sample/                          # 샘플 리포트 정적 데이터 (inspection.json, 스크린샷)
 tests/
   unit/                                 # src/server 순수 함수 테스트
-  fixtures/                             # 로컬 브라우저로 Fixture 검사 결과 검증 (expected.ts, run.ts, server.ts)
+  fixtures/                             # 로컬 브라우저로 Fixture 검사 결과 검증 (expected.ts, run.ts, server.ts, securityRoutes.ts)
+  security/                             # 로컬 브라우저로 routeGuard 차단 검증 (pnpm test:security, vitest.security.config.mts)
 docs/
   PRD.md, DETECTION_RULES.md, DOMAIN_MODEL.md, API_SPEC.md
   USER_FLOW.md, WIREFRAME.md, DESIGN_GUIDE.md
@@ -199,11 +200,13 @@ pnpm lint
 pnpm typecheck         # tsc --noEmit
 pnpm test              # Vitest 단위 테스트
 pnpm test:fixtures     # 로컬 브라우저로 Fixture 15종 검사 후 기대 결과와 비교
+pnpm test:security     # 로컬 브라우저로 리다이렉트, 하위 요청, WebSocket, 팝업, data:/blob: 탐색 차단 검증 (T08)
 pnpm collect <name>    # (T04 이후) Fixture 1개의 수집 결과를 JSON으로 출력
 ```
 
 작업을 마치기 전에 `pnpm typecheck && pnpm lint && pnpm test`를 실행하고 결과를 보고한다.
 탐지 로직(`src/server/detect`, `src/server/collect`, `src/server/browser`)을 바꿨다면 `pnpm test:fixtures`도 실행한다.
+`src/server/security`나 브라우저 context 설정을 바꿨다면 `pnpm test:security`도 실행한다.
 
 ---
 
@@ -281,6 +284,7 @@ pnpm collect <name>    # (T04 이후) Fixture 1개의 수집 결과를 JSON으�
 
 - 사용자가 입력한 URL은 `src/server/security/url.ts`를 거치지 않고 브라우저에 넘기지 않는다.
 - 모든 브라우저 context에는 `src/server/security/routeGuard.ts`를 `context.route('**/*')`로 연결한다(`page.route`가 아님). 팝업과 새 페이지, 리다이렉트, 하위 리소스 요청까지 모두 검사한다. WebSocket은 `context.routeWebSocket`으로 모두 차단한다(PRD 8.6).
+- 브라우저 context는 `createViewportContext(browser, viewport, guard)`로만 만든다. guard 인자는 필수이고, `openAndStabilize`는 guard가 없는 context를 거부한다. 리다이렉트는 브라우저에 맡기지 않고 `routeGuard.ts`가 hop마다 검사하며 따라간다(Playwright route는 리다이렉트의 다음 URL을 다시 가로채지 않는다, T08 확인).
 - 로컬 Fixture 테스트용 `localhost` 허용 목록은 테스트 하네스가 검사 함수에 인자로만 넘긴다. API route는 이 인자를 넘기지 않고, 환경변수로 차단을 끄지 않는다.
 - 차단 대상 IP 범위는 PRD 8.6을 그대로 따르고, `src/server/security/ssrf.ts`의 단위 테스트로 검증한다. IPv6, IPv4-mapped IPv6(`::ffff:127.0.0.1`), 10진수/16진수 IP 표기도 테스트에 포함한다.
 - 브라우저 context 옵션은 항상 `acceptDownloads: false`, `serviceWorkers: 'block'`, 권한 요청 거부로 설정한다.

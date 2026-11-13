@@ -1,6 +1,8 @@
 import { devices } from 'playwright-core';
 import { describe, expect, it } from 'vitest';
-import { buildContextOptions, VIEWPORTS } from '@/server/browser/devices';
+import type { Browser } from 'playwright-core';
+import { buildContextOptions, createViewportContext, VIEWPORTS } from '@/server/browser/devices';
+import { createHostChecker } from '@/server/security/ssrf';
 
 describe('devices (PRD 5.2.1)', () => {
   it('viewport 상수가 PRD 값과 같다', () => {
@@ -33,5 +35,17 @@ describe('devices (PRD 5.2.1)', () => {
     expect(options.permissions).toEqual([]);
     expect(options.reducedMotion).toBe('reduce');
     expect(options.locale).toBe('ko-KR');
+  });
+});
+
+describe('createViewportContext guard 인자 (PRD 8.6)', () => {
+  it('guard 없이 호출하면 타입 오류다 (pnpm typecheck가 확인한다)', () => {
+    // 실행하지 않는 함수: @ts-expect-error가 쓸모없어지면(=guard가 선택 인자가 되면) typecheck가 실패한다
+    const typeOnly = (browser: Browser) => {
+      // @ts-expect-error guard는 필수 인자다
+      void createViewportContext(browser, 'desktop');
+      void createViewportContext(browser, 'desktop', { checker: createHostChecker() });
+    };
+    expect(typeof typeOnly).toBe('function');
   });
 });
