@@ -1,6 +1,7 @@
 import 'server-only';
 import type { Page } from 'playwright-core';
 import type { Rect, Viewport } from '@/types/inspection';
+import { VIEWPORTS } from '@/server/browser/devices';
 import {
   ANCESTOR_PATH_MAX_DEPTH,
   COMPUTED_STYLE_WHITELIST,
@@ -152,6 +153,8 @@ export function normalizeCollected(
 
   return {
     viewport,
+    // DETECTION_RULES 3.1.1: 판정 기준 크기는 측정값이 아니라 설정값이다
+    viewportSize: { width: VIEWPORTS[viewport].width, height: VIEWPORTS[viewport].height },
     innerWidth: r(raw.innerWidth),
     innerHeight: r(raw.innerHeight),
     layoutWidth: r(raw.layoutWidth),

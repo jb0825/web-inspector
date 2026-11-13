@@ -273,8 +273,8 @@ GET /api/inspections/9b1f2c4e-6a0d-4c1e-9f8a-2d7e5b3c1a90
   "startedAt": "2026-11-13T08:20:01.000Z",
   "updatedAt": "2026-11-13T08:21:05.000Z",
   "viewports": {
-    "desktop": { "width": 1440, "height": 900, "innerWidth": 1440, "layoutWidth": 1440, "hasMetaViewport": true, "documentHeight": 4210, "screenshotUrl": "https://…blob.vercel-storage.com/inspections/9b1f…/desktop-full-AbC123.png", "screenshotHeight": 4210, "screenshotTruncated": false, "elementsInspected": 812, "elementsTruncated": false, "hasCanvas": false, "overlaysDetected": [] },
-    "mobile": { "width": 390, "height": 844, "innerWidth": 390, "layoutWidth": 390, "hasMetaViewport": true, "documentHeight": 7020, "screenshotUrl": "https://…/mobile-full-XyZ789.png", "screenshotHeight": 5000, "screenshotTruncated": true, "elementsInspected": 812, "elementsTruncated": false, "hasCanvas": false, "overlaysDetected": [] }
+    "desktop": { "width": 1440, "height": 900, "innerWidth": 1440, "layoutWidth": 1440, "hasMetaViewport": true, "documentHeight": 4210, "screenshotUrl": "https://…blob.vercel-storage.com/inspections/9b1f…/desktop-full-AbC123.png", "screenshotWidth": 1440, "screenshotHeight": 4210, "screenshotTruncated": false, "elementsInspected": 812, "elementsTruncated": false, "hasCanvas": false, "overlaysDetected": [] },
+    "mobile": { "width": 390, "height": 844, "innerWidth": 390, "layoutWidth": 390, "hasMetaViewport": true, "documentHeight": 7020, "screenshotUrl": "https://…/mobile-full-XyZ789.png", "screenshotWidth": 390, "screenshotHeight": 5000, "screenshotTruncated": true, "elementsInspected": 812, "elementsTruncated": false, "hasCanvas": false, "overlaysDetected": [] }
   },
   "viewportErrors": { "desktop": null, "mobile": null },
   "analysis": { "status": "running", "analyzedIssueCount": 0 },

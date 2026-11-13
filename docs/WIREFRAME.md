@@ -337,7 +337,7 @@ MVP에는 그 밖의 내비게이션 메뉴를 두지 않는다.
 - 실패한 viewport는 이미지 자리에 실패 원인을 표시한다
 
 **마커 좌표 규칙**
-- 이미지 위에 SVG 오버레이를 겹치고, `viewBox="0 0 {innerWidth} {screenshotHeight}"`로 둔다. 그 안에 `occurrence.boundingBox`(문서 기준 CSS px)를 그대로 그린다. 이미지 표시 크기가 바뀌어도 SVG가 같은 비율로 늘고 줄어 마커 위치가 맞는다.
+- 이미지 위에 SVG 오버레이를 겹치고, `viewBox="0 0 {screenshotWidth} {screenshotHeight}"`로 둔다(DETECTION_RULES 3.1.1: Mobile 축소 시 스크린샷이 `layoutWidth`보다 넓다). 그 안에 `occurrence.boundingBox`(문서 기준 CSS px)를 그대로 그린다. 이미지 표시 크기가 바뀌어도 SVG가 같은 비율로 늘고 줄어 마커 위치가 맞는다.
 - `boundingBox.y`가 `screenshotHeight` 이상이면 마커를 그리지 않고 "범위 밖" 개수에 포함한다.
 - meta viewport가 없는 Mobile 페이지에서도 이 규칙이 맞는지 구현 시 Fixture로 확인한다.
 - 마커 번호는 현재 필터를 통과한 이슈 목록의 순번이다. Needs Review 이슈는 그룹을 펼쳤을 때만 흐린 스타일로 표시한다.

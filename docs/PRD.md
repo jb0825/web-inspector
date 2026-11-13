@@ -26,6 +26,7 @@
 - Fixture 보완: P-02 배치 조건, P-03·P-06 판정 기준, Negative Fixture N-08·N-09 추가 (13장)
 - 문서 내 잘못된 절 참조 수정 (8.3 → 8.6)
 - 로컬 개발 환경(macOS)의 폰트 처리 방식과 Fixture 폰트 규칙 명시 (5.2.3, 13.1)
+- `innerWidth`/`innerHeight`를 판정 기준에서 제외하고 `ViewportResult.screenshotWidth` 추가 (5.2.1, 5.3.3, 5.4.1, 8.2)
 
 ### Changelog (v1.0 → v1.1)
 
@@ -196,6 +197,7 @@ Requirements:
 
 - 모든 가로 비교의 기준은 상수(1440, 390)가 아니라 측정한 `layoutWidth = document.documentElement.clientWidth`다. 세로 스크롤바 너비를 제외한 실제 레이아웃 폭이기 때문이다.
 - `window.innerWidth`, `layoutWidth`, meta viewport 존재 여부(`hasMetaViewport`)를 ViewportResult에 함께 기록한다.
+- `innerWidth`/`innerHeight`는 페이지 확대·축소에 따라 달라지므로 판정에 쓰지 않는다. Mobile에서 콘텐츠가 가로로 넘치면 Chromium이 페이지를 축소해 이 값이 커진다(P-01 실측 616×1334). 세로 기준(첫 화면, overlay 면적)은 위 표의 설정 Height를 쓴다.
 - meta viewport가 없는 페이지는 Mobile에서 layout viewport가 980px 안팎이 된다. 이 경우에도 Evidence 문장과 Acceptance Criteria는 측정한 `layoutWidth`를 쓰고, 결과 화면에 "meta viewport 없음" 안내를 표시한다.
 
 #### 5.2.2 렌더링 안정화 절차
@@ -291,7 +293,7 @@ Requirements:
 - 조상과 자손 관계인 요소 쌍
 - 한쪽이 다른 쪽을 완전히 포함하고, 포함하는 쪽이 `img`, `video`, `canvas`이거나 배경 이미지가 있는 요소인 경우(Hero 이미지 위의 텍스트 등 의도된 오버레이)
 - `position: fixed` 또는 `sticky`인 요소와 일반 흐름 요소의 겹침. 스크롤에 따라 달라지는 겹침이기 때문이다. 단, fixed 요소끼리의 겹침은 탐지한다.
-- viewport 면적의 30% 이상을 덮는 fixed 요소(쿠키 배너, 모달 등)는 "Overlay detected" 정보로만 기록하고 겹침 판정에서는 빼고 계산한다.
+- viewport 면적(`layoutWidth × 설정 Height`, 5.2.1)의 30% 이상을 덮는 fixed 요소(쿠키 배너, 모달 등)는 "Overlay detected" 정보로만 기록하고 겹침 판정에서는 빼고 계산한다.
 
 Confidence 하향 조건:
 - 겹치는 요소 중 하나가 `position: absolute`이면서 부모 컨테이너 안에 있으면, 의도된 디자인일 가능성이 있으므로 Confidence를 0.4로 낮춘다.
@@ -364,7 +366,7 @@ Confidence 하향 조건:
 
 **하이라이트 스크린샷**
 - 크롭 이미지를 따로 만들어 업로드하지 않는다. 화면에서 전체 스크린샷을 `cropRect` 영역만 보이게 잘라 표시하고, 그 위에 대상 요소의 박스를 그린다.
-- `cropRect`는 코드(`src/server/evidence/crop.ts`)가 계산한다: `boundingBox`를 사방 24px 넓히고, 최소 크기 320×160px을 보장한 뒤, 스크린샷 경계 안으로 맞춘다.
+- `cropRect`는 코드(`src/server/evidence/crop.ts`)가 계산한다: `boundingBox`를 사방 24px 넓히고, 최소 크기 320×160px을 보장한 뒤, 실제 스크린샷 경계(`screenshotWidth × screenshotHeight`) 안으로 맞춘다.
 - 대상 요소가 잘린 스크린샷 높이(5.2.4) 밖에 있으면 `cropRect`는 `null`이고, 화면에 "스크린샷 범위 밖" 안내를 표시한다.
 - 이유: 이슈마다 이미지를 업로드하면 Blob 사용량과 검사 시간이 늘고, 별도 이미지 처리 라이브러리가 필요해진다.
 
@@ -896,11 +898,12 @@ interface Inspection {
 interface ViewportResult {
   width: number;                        // 설정값 (1440 / 390)
   height: number;
-  innerWidth: number;                   // 측정값
+  innerWidth: number;                   // 측정값 (기록용, 판정에 쓰지 않음, 5.2.1)
   layoutWidth: number;                  // document.documentElement.clientWidth
   hasMetaViewport: boolean;
   documentHeight: number;
   screenshotUrl: string;
+  screenshotWidth: number;              // 저장된 스크린샷 너비 (CSS px). Mobile 축소 시 layoutWidth보다 넓을 수 있다
   screenshotHeight: number;             // 저장된 스크린샷 높이 (CSS px)
   screenshotTruncated: boolean;
   elementsInspected: number;

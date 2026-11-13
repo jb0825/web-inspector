@@ -244,6 +244,7 @@ pnpm collect <name>    # (T04 이후) Fixture 1개의 수집 결과를 JSON으�
 - `browser.close()`는 반드시 `finally`에서 호출한다.
 - 모든 대기 동작에는 시간 제한을 둔다(PRD 8.1.3). 제한 없는 `waitForTimeout`, `waitForSelector`를 쓰지 않는다.
 - 좌표는 항상 **문서 기준**(`rect + scrollX/scrollY`)으로 저장한다.
+- 판정에 `innerWidth`/`innerHeight`를 쓰지 않는다. Mobile에서 페이지가 축소되면 값이 바뀐다. 기준 크기는 DETECTION_RULES 3.1.1을 따른다.
 - 텍스트 영역 측정에는 element box가 아니라 `Range.getClientRects()`를 쓴다.
 - 실행 환경(Vercel / 로컬) 분기는 `src/server/browser/launch.ts`에서만 한다. 환경 값은 `getRuntimeEnv()`로 얻는다(5장). 다른 파일은 launch.ts가 넘겨준 값을 인자로 받고, 스스로 환경을 분기하지 않는다.
 - Vercel 번들 설정 (설정 이름과 route segment config는 학습 데이터가 아니라 `node_modules/next/dist/docs/`로 확인한다. 이 파일 맨 끝의 안내 블록 참고):

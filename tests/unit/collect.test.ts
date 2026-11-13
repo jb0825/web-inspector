@@ -87,6 +87,15 @@ describe('normalizeCollected', () => {
     expect(el.style.borderWidthSum).toBe(4);
   });
 
+  it('viewportSize는 측정한 innerWidth/innerHeight가 아니라 설정값이다 (DETECTION_RULES 3.1.1)', () => {
+    // P-01 mobile 실측: 페이지 축소로 inner 616×1334
+    const zoomedOut = { ...raw([]), innerWidth: 616, innerHeight: 1334 };
+    const mobile = normalizeCollected(zoomedOut, 'mobile');
+    expect(mobile.viewportSize).toEqual({ width: 390, height: 844 });
+    expect(mobile.innerWidth).toBe(616);
+    expect(normalizeCollected(raw([]), 'desktop').viewportSize).toEqual({ width: 1440, height: 900 });
+  });
+
   it('자르기 전 후보 수와 잘림 여부를 정한다 (DETECTION_RULES 3.2)', () => {
     const elements = [element(1), element(2), element(3)];
     expect(normalizeCollected(raw(elements), 'desktop').elementsTruncated).toBe(false);

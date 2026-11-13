@@ -94,7 +94,7 @@ function printDetail(fixture: FixtureExpectation, viewport: Viewport, result: Ru
   console.log(
     [
       `candidates=${c.totalCandidates} collected=${c.elements.length} truncated=${c.elementsTruncated}`,
-      `inner=${c.innerWidth}x${c.innerHeight} layoutWidth=${c.layoutWidth} documentScrollWidth=${c.documentScrollWidth} documentHeight=${c.documentHeight}`,
+      `viewportSize=${c.viewportSize.width}x${c.viewportSize.height} inner=${c.innerWidth}x${c.innerHeight} layoutWidth=${c.layoutWidth} documentScrollWidth=${c.documentScrollWidth} documentHeight=${c.documentHeight}`,
       `rootOverflowX=html:${c.rootOverflowX.html} body:${c.rootOverflowX.body} hasMetaViewport=${c.hasMetaViewport} hasCanvas=${c.hasCanvas}`,
       `http=${result.meta.httpStatus} skipped=[${result.meta.skippedSteps.join(',')}] autoScroll=${JSON.stringify(result.meta.autoScroll)}`,
       `iframes=${result.scope.iframes} openShadowRoots=${result.scope.openShadowRoots}`,

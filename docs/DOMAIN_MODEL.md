@@ -50,7 +50,7 @@ Inspection (Redis 문서 1개, 집합의 루트)
 | v1.0 엔티티 | v2.0 위치 |
 |---|---|
 | Evidence | `IssueOccurrence`의 `measured`, `expected`, `delta`, `evidenceText`, `relatedElements` |
-| ScreenshotArtifact | `ViewportResult.screenshotUrl`, `screenshotHeight` |
+| ScreenshotArtifact | `ViewportResult.screenshotUrl`, `screenshotWidth`, `screenshotHeight` |
 | AIAnalysis | `Issue.analysis` (이슈당 최대 1개, 이력 없음) |
 | Prompt | `DevTask.prompt` (태스크당 1개, 버전 없음) |
 
@@ -114,7 +114,7 @@ Inspection (Redis 문서 1개, 집합의 루트)
 | S-8 | `confidence = min(occurrences[].confidence)`, `needsReview = confidence < 0.5` |
 | S-9 | `needsReview`이면 `analysis`가 없고 `analysisSkippedReason = needs-review`다. |
 | S-10 | `analysis`와 `analysisSkippedReason` 중 최대 하나만 있다. AI 단계가 끝난 뒤에는 정확히 하나가 있다. |
-| S-11 | `cropRect`가 있으면 해당 viewport의 `[0, innerWidth] × [0, screenshotHeight]` 안에 있다. |
+| S-11 | `cropRect`가 있으면 해당 viewport의 `[0, screenshotWidth] × [0, screenshotHeight]` 안에 있다. |
 | S-12 | `type`과 `subtype` 조합은 DETECTION_RULES 1.1 표에 있는 것만 허용한다. |
 
 ### 3.4 DevTask

@@ -60,6 +60,9 @@ export interface CollectedElement {
 
 export interface CollectedViewport {
   viewport: Viewport;
+  /** 설정값 (PRD 5.2.1: 1440×900 / 390×844). 판정 기준 크기(DETECTION_RULES 3.1.1). collect.ts가 devices.ts 값으로 채운다 */
+  viewportSize: { width: number; height: number };
+  /** 기록용. Mobile에서 페이지가 축소되면 커지므로 판정에 쓰지 않는다(DETECTION_RULES 3.1.1) */
   innerWidth: number;
   innerHeight: number;
   /** document.documentElement.clientWidth */
@@ -72,17 +75,14 @@ export interface CollectedViewport {
   hasCanvas: boolean;
   /** 자르기 전 후보 수 */
   totalCandidates: number;
-  /**
-   * DETECTION_RULES 3.2의 elementsTruncated. 3.1 구조에는 없지만 3.2와 PRD 5.3.1("잘렸다는 사실을 결과에 표시")이
-   * 요구하는 값이라 추가했다(보고 대상). totalCandidates > elements.length와 같다.
-   */
+  /** totalCandidates > MAX_CANDIDATES (DETECTION_RULES 3.2) */
   elementsTruncated: boolean;
   /** 문서 순서, 최대 MAX_CANDIDATES개 */
   elements: CollectedElement[];
 }
 
-/** page.evaluate가 돌려주는 값. viewport와 elementsTruncated는 Node에서 정한다. */
-export type InPageResult = Omit<CollectedViewport, 'viewport' | 'elementsTruncated'>;
+/** page.evaluate가 돌려주는 값. viewport, viewportSize, elementsTruncated는 Node에서 정한다. */
+export type InPageResult = Omit<CollectedViewport, 'viewport' | 'viewportSize' | 'elementsTruncated'>;
 
 /** inpage 수집 함수의 인자. 상수는 모두 인자로 넘긴다(AGENTS.md 7장). */
 export interface InPageArgs {
