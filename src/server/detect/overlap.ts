@@ -38,6 +38,11 @@ interface Item {
   bottom: number;
   left: number;
   right: number;
+  // 쌍마다 다시 계산하지 않도록 요소별 값을 미리 구해 둔다(최악의 경우 쌍 수백만 개, 5.4)
+  /** 제외 조건 2의 포함하는 쪽 박스. 미디어나 배경 이미지가 아니면 null */
+  overlayBox: Rect | null;
+  interactiveArea: boolean;
+  absoluteInParent: boolean;
 }
 
 const isTextElement = (el: CollectedElement): boolean => el.textRects.length > 0;
@@ -106,7 +111,8 @@ function regionOf(el: CollectedElement, lookup: ElementLookup): Rect[] {
   return visible ? [visible] : [];
 }
 
-function toItem(el: CollectedElement, rects: Rect[]): Item {
+function toItem(el: CollectedElement, rects: Rect[], lookup: ElementLookup): Item {
+  const canContain = isMedia(el) || el.style.backgroundImage !== 'none';
   return {
     el,
     rects,
@@ -115,6 +121,10 @@ function toItem(el: CollectedElement, rects: Rect[]): Item {
     bottom: Math.max(...rects.map(bottom)),
     left: Math.min(...rects.map((r) => r.x)),
     right: Math.max(...rects.map(right)),
+    // 포함하는 쪽은 잘린 뒤의 박스(visibleRect)로 본다(5.5)
+    overlayBox: canContain ? visibleRect(el, lookup) : null,
+    interactiveArea: inInteractiveArea(el, lookup),
+    absoluteInParent: isAbsoluteInParent(el, lookup),
   };
 }
 
@@ -123,20 +133,18 @@ function isOverlayOrDescendant(el: CollectedElement, overlayIndices: ReadonlySet
 }
 
 /** 제외 조건 2: container가 other의 영역 전체를 포함하고 미디어이거나 배경 이미지가 있음 */
-function isIntendedOverlay(container: Item, other: Item, lookup: ElementLookup): boolean {
-  const el = container.el;
-  if (!isMedia(el) && el.style.backgroundImage === 'none') return false;
-  // 포함하는 쪽은 잘린 뒤의 박스(visibleRect), 포함되는 쪽은 5.1의 영역(자른 뒤)으로 본다.
-  const box = visibleRect(el, lookup);
+function isIntendedOverlay(container: Item, other: Item): boolean {
+  // 포함하는 쪽은 잘린 뒤의 박스(visibleRect, toItem), 포함되는 쪽은 5.1의 영역(자른 뒤)으로 본다.
+  const box = container.overlayBox;
   return box !== null && other.rects.every((rect) => contains(box, rect));
 }
 
 /** DETECTION_RULES 5.5: 순서대로 확인하고 하나라도 맞으면 제외 */
-function excluded(a: Item, b: Item, overlayIndices: ReadonlySet<number>, lookup: ElementLookup): boolean {
+function excluded(a: Item, b: Item, overlayIndices: ReadonlySet<number>): boolean {
   // 1. PRD 5.3.3: 조상과 자손 관계
   if (isDescendantOf(a.el, b.el.index) || isDescendantOf(b.el, a.el.index)) return true;
   // 2. PRD 5.3.3: 의도된 오버레이 (Hero 이미지 위의 텍스트 등)
-  if (isIntendedOverlay(a, b, lookup) || isIntendedOverlay(b, a, lookup)) return true;
+  if (isIntendedOverlay(a, b) || isIntendedOverlay(b, a)) return true;
   // 3. PRD 5.3.3: fixed/sticky와 일반 흐름 요소의 겹침은 스크롤에 따라 달라진다 (둘 다 fixed/sticky면 비교)
   if (a.el.flags.fixedOrSticky !== b.el.flags.fixedOrSticky) return true;
   // 4. PRD 5.3.3: 30% 이상을 덮는 overlay와 그 자손
@@ -155,11 +163,9 @@ function intersectionArea(a: Item, b: Item): number {
   return sum;
 }
 
-function subtypeOf(a: CollectedElement, b: CollectedElement, lookup: ElementLookup): SubtypeByType['element-overlap'] {
-  const aInteractive = inInteractiveArea(a, lookup);
-  const bInteractive = inInteractiveArea(b, lookup);
-  if (aInteractive && bInteractive) return 'interactive';
-  if (isTextElement(a) && isTextElement(b) && !aInteractive && !bInteractive) return 'text';
+function subtypeOf(a: Item, b: Item): SubtypeByType['element-overlap'] {
+  if (a.interactiveArea && b.interactiveArea) return 'interactive';
+  if (isTextElement(a.el) && isTextElement(b.el) && !a.interactiveArea && !b.interactiveArea) return 'text';
   return 'other';
 }
 
@@ -180,7 +186,7 @@ export function detectOverlap(c: CollectedViewport): { issues: OverlapIssue[]; o
     if (isOverlayOrDescendant(el, overlayIndices)) continue; // DETECTION_RULES 5.3: overlay와 그 자손은 비교 대상이 아니다
     const rects = regionOf(el, lookup);
     if (rects.length === 0) continue; // DETECTION_RULES 5.1: 보이지 않는 요소
-    items.push(toItem(el, rects));
+    items.push(toItem(el, rects, lookup));
   }
 
   // DETECTION_RULES 5.4: (top, index) 오름차순 sweep.
@@ -192,22 +198,22 @@ export function detectOverlap(c: CollectedViewport): { issues: OverlapIssue[]; o
     active = active.filter((item) => item.bottom > current.top);
     for (const other of active) {
       if (other.right <= current.left || current.right <= other.left) continue;
-      if (excluded(current, other, overlayIndices, lookup)) continue;
+      if (excluded(current, other, overlayIndices)) continue;
       const overlapArea = intersectionArea(current, other);
       if (overlapArea <= 0) continue;
       const smaller = Math.min(current.area, other.area);
       if (overlapArea < OVERLAP_MIN_AREA_PX2 && overlapArea < smaller * OVERLAP_MIN_RATIO) continue;
 
       // 대상은 문서 순서가 앞인 요소 a (DETECTION_RULES 5.6)
-      const [a, b] = current.el.index < other.el.index ? [current.el, other.el] : [other.el, current.el];
-      const subtype = subtypeOf(a, b, lookup);
+      const [a, b] = current.el.index < other.el.index ? [current, other] : [other, current];
+      const subtype = subtypeOf(a, b);
       let confidence = DEFAULT_CONFIDENCE;
       // PRD 5.3.3 예외: 인터랙티브끼리는 낮추지 않는다
-      if (subtype !== 'interactive' && (isAbsoluteInParent(a, lookup) || isAbsoluteInParent(b, lookup))) {
+      if (subtype !== 'interactive' && (a.absoluteInParent || b.absoluteInParent)) {
         confidence = ABSOLUTE_IN_PARENT_CONFIDENCE;
       }
-      addToGroup(groups, a, subtype, {
-        index: b.index,
+      addToGroup(groups, a.el, subtype, {
+        index: b.el.index,
         area: overlapArea,
         ratioPercent: smaller > 0 ? (overlapArea / smaller) * 100 : 0,
         confidence,
@@ -280,7 +286,11 @@ function addToGroup(
     groups.set(key, group);
   }
   group.count += 1;
-  group.targets.push(target);
-  group.targets.sort(compareTargets);
-  if (group.targets.length > MAX_OVERLAP_TARGETS) group.targets.length = MAX_OVERLAP_TARGETS;
+  // 상위 MAX_OVERLAP_TARGETS개만 정렬된 상태로 유지한다. 가득 찼고 마지막보다 뒤면 넣지 않는다
+  const { targets } = group;
+  if (targets.length === MAX_OVERLAP_TARGETS && compareTargets(target, targets[targets.length - 1]) >= 0) return;
+  let at = targets.length;
+  while (at > 0 && compareTargets(target, targets[at - 1]) < 0) at -= 1;
+  targets.splice(at, 0, target);
+  if (targets.length > MAX_OVERLAP_TARGETS) targets.length = MAX_OVERLAP_TARGETS;
 }

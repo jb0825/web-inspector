@@ -17,6 +17,7 @@
 - 수정: Overlap의 viewport 간 병합은 대상 요소와 subtype만 일치하면 된다(7.3)
 - 추가: 검사 1회당 이슈 상한 `MAX_ISSUES = 200`, 처리 순서를 병합 → Priority → 상한 → ID → 연결 → Evidence로 변경(1.3, 7.6)
 - 명시: 비교 대상 "말단"의 해석(5.1), 제외 조건 2의 영역 기준(5.5), `rootClip`이면 `unexplainedPageScroll`이 아님(6.4)
+- 추가: 새 파일 `src/server/detect/pipeline.ts`(`buildIssues`)와 병합 뒤 중간 타입(1.3, 1.5), 매칭 기준 적용 순서(7.2), 규칙 2의 동점 처리(7.1)
 
 ### Changelog (v1.0 → v2.0)
 
@@ -75,6 +76,8 @@ v1.0(Detection Guide)은 PRD v1.1 이전 기준이라 PRD와 충돌했다. v2.0�
   → buildEvidence                     src/server/evidence/*.ts
 ```
 
+`src/server/detect/pipeline.ts`의 `buildIssues({ desktop, mobile })`가 `detectTextOverflow`부터 `linkRelated`까지를 한 번에 실행한다. 각 입력은 `CollectedViewport | null`(실패한 viewport는 `null`)이다. viewport 하나의 탐지와 Dedup 규칙 2는 `detectViewport(c)`로 따로 부를 수 있다(10장: 예외가 나면 그 viewport만 `null`로 처리하기 위해서).
+
 - `order.ts`는 AGENTS.md 3장 구조에 없는 새 파일이다. ID 부여를 Dedup과 분리해 단위 테스트하기 위해서다.
 - `geometry.ts`(3.6)는 `overlap.ts`와 `viewportOverflow.ts`가 함께 쓰는 보이는 영역 계산 순수 함수다.
 - Priority를 ID 부여보다 먼저 계산한다. 상한(7.6)을 점수순으로 적용한 뒤 남은 이슈에만 ID를 붙여야 빈 번호가 생기지 않기 때문이다(DOMAIN_MODEL S-1). Priority는 type, subtype, 요소 정보, 위치로만 계산하므로 ID가 필요 없다.
@@ -104,6 +107,18 @@ detectViewportOverflow(c: CollectedViewport): { issues: RawIssue[]; unexplainedP
 ```
 
 출력 순서는 대상 요소 index → subtype → 상대 요소 index다(11장).
+
+### 1.5 병합 뒤의 중간 타입
+
+병합(7.3)부터 연결(7.5)까지의 결과는 `Issue`(PRD 8.2)가 아니라 서버 전용 타입으로 둔다(`src/server/detect/types.ts`). Evidence가 아직 없기 때문이다. 필드 이름은 `Issue`와 같다.
+
+| 타입 | 단계 | 필드 |
+|---|---|---|
+| `MergedIssue` | 7.3 | `type`, `subtype`, `viewports`, `viewportTag`, `occurrences: RawIssue[]`(`[desktop, mobile]`), `affectedDescendants`(occurrences[0]의 값), `confidence`, `needsReview` |
+| `ScoredIssue` | 9장 | + `scores`, `priority` |
+| `DetectedIssue` | 7.4, 7.5 | + `id`, `relatedIssueIds` |
+
+`buildIssues`는 `{ issues: DetectedIssue[], viewports: { desktop, mobile }(각각 overlaysDetected, unexplainedPageScroll 또는 null), issuesDetected, issuesTruncated }`를 돌려준다. Evidence 단계(8장)가 `title`, `selector`, `sourceHints`, occurrence의 `selector`·`evidenceText`·`cropRect`·`computedStyle`·`sourceHints`, `RelatedElement`의 `selector`·`tag`·`boundingBox`를 채워 `Issue`로 만든다.
 
 ---
 
@@ -534,7 +549,7 @@ for c in causes:
 ### 7.1 Viewport 안 (규칙 1, 2)
 
 1. 규칙 1은 6.3에서 처리된다.
-2. 규칙 2: `(type, subtype, element index)`가 같은 RawIssue를 하나로 합친다. 측정값은 큰 delta를 남긴다. Overlap은 5.6에서 이미 대상 요소 기준으로 묶이고, 다른 유형도 현재 탐지 로직에서는 생기지 않아야 하지만 방어용으로 둔다.
+2. 규칙 2: `(type, subtype, element index)`가 같은 RawIssue를 하나로 합친다. 측정값은 큰 delta(delta 값 중 최댓값)를 가진 RawIssue를 통째로 남기고, 같으면 출력 순서(1.4)가 앞인 것을 남긴다. Overlap은 5.6에서 이미 대상 요소 기준으로 묶이고, 다른 유형도 현재 탐지 로직에서는 생기지 않아야 하지만 방어용으로 둔다.
 
 ### 7.2 Viewport 간 매칭 (PRD 5.6)
 
@@ -546,6 +561,9 @@ desktop 요소 d와 mobile 요소 m이 같은 요소인 조건 (위에서부터 
 ```
 
 - 매칭은 1:1이다. 한 기준에 후보가 여러 개면 문서 순서상 가장 앞의 것을 고르고, 한 번 짝지어진 요소는 다시 쓰지 않는다.
+- 기준은 단계별로 적용한다. 기준 1로 가능한 짝을 문서 순서대로 모두 정한 뒤, 남은 요소끼리 기준 2, 그다음 기준 3을 시도한다. 약한 기준(selector)의 짝이 강한 기준(id/testId)의 짝을 먼저 가져가지 않게 하기 위해서다.
+- 기준 1은 desktop 요소에 `id` 또는 `testId`가 **있을 때만** 쓴다(값이 없는 요소끼리 같다고 보지 않는다).
+- 매칭은 요소 단위다. 병합(7.3)과 유형 간 연결(7.5)이 같은 매칭 결과를 쓴다.
 - 매칭은 이슈가 있는 요소에 대해서만 계산한다.
 
 ### 7.3 Viewport 간 병합 (규칙 3)
@@ -747,6 +765,8 @@ Priority는 Confidence와 관계없이 9.3으로 계산한다(PRD 5.5.4).
   - 기대하지 않은 이슈 중 `needsReview: false`인 것이 있으면 **실패**한다. Positive 페이지는 의도한 문제 외에는 이슈가 없도록 만들었으므로, 추가 이슈는 탐지 코드의 오탐이거나 Fixture의 잘못이다. 어느 쪽인지 확인하고 고친다.
   - 기대하지 않은 이슈 중 `needsReview: true`인 것은 실패로 보지 않고 로그에 남긴다(Negative 기준과 같다).
   - 허용 이슈(`allowed`)에 적힌 이슈는 나와도, 나오지 않아도 통과한다. PRD가 결과를 둘 중 하나로 허용한 경우에만 쓴다(예: P-06의 연결된 `text-overflow`).
+- 하네스(`tests/fixtures/run.ts`)는 expected.ts에 값이 있으면 `relatedTestId`, `confidence`, `scores`도 비교한다. 허용 이슈가 나오면 같은 요소의 주 이슈와 `relatedIssueIds`로 연결되어 있어야 한다(PRD 13.1 P-06).
+- `pnpm test:fixtures --repeat N`은 전체를 N번 실행하고 `buildIssues` 결과 JSON이 모두 같은지 확인한다(11장).
 - 각 Fixture는 의도한 문제 외에 다른 문제가 생기지 않게 최소한으로 만든다.
 - Fixture의 기본 스타일은 CJK 폰트(Noto Sans KR)를 쓴다(PRD 5.2.3).
 - 결과는 README에 표로 기록한다(PRD 13.2).
@@ -796,6 +816,11 @@ PRD에 없던 구현 결정이다. AGENTS.md 6장에 따라 보고 대상이다.
 23. Overlap의 viewport 간 병합은 대상 요소와 subtype만 일치하면 된다(7.3).
 24. 검사 1회당 이슈 상한 `MAX_ISSUES = 200`, score100 순으로 선택한다. 처리 순서를 병합 → Priority → 상한 → ID → 연결 → Evidence로 바꿨다(1.3, 7.6).
 25. 새 파일 `src/server/collect/round.ts`: `roundMeasure`를 수집과 판정이 함께 쓰도록 분리했다.
+26. 새 파일 `src/server/detect/pipeline.ts`(`buildIssues`, `detectViewport`)와 중간 타입 `MergedIssue`/`ScoredIssue`/`DetectedIssue`(1.3, 1.5).
+27. 매칭 기준을 단계별로 적용하고, 기준 1은 값이 있을 때만 쓴다(7.2).
+28. 규칙 2에서 delta가 큰 RawIssue를 통째로 남기고, 같으면 출력 순서가 앞인 것을 남긴다(7.1).
+29. 병합된 Viewport Overflow 이슈의 `affectedDescendants`는 `occurrences[0]`의 값이다(1.5).
+30. `test:fixtures`는 기대 이슈의 `relatedTestId`, `confidence`, `scores`(expected.ts에 값이 있는 경우)까지 비교하고, 허용 이슈(`allowed`)가 나오면 같은 요소의 주 이슈와 `relatedIssueIds`로 연결되어 있는지 확인한다(12.2).
 
 ---
 

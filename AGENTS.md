@@ -104,8 +104,9 @@ src/
       textOverflow.ts
       overlap.ts
       viewportOverflow.ts
-      dedup.ts
+      dedup.ts                          # Dedup 규칙 2~4 (viewport 안 병합, viewport 간 병합, 유형 간 연결)
       order.ts                          # 이슈 수 상한과 정렬, Issue ID 부여 (PRD 5.3.6, 5.3.7)
+      pipeline.ts                       # buildIssues: 탐지부터 유형 간 연결까지 (DETECTION_RULES 1.3)
       geometry.ts                       # 보이는 영역 계산 (DETECTION_RULES 3.6)
     compare/match.ts                    # Desktop / Mobile 요소 매칭 (PRD 5.6)
     evidence/
@@ -152,7 +153,7 @@ public/fixtures/                        # 모든 페이지가 /fonts/의 폰트�
 public/sample/                          # 샘플 리포트 정적 데이터 (inspection.json, 스크린샷)
 tests/
   unit/                                 # src/server 순수 함수 테스트
-  fixtures/                             # 로컬 브라우저로 Fixture 검사 결과 검증 (expected.ts)
+  fixtures/                             # 로컬 브라우저로 Fixture 검사 결과 검증 (expected.ts, run.ts, server.ts)
 docs/
   PRD.md, DETECTION_RULES.md, DOMAIN_MODEL.md, API_SPEC.md
   USER_FLOW.md, WIREFRAME.md, DESIGN_GUIDE.md
