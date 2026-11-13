@@ -27,6 +27,8 @@
 - 문서 내 잘못된 절 참조 수정 (8.3 → 8.6)
 - 로컬 개발 환경(macOS)의 폰트 처리 방식과 Fixture 폰트 규칙 명시 (5.2.3, 13.1)
 - `innerWidth`/`innerHeight`를 판정 기준에서 제외하고 `ViewportResult.screenshotWidth` 추가 (5.2.1, 5.3.3, 5.4.1, 8.2)
+- 겹침 이슈를 쌍이 아니라 대상 요소 기준으로 묶고, Overlap의 viewport 간 병합 조건을 대상 요소와 subtype으로 완화 (5.3.3, 5.3.5)
+- 검사 1회당 이슈 상한 200개, 처리 순서를 병합 → Priority → 상한 → ID 부여로 변경, `issuesDetected`/`issuesTruncated` 추가 (5.3.5, 5.3.6, 5.3.7, 8.1.2, 8.2)
 
 ### Changelog (v1.0 → v1.1)
 
@@ -299,6 +301,11 @@ Confidence 하향 조건:
 - 겹치는 요소 중 하나가 `position: absolute`이면서 부모 컨테이너 안에 있으면, 의도된 디자인일 가능성이 있으므로 Confidence를 0.4로 낮춘다.
 - **예외:** 겹치는 두 요소가 모두 인터랙티브 요소이면 Confidence를 낮추지 않는다. 버튼끼리 겹치면 배치 의도와 관계없이 조작을 방해하기 때문이다.
 
+겹침 이슈 묶기:
+- 겹친 두 요소 중 문서 순서가 앞인 요소를 대상으로 하고, **(viewport, 대상 요소, subtype)마다 이슈를 하나만** 만든다. 쌍 단위로 만들면 이슈 수가 요소 수의 제곱까지 늘 수 있고, 요소 하나가 여러 요소와 겹치면 고칠 대상은 대개 그 요소 하나이기 때문이다.
+- 대표 상대 요소는 교차 면적이 가장 큰 요소다(같으면 문서 순서가 앞인 요소). 측정값과 Confidence는 대표 쌍의 값이다.
+- 상대 요소는 `relatedElements`에 최대 5개까지 넣고(대표 포함), 전체 상대 요소 수는 측정값 `overlapTargetCount`로 남긴다.
+
 #### 5.3.4 C. Viewport Overflow
 
 콘텐츠나 UI 요소가 화면의 가로 영역을 벗어나는 문제를 탐지한다.
@@ -324,23 +331,30 @@ Confidence 하향 조건:
 
 1. **원인 요소만 보고:** Viewport Overflow에서 원인 요소로 보고된 요소의 자손들은 별도 Viewport Overflow 이슈로 만들지 않는다. 원인 이슈에 `affectedDescendants` 개수로 기록한다.
 2. **같은 요소 병합:** 같은 viewport에서 같은 요소와 같은 유형(type + subtype)으로 잡힌 이슈는 하나로 합친다.
-3. **Viewport 간 병합:** Desktop과 Mobile에서 같은 요소(5.6의 매칭 기준)에 같은 type + subtype의 이슈가 있으면 하나로 합치고 `viewports: ['desktop', 'mobile']`로 표시한다. 각 viewport의 측정값과 좌표는 `occurrences` 배열에 따로 보관한다(8.2).
+3. **Viewport 간 병합:** Desktop과 Mobile에서 같은 요소(5.6의 매칭 기준)에 같은 type + subtype의 이슈가 있으면 하나로 합치고 `viewports: ['desktop', 'mobile']`로 표시한다. 각 viewport의 측정값과 좌표는 `occurrences` 배열에 따로 보관한다(8.2). Element Overlap도 대상 요소와 subtype만 같으면 합친다. 대표 상대 요소는 viewport마다 다를 수 있기 때문이다.
 4. **유형 간 우선순위:** 같은 요소가 Viewport Overflow와 Text Overflow에 동시에 걸리면, Viewport Overflow를 주 이슈로 하고 다른 하나는 `relatedIssueIds`로 서로 연결한다.
 
-처리 순서: 탐지 → Dedup → Evidence → Priority. Reach 보정(5.5.3)은 Viewport 간 병합이 끝난 뒤에 계산한다.
+처리 순서: 탐지 → Dedup(규칙 1~3) → Priority → 이슈 수 상한(5.3.7) → 정렬과 ID 부여(5.3.6) → 유형 간 연결(규칙 4) → Evidence. Reach 보정(5.5.3)은 Viewport 간 병합이 끝난 뒤에 계산한다. Priority는 type, subtype, 요소 정보, 위치로만 계산하므로 ID 없이 먼저 계산할 수 있다.
 
 #### 5.3.6 정렬과 ID 부여
 
 이슈 ID와 목록 순서는 다음 규칙으로 정한다. 같은 측정 데이터에는 항상 같은 ID가 붙어야 한다.
 
-1. Dedup이 끝난 이슈를 다음 키로 정렬한다.
+1. 상한(5.3.7)을 적용하고 남은 이슈를 다음 키로 정렬한다. 버려진 이슈에는 ID를 붙이지 않아 `ISS-001`부터 빈 번호가 없다.
    1. 대표 occurrence의 viewport (`desktop` → `mobile`). 대표 occurrence는 `occurrences[0]`이며, Desktop이 있으면 Desktop이다.
    2. 대표 occurrence의 요소 문서 순서(DOM 순회 index)
    3. type (`viewport-overflow` → `text-overflow` → `element-overlap`)
    4. subtype (사전순)
-   5. 겹침 이슈는 상대 요소의 문서 순서
+   5. 겹침 이슈는 대표 상대 요소의 문서 순서
 2. 정렬된 순서대로 `ISS-001`부터 ID를 붙인다.
 3. 결과 화면의 기본 정렬은 Priority(P0 → P3) → ID 순이다. 이 정렬은 표시용이며 ID를 바꾸지 않는다.
+
+#### 5.3.7 이슈 수 상한
+
+- 검사 1회에 저장하는 이슈는 **최대 200개**다(Viewport 간 병합이 끝난 뒤 개수). 겹침 이슈 묶기(5.3.3)가 근본 대책이고, 이 상한은 그래도 많이 남는 경우를 막는 안전장치다.
+- 200개를 넘으면 `score100`이 높은 순으로 남긴다. 같으면 5.3.6의 정렬 키를 쓴다. P0·P1이 먼저 남고 영향이 적은 P2·P3부터 버린다.
+- 자르기 전 개수를 `issuesDetected`, 잘림 여부를 `issuesTruncated`에 기록하고(8.2), 결과 화면에 "상위 200개만 표시" 안내를 띄운다.
+- 200개로 정한 이유: 이슈 하나가 Source Hints를 포함해 1~3KB라 200개면 결과 문서가 수백 KB다. 응답 크기 제한(4.5MB)과 Upstash 요청 한도 안에 넉넉히 들어간다. AI 분석은 최대 30개(5.7.2)라 영향이 없고, 태스크는 하나에 이슈 최대 8개(5.8.1)라 25~40개 수준이다.
 
 ### 5.4 Feature 4. Issue Evidence
 
@@ -806,7 +820,7 @@ Viewport별 오류와 AI 분석 상태를 따로 기록하고(8.2), 최상위 `s
        ├ Chromium 실행 (폰트 로드 포함)
        ├ Desktop context → 안정화 → 측정 → 스크린샷
        ├ Mobile context  → 안정화 → 측정 → 스크린샷
-       ├ 탐지 → Dedup → Evidence → Priority → 정렬·ID
+       ├ 탐지 → Dedup → Priority → 상한(200) → 정렬·ID → 연결 → Evidence
        ├ 전체 스크린샷 → Vercel Blob
        ├ 결과 JSON → Redis (status: analyzing)
        └ POST /api/inspections/:id/analyze 호출 (응답 202만 확인하고 종료)
@@ -891,6 +905,8 @@ interface Inspection {
     analyzedIssueCount: number;
     error?: InspectionErrorInfo;
   };
+  issuesDetected: number;               // 상한(5.3.7)을 적용하기 전 이슈 수
+  issuesTruncated: boolean;             // issuesDetected > issues.length
   issues: Issue[];
   tasks: DevTask[];
 }
@@ -1212,6 +1228,8 @@ P-02의 배치 조건 근거: 첫 화면 안에 있거나 두 viewport 모두에
 6. 실제 사용 데이터를 바탕으로 S/I/R 규칙 표를 어떻게 보정할 것인가?
 7. Fluid compute에서 동시 검사 2개가 한 인스턴스에 몰릴 때 메모리가 충분한가? (8.5)
 8. AI 분석 대상 상한(30개)과 AI 단계 시간 상한(240초)이 적절한가?
+9. 이슈 수 상한(200개)과 겹침 이슈의 `relatedElements` 상한(5개)이 실제 사이트에서 적절한가?
+10. 요소 하나가 아주 많은 요소(N개 이상)와 겹치면 투명한 레이어일 가능성이 높으니 Confidence를 낮출 것인가? Fixture로 검증되지 않은 휴리스틱이라 MVP에는 넣지 않는다.
 
 ---
 

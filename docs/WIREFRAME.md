@@ -300,6 +300,7 @@ MVP에는 그 밖의 내비게이션 메뉴를 두지 않는다.
 | 실패한 viewport | Mobile 검사에 실패했습니다: {실패 원인}. Desktop 결과만 표시합니다. |
 | 스크린샷 잘림 | {Viewport} 스크린샷은 {screenshotHeight}px까지만 저장되었습니다. (측정은 전체 페이지) |
 | 요소 수 잘림 | 요소가 많아 문서 앞쪽 3,000개만 검사했습니다. |
+| 이슈 수 잘림 (`issuesTruncated`) | 이슈가 {issuesDetected}개 발견되어 우선순위가 높은 상위 200개만 표시합니다. (PRD 5.3.7) |
 | canvas 있음 | canvas 영역 안의 그래픽은 검사하지 않았습니다. |
 | meta viewport 없음 | 이 페이지에는 meta viewport가 없어 Mobile 화면 너비가 {layoutWidth}px로 측정되었습니다. |
 | AI 실패 | AI 분석을 가져오지 못했습니다. 측정 결과와 태스크는 그대로 사용할 수 있습니다. |
@@ -484,7 +485,7 @@ P1  Text Overflow · clipped   button "지금 무료로 시작하기"   mobile-o
 - 하이라이트 스크린샷: 전체 스크린샷을 `cropRect` 영역만 보이게 잘라 표시하고, 대상 요소의 박스를 그린다. `cropRect`가 `null`이면 "스크린샷 범위 밖"을 표시한다.
 - 측정값 표: `measured`, `expected`, `delta`의 키와 값. 값은 px 정수로 표시한다.
 - Selector에는 복사 버튼을 둔다.
-- 관련 요소: `relatedElements`의 selector와 역할. Element Overlap은 상대 요소를 반드시 표시한다.
+- 관련 요소: `relatedElements`의 selector와 역할. Element Overlap은 상대 요소를 반드시 표시한다. 첫 번째가 대표 상대 요소(교차 면적 최대)이고 최대 5개다. `measured.overlapTargetCount`가 5보다 크면 "외 {overlapTargetCount − 5}개 요소와도 겹칩니다"를 덧붙인다(PRD 5.3.3).
 - `affectedDescendants`가 있으면 "이 요소 때문에 함께 넘친 하위 요소 {N}개"를 표시한다.
 
 ### 6.5 Source Hints (소스에서 찾기)

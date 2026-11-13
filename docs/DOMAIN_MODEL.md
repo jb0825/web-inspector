@@ -91,6 +91,7 @@ Inspection (Redis 문서 1개, 집합의 루트)
 | I-8 | `completed`, `partial`, `failed`이면 `completedAt`이 있다. |
 | I-9 | `issues.length = 0`이고 브라우저 단계가 끝났으면 `analysis.status`는 `skipped`이고 `tasks`는 비어 있다. |
 | I-10 | `analysis.error`가 있으면 `analysis.status = failed`이고 `error.code = AI_FAILED`다. |
+| I-11 | `issues.length ≤ MAX_ISSUES(200)`, `issuesDetected ≥ issues.length`, `issuesTruncated = issuesDetected > issues.length`다(PRD 5.3.7). `pending`, `running`에서는 `issuesDetected = 0`이다. |
 
 ### 3.2 ViewportResult
 
@@ -104,7 +105,7 @@ Inspection (Redis 문서 1개, 집합의 루트)
 
 | # | 조건 |
 |---|---|
-| S-1 | `issues`는 ID 순서로 저장되고, ID는 `ISS-001`부터 빈 번호 없이 이어진다. |
+| S-1 | `issues`는 ID 순서로 저장되고, ID는 `ISS-001`부터 빈 번호 없이 이어진다. ID는 상한(PRD 5.3.7)을 적용한 뒤 남은 이슈에만 붙인다. |
 | S-2 | `occurrences`는 1개 또는 2개이고, 2개면 `[desktop, mobile]` 순서다. |
 | S-3 | `viewports`는 `occurrences`의 viewport 목록과 같다. 실패한 viewport는 들어가지 않는다. |
 | S-4 | `viewportTag`: 한 viewport가 실패했으면 `null`, 아니면 occurrence 2개 → `both`, 1개 → `desktop-only`/`mobile-only` |
@@ -116,6 +117,7 @@ Inspection (Redis 문서 1개, 집합의 루트)
 | S-10 | `analysis`와 `analysisSkippedReason` 중 최대 하나만 있다. AI 단계가 끝난 뒤에는 정확히 하나가 있다. |
 | S-11 | `cropRect`가 있으면 해당 viewport의 `[0, screenshotWidth] × [0, screenshotHeight]` 안에 있다. |
 | S-12 | `type`과 `subtype` 조합은 DETECTION_RULES 1.1 표에 있는 것만 허용한다. |
+| S-13 | `element-overlap` occurrence의 `relatedElements`는 1~5개이고 모두 `role = overlap-target`이며, `measured.overlapTargetCount ≥ relatedElements.length`다(DETECTION_RULES 5.6). |
 
 ### 3.4 DevTask
 
@@ -334,6 +336,7 @@ PRD에 없던 결정이다(AGENTS.md 6장).
 9. 샘플 리포트 파일 위치 `public/sample/`(6.3).
 10. 공유 URL로 페이지 텍스트 일부와 스크린샷이 공개된다는 점을 안내한다(8장).
 11. 새 파일: `src/server/store/invariants.ts`, `src/server/store/schemas.ts`, `src/server/collect/schemas.ts`, `src/schemas/inspectionRequest.ts`, `src/schemas/enums.ts`
+12. 이슈 수 상한 관련 불변 조건 I-11, 겹침 이슈 묶기 관련 불변 조건 S-13을 추가했다(PRD 5.3.3, 5.3.7).
 
 ---
 

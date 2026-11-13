@@ -12,6 +12,11 @@
 - 추가: `CollectedViewport.elementsTruncated`, `viewportSize`(3.1)
 - 수정: 자신 또는 조상의 `opacity`가 0이면 서브트리 전체를 후보에서 뺀다(3.2)
 - 수정: 판정에 `innerWidth`/`innerHeight`를 쓰지 않는다. 첫 화면 판정과 overlay 면적은 설정 viewport 크기, cropRect 경계는 실제 스크린샷 크기를 쓴다(3.1, 5.3, 8.3, 9.2)
+- 추가: `RawIssue` 구조와 탐지 함수 반환 형태, 모든 유형의 `boundingBox`는 대상 요소의 `rect`(1.4)
+- 수정: 겹침 이슈를 쌍이 아니라 `(viewport, 대상 요소, subtype)`마다 하나로 묶는다. 대표 상대 요소, `relatedElements` 최대 5개, `overlapTargetCount`(5.4, 5.6, 7.1)
+- 수정: Overlap의 viewport 간 병합은 대상 요소와 subtype만 일치하면 된다(7.3)
+- 추가: 검사 1회당 이슈 상한 `MAX_ISSUES = 200`, 처리 순서를 병합 → Priority → 상한 → ID → 연결 → Evidence로 변경(1.3, 7.6)
+- 명시: 비교 대상 "말단"의 해석(5.1), 제외 조건 2의 영역 기준(5.5), `rootClip`이면 `unexplainedPageScroll`이 아님(6.4)
 
 ### Changelog (v1.0 → v2.0)
 
@@ -63,15 +68,42 @@ v1.0(Detection Guide)은 PRD v1.1 이전 기준이라 PRD와 충돌했다. v2.0�
 [node, 두 viewport 모두 끝난 뒤]
   → matchAcrossViewports              src/server/compare/match.ts
   → mergeAcrossViewports (규칙 3)      src/server/detect/dedup.ts
+  → scorePriority                     src/server/priority/score.ts
+  → capIssues (MAX_ISSUES, 7.6)       src/server/detect/order.ts
   → orderAndAssignIds                 src/server/detect/order.ts
   → linkRelated (규칙 4)               src/server/detect/dedup.ts
   → buildEvidence                     src/server/evidence/*.ts
-  → scorePriority                     src/server/priority/score.ts
 ```
 
 - `order.ts`는 AGENTS.md 3장 구조에 없는 새 파일이다. ID 부여를 Dedup과 분리해 단위 테스트하기 위해서다.
 - `geometry.ts`(3.6)는 `overlap.ts`와 `viewportOverflow.ts`가 함께 쓰는 보이는 영역 계산 순수 함수다.
-- 탐지 함수의 형태는 `(collected: CollectedViewport) => RawIssue[]`이다(AGENTS.md 9장).
+- Priority를 ID 부여보다 먼저 계산한다. 상한(7.6)을 점수순으로 적용한 뒤 남은 이슈에만 ID를 붙여야 빈 번호가 생기지 않기 때문이다(DOMAIN_MODEL S-1). Priority는 type, subtype, 요소 정보, 위치로만 계산하므로 ID가 필요 없다.
+
+### 1.4 `RawIssue`와 탐지 함수 반환 형태
+
+탐지 함수는 viewport 하나 안의 이슈 후보 `RawIssue`를 만든다(`src/server/detect/types.ts`). 필드 이름은 `IssueOccurrence`(PRD 8.2)와 같게 두고, 요소는 selector 대신 `CollectedElement.index`로 가리킨다. selector, tag, `RelatedElement.boundingBox`는 Evidence 단계에서 index로 찾아 채운다.
+
+| 필드 | 내용 |
+|---|---|
+| `viewport`, `type`, `subtype` | type별 union으로 정의해 1.1 표의 조합만 허용한다 |
+| `elementIndex` | 대상 요소 |
+| `boundingBox` | **모든 유형에서 대상 요소의 `rect`**. 마커가 요소 위치를 가리키게 하기 위해서다(nowrap 제목처럼 글자만 넘친 경우에도 요소 박스를 가리킨다) |
+| `measured`, `expected`, `delta` | 4~6장의 측정값 표 |
+| `relatedElements` | `{ role, index }[]` |
+| `confidence` | 기본 1.0 |
+| `axes` | `clipped`만. 잘린 축 |
+| `relatedIndex` | Overlap만. 대표 상대 요소(5.6) |
+| `affectedDescendants` | Viewport Overflow만 |
+
+탐지 함수는 이슈와 함께 부가 정보를 돌려준다. 그래서 반환값은 배열이 아니라 객체다.
+
+```ts
+detectTextOverflow(c: CollectedViewport): { issues: RawIssue[] }
+detectOverlap(c: CollectedViewport): { issues: RawIssue[]; overlaysDetected: string[] }        // 5.3
+detectViewportOverflow(c: CollectedViewport): { issues: RawIssue[]; unexplainedPageScroll: boolean }  // 6.4
+```
+
+출력 순서는 대상 요소 index → subtype → 상대 요소 index다(11장).
 
 ---
 
@@ -89,6 +121,8 @@ v1.0(Detection Guide)은 PRD v1.1 이전 기준이라 PRD와 충돌했다. v2.0�
 | `OVERLAP_MIN_AREA_PX2` | 100 | 5.3.3 |
 | `OVERLAY_MIN_VIEWPORT_RATIO` | 0.3 | 5.3.3 |
 | `ABSOLUTE_IN_PARENT_CONFIDENCE` | 0.4 | 5.3.3 |
+| `MAX_OVERLAP_TARGETS` | 5 (겹침 이슈 하나의 `relatedElements` 최대 개수, 대표 포함) | 5.3.3 |
+| `MAX_ISSUES` | 200 (검사 1회당 저장하는 이슈 수) | 5.3.7 |
 | `NEEDS_REVIEW_BELOW` | 0.5 | 5.5.4 |
 | `TEXT_SNIPPET_MAX` | 80 | 5.4.2 |
 | `LANDMARK_MAX` | 60 | 5.4.2 |
@@ -326,6 +360,7 @@ for T in 텍스트 요소:
 
 - 대상: 텍스트 요소, 인터랙티브 요소, `img`, `video`, `canvas` 중 **다른 비교 대상을 자손으로 갖지 않는 요소**(말단)
   - 예외: 인터랙티브 요소는 자손에 텍스트 요소가 있어도 대상에 넣는다. 둘은 조상/자손 관계라 서로 비교되지 않는다.
+  - 말단 판정은 후보 자손 중 "텍스트 요소, 인터랙티브 요소, `img`/`video`/`canvas`"가 있는지로 한다. 인터랙티브 요소는 그런 자손이 **모두 텍스트 요소**일 때만 예외로 대상에 넣는다. 예: `<a href><img></a>`는 `a`가 빠지고 `img`를 비교한다.
 - 영역:
   - 텍스트 요소(인터랙티브가 아닌 것): `textRects`에 line-height 보정(5.2)을 적용한 뒤 보이는 영역으로 자른(3.6) rect 목록
   - 그 밖: `visibleRect(el)` 하나(3.6)
@@ -363,12 +398,13 @@ for a in items:
     area = Σ intersection(ra, rb)   for ra in a.rects, rb in b.rects
     smaller = min(area(a), area(b))
     if area >= OVERLAP_MIN_AREA_PX2 or area >= smaller * OVERLAP_MIN_RATIO:
-      emit pair(min index, max index)
+      addToGroup(min index, max index)                // 5.6: 대상 요소 기준으로 묶는다
   active += a
 ```
 
 - `top`/`bottom`은 영역 rect들의 최솟값/최댓값이다.
 - 쌍은 항상 (작은 index, 큰 index) 순서로 만들어 같은 쌍이 두 번 나오지 않게 한다.
+- 쌍 목록 전체를 쌓지 않는다. `(대상 요소, subtype)`마다 상위 `MAX_OVERLAP_TARGETS`개 쌍과 전체 개수만 유지한다(5.6). 쌍 수는 요소 수의 제곱까지 늘 수 있기 때문이다.
 
 ### 5.5 제외 조건 `excluded(a, b)`
 
@@ -376,6 +412,8 @@ for a in items:
 
 1. 한쪽이 다른 쪽의 조상이다. // PRD 5.3.3
 2. 한쪽의 `rect`가 다른 쪽의 영역 전체를 포함하고, 포함하는 쪽이 `img`, `video`, `canvas`이거나 `backgroundImage ≠ none`이다. // PRD 5.3.3: 의도된 오버레이
+   - 포함하는 쪽은 `visibleRect`(3.6), 포함되는 쪽은 5.1의 영역(자른 뒤 rect 목록)으로 판정한다. 잘려서 보이지 않는 부분으로 포함 여부가 바뀌지 않게 하기 위해서다.
+   - 포함 판정에는 `TOLERANCE_PX`를 둔다(PRD 5.3.1). 5.6의 "부모 rect 안에 완전히 들어감"도 같다.
 3. 둘 중 정확히 하나만 `fixedOrSticky`이다. // PRD 5.3.3: 스크롤 의존 겹침
 4. 한쪽이 overlay이거나 overlay의 자손이다. // PRD 5.3.3
 
@@ -389,7 +427,7 @@ for a in items:
 | `text` | 두 요소 모두 텍스트 요소이고, 어느 쪽도 인터랙티브 영역이 아님 |
 | `other` | 그 밖 |
 
-Confidence:
+Confidence (쌍마다 계산):
 
 ```text
 confidence = 1.0
@@ -398,14 +436,30 @@ if subtype != 'interactive':                     // PRD 5.3.3 예외: 인터랙�
     confidence = ABSOLUTE_IN_PARENT_CONFIDENCE
 ```
 
+**대상 요소 기준으로 묶기** (PRD 5.3.3):
+
+```text
+쌍 (a, b)의 대상은 index가 작은 쪽 a다.
+(viewport, a, subtype)마다 이슈를 하나만 만든다.
+  targets = 그 그룹의 상대 요소 b들을 (교차 면적 내림차순, index 오름차순)으로 정렬
+  대표 상대 요소 = targets[0]
+  relatedElements = targets 앞에서부터 MAX_OVERLAP_TARGETS개, 모두 role 'overlap-target'
+  측정값과 confidence = 대표 쌍의 값
+  overlapTargetCount = targets 전체 개수
+```
+
+- 요소 하나가 여러 요소와 겹치면 고칠 대상은 대개 그 요소 하나다. 하나의 원인이 이슈 여러 개를 만들지 않게 하는 Dedup 원칙(PRD 5.3.5)과 같은 방향이다.
+- 이슈 수는 최악의 경우에도 "후보 수 × subtype 3개" 이내다. 쌍 단위로는 요소 수의 제곱까지 늘 수 있다(3,000개가 한 구간에 몰리면 쌍 279,000개 → 묶은 뒤 2,999개).
+- confidence는 대표 쌍의 값을 쓴다. Evidence 문장(측정값)과 Confidence가 같은 쌍을 가리키게 하기 위해서다.
+
 측정값:
 
 | measured | expected | delta |
 |---|---|---|
-| `intersectionArea`, `overlapRatioPercent` (= area / smaller × 100) | `minRatioPercent: 20`, `minAreaPx2: 100` | 없음 (`{}`) |
+| `intersectionArea`, `overlapRatioPercent` (= area / smaller × 100, 대표 쌍), `overlapTargetCount` | `minRatioPercent: 20`, `minAreaPx2: 100` | 없음 (`{}`) |
 
-- 이슈의 대상 요소는 index가 작은 쪽(`a`), 상대 요소는 `relatedElements: [{ role: 'overlap-target', b }]`다.
-- `boundingBox`는 두 영역의 교차 영역 합집합이 아니라 대상 요소 `a`의 `rect`다. 마커가 요소 위치를 가리키게 하기 위해서다.
+- 이슈의 대상 요소는 index가 작은 쪽(`a`), `relatedElements[0]`은 대표 상대 요소다.
+- `boundingBox`는 두 영역의 교차 영역 합집합이 아니라 대상 요소 `a`의 `rect`다(1.4).
 
 ---
 
@@ -461,7 +515,8 @@ for c in causes:
 
 - `rootClip`을 먼저 확인한다. html/body가 `overflow-x: hidden`이어도 `documentElement.scrollWidth`는 넘친 콘텐츠 너비를 그대로 보고할 수 있어서, `pageScroll`을 먼저 보면 P-04가 `page-scroll`로 잘못 분류된다. 실제 Chromium 동작은 P-04 Fixture로 확인한다.
 - 왼쪽으로 나간 요소와 fixed 요소는 문서 가로 스크롤을 만들지 않으므로 `page-scroll`이 아니다.
-- `pageScroll`이 참인데 `page-scroll` 원인이 하나도 없으면(예: 후보가 아닌 요소가 원인) 이슈를 만들지 않고, 탐지 함수의 반환값에 `unexplainedPageScroll: true`를 함께 돌려준다. 이 값은 로그(호스트만 기록)와 테스트 확인용이며, Redis에 저장하거나 화면에 표시하지 않는다(PRD 8.2에 필드가 없다).
+- `pageScroll`이 참이고 `rootClip`이 거짓인데 `page-scroll` 원인이 하나도 없으면(예: 후보가 아닌 요소가 원인) 이슈를 만들지 않고, 탐지 함수의 반환값에 `unexplainedPageScroll: true`를 함께 돌려준다. 이 값은 로그(호스트만 기록)와 테스트 확인용이며, Redis에 저장하거나 화면에 표시하지 않는다(PRD 8.2에 필드가 없다).
+- `rootClip`이면 문서에 가로 스크롤이 생기지 않으므로 `unexplainedPageScroll`은 항상 거짓이다. P-04처럼 `scrollWidth`가 넘친 너비를 보고해도 마찬가지다.
 
 측정값:
 
@@ -479,7 +534,7 @@ for c in causes:
 ### 7.1 Viewport 안 (규칙 1, 2)
 
 1. 규칙 1은 6.3에서 처리된다.
-2. 규칙 2: `(type, subtype, element index, 상대 index)`가 같은 RawIssue를 하나로 합친다. 측정값은 큰 delta를 남긴다. 현재 탐지 로직에서는 생기지 않아야 하지만 방어용으로 둔다.
+2. 규칙 2: `(type, subtype, element index)`가 같은 RawIssue를 하나로 합친다. 측정값은 큰 delta를 남긴다. Overlap은 5.6에서 이미 대상 요소 기준으로 묶이고, 다른 유형도 현재 탐지 로직에서는 생기지 않아야 하지만 방어용으로 둔다.
 
 ### 7.2 Viewport 간 매칭 (PRD 5.6)
 
@@ -495,7 +550,7 @@ desktop 요소 d와 mobile 요소 m이 같은 요소인 조건 (위에서부터 
 
 ### 7.3 Viewport 간 병합 (규칙 3)
 
-- 같은 `(type, subtype)`이고 대상 요소가 매칭되면 하나의 이슈로 합친다. Overlap은 상대 요소도 매칭되어야 한다.
+- 같은 `(type, subtype)`이고 대상 요소가 매칭되면 하나의 이슈로 합친다. Overlap도 대상 요소와 subtype만 일치하면 된다. 대표 상대 요소(5.6)는 viewport마다 다를 수 있어서, 상대 요소까지 매칭을 요구하면 같은 문제가 두 이슈로 갈라지기 때문이다. 각 occurrence는 자기 viewport의 `relatedElements`를 그대로 가진다.
 - 합친 이슈의 `occurrences`는 `[desktop, mobile]` 순서다.
 - `viewportTag`: occurrence가 둘이면 `both`, 하나면 `desktop-only`/`mobile-only`. 한 viewport가 실패한 검사면 `null`(PRD 5.6).
 
@@ -508,16 +563,35 @@ desktop 요소 d와 mobile 요소 m이 같은 요소인 조건 (위에서부터 
 2. occurrences[0] 대상 요소 index
 3. type                             viewport-overflow < text-overflow < element-overlap
 4. subtype                          사전순
-5. occurrences[0] 상대 요소 index    없으면 -1
+5. occurrences[0] 상대 요소 index    없으면 -1 (Overlap은 대표 상대 요소)
 ```
 
 정렬된 순서대로 `ISS-001`, `ISS-002`, …를 붙인다. 세 자리를 넘으면 그대로 늘린다(`ISS-1000`).
+
+ID는 상한(7.6)을 적용한 뒤 **남은 이슈에만** 붙인다. 그래야 `ISS-001`부터 빈 번호가 없다(DOMAIN_MODEL S-1).
 
 ### 7.5 유형 간 연결 (규칙 4)
 
 같은 viewport의 같은 대상 요소에 `viewport-overflow`와 `text-overflow` 이슈가 모두 있으면 서로의 `relatedIssueIds`에 넣는다. 매칭된 요소라면 다른 viewport의 occurrence도 같은 요소로 본다.
 
-`relatedIssueIds`는 ID 오름차순으로 정렬한다.
+`relatedIssueIds`는 ID 오름차순으로 정렬한다. 상한(7.6)으로 버려진 이슈는 연결하지 않는다.
+
+### 7.6 이슈 수 상한 (PRD 5.3.7)
+
+5.6의 묶기가 근본 대책이고, 이 상한은 그래도 많이 남는 경우를 막는 안전장치다.
+
+```text
+issuesDetected = 병합(7.3)이 끝난 이슈 수
+if issuesDetected > MAX_ISSUES:
+  이슈를 (score100 내림차순, 7.4 정렬 키) 순으로 정렬해 앞에서 MAX_ISSUES개만 남긴다
+issuesTruncated = issuesDetected > MAX_ISSUES
+남은 이슈에 7.4로 ID를 붙인다
+```
+
+- 점수가 높은 P0·P1이 먼저 남고, 영향이 적은 P2·P3부터 버린다.
+- 동점이면 7.4의 정렬 키를 쓰므로 결과가 결정적이다.
+- 200개로 정한 이유: 이슈 하나가 Source Hints를 포함해 1~3KB라 200개면 문서가 수백 KB다. 응답 크기 제한(4.5MB)과 Upstash 요청 한도 안에 넉넉히 들어간다. AI 분석은 이미 최대 30개(PRD 5.7.2)라 영향이 없고, 태스크는 하나에 이슈 최대 8개라 25~40개 수준이다.
+- 결과 화면에 "상위 200개만 표시" 안내를 띄운다(PRD 5.3.7, WIREFRAME).
 
 ---
 
@@ -646,10 +720,10 @@ Priority는 Confidence와 관계없이 9.3으로 계산한다(PRD 5.5.4).
 |---|---|
 | `textOverflow` | clipped x/y/양축 · 이미지만 넘친 overflow hidden 카드는 없음 · ellipsis/line-clamp 제외 · overflow auto 제외 · 중첩 clipped는 깊은 쪽만 · spill 기본 · 테두리 박스 없음 · 중간에 overflow hidden 있으면 spill 아님 |
 | `geometry` | 자신의 overflow hidden으로 잘린 텍스트 rect · 조상 체인에 따른 자르기 · 축별 자르기(overflowX만 hidden) · fixed 요소에서 체인 중단 · 완전히 잘린 rect 제거 · `visibleRect`는 자신의 overflow에 잘리지 않음 |
-| `overlap` | 버튼 두 개 → interactive, Confidence 1.0 · absolute 배지(부모 안) → 0.4 · 조상/자손 제외 · img 위 텍스트 제외 · sticky와 일반 요소 제외 · fixed끼리 탐지 · 30% overlay 기록과 제외 · line-height 보정으로 인접 줄 오탐 없음 · 20%와 100px² 경계값 · line-clamp로 숨겨진 줄과 아래 요소는 겹침 아님 · overflow hidden 카드 밖으로 잘린 img는 잘린 영역만 비교 · 완전히 잘린 요소는 비교 대상 아님 |
+| `overlap` | 버튼 두 개 → interactive, Confidence 1.0 · absolute 배지(부모 안) → 0.4 · 조상/자손 제외 · img 위 텍스트 제외 · sticky와 일반 요소 제외 · fixed끼리 탐지 · 30% overlay 기록과 제외 · line-height 보정으로 인접 줄 오탐 없음 · 20%와 100px² 경계값 · line-clamp로 숨겨진 줄과 아래 요소는 겹침 아님 · overflow hidden 카드 밖으로 잘린 img는 잘린 영역만 비교 · 완전히 잘린 요소는 비교 대상 아님 · 대상 요소 기준 묶기(대표 = 교차 면적 최대, `relatedElements` 최대 5개, `overlapTargetCount`) · subtype이 다르면 따로 묶음 |
 | `viewportOverflow` | page-scroll 원인 1개와 affectedDescendants · nowrap 텍스트만 넘친 제목이 원인 · ellipsis 제목(자신의 overflow hidden)은 이탈 아님 · 캐러셀(overflow-x auto 조상) 제외 · hidden-clip · 왼쪽 이탈은 element-out · fixed 요소는 page-scroll 아님 |
-| `dedup` / `match` | 3가지 매칭 기준과 1:1 보장 · 병합 후 viewportTag · 규칙 4 연결 |
-| `order` | 정렬 키 5단계 각각 · 입력 순서를 섞어도 같은 ID |
+| `dedup` / `match` | 3가지 매칭 기준과 1:1 보장 · 병합 후 viewportTag · 규칙 4 연결 · Overlap은 대표 상대 요소가 달라도 대상 요소와 subtype이 같으면 병합 |
+| `order` | 정렬 키 5단계 각각 · 입력 순서를 섞어도 같은 ID · 상한 초과 시 score100 순 선택과 동점 처리(7.4 키) · 상한 뒤 ID에 빈 번호 없음 · `issuesDetected`/`issuesTruncated` |
 | `score` | 점수표 9행 · Reach 보정 상한 · **S=I=R=3 → P1** · 경계 399/400, 299/300 · 첫 화면 판정이 `innerHeight`가 아니라 `viewportSize.height` 기준 |
 | `sentences` | subtype별 템플릿 · 반올림 · affectedDescendants 문구 |
 | `crop` | 패딩, 최소 크기, 경계 안으로 이동, 범위 밖 null · 스크린샷 너비가 `layoutWidth`보다 넓은 경우(Mobile 축소) |
@@ -714,6 +788,14 @@ PRD에 없던 구현 결정이다. AGENTS.md 6장에 따라 보고 대상이다.
 15. `CollectedViewport`에 `elementsTruncated`, `viewportSize`를 둔다(3.1).
 16. 자신 또는 조상의 `opacity`가 0이면 서브트리 전체를 후보에서 뺀다(3.2).
 17. 판정에 `innerWidth`/`innerHeight`를 쓰지 않는다. overlay 면적은 `layoutWidth × viewportSize.height`, cropRect 경계는 실제 스크린샷 크기를 쓴다(3.1.1).
+18. `RawIssue` 구조와 탐지 함수 반환 형태(객체)를 정했다. 모든 유형의 `boundingBox`는 대상 요소의 `rect`다(1.4). 새 파일 `src/server/detect/types.ts`.
+19. 비교 대상 "말단"은 후보 자손 중 텍스트·인터랙티브·미디어 요소가 있는지로 판정하고, 인터랙티브 요소는 그런 자손이 모두 텍스트 요소일 때만 예외로 넣는다(5.1).
+20. 제외 조건 2는 포함하는 쪽 `visibleRect`, 포함되는 쪽 5.1 영역으로 판정하고 1px 허용치를 둔다(5.5).
+21. `rootClip`이면 `unexplainedPageScroll`은 거짓이다(6.4).
+22. 겹침 이슈를 `(viewport, 대상 요소, subtype)`마다 하나로 묶고, 대표 상대 요소와 `relatedElements` 최대 5개, `overlapTargetCount`를 둔다. confidence는 대표 쌍의 값이다(5.6).
+23. Overlap의 viewport 간 병합은 대상 요소와 subtype만 일치하면 된다(7.3).
+24. 검사 1회당 이슈 상한 `MAX_ISSUES = 200`, score100 순으로 선택한다. 처리 순서를 병합 → Priority → 상한 → ID → 연결 → Evidence로 바꿨다(1.3, 7.6).
+25. 새 파일 `src/server/collect/round.ts`: `roundMeasure`를 수집과 판정이 함께 쓰도록 분리했다.
 
 ---
 

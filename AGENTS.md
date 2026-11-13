@@ -97,13 +97,15 @@ src/
       collect.ts                        # viewport별 측정 데이터 수집, 반올림, 후보 정리
       types.ts                          # CollectedViewport (서버 전용 타입, DETECTION_RULES 3.1)
       schemas.ts                        # page.evaluate 반환값 zod 검증
+      round.ts                          # 측정값 반올림 (수집과 판정이 함께 씀)
     detect/
       constants.ts                      # 임계값 (PRD 5.3, DETECTION_RULES 2장)
+      types.ts                          # RawIssue (서버 전용 타입, DETECTION_RULES 1.4)
       textOverflow.ts
       overlap.ts
       viewportOverflow.ts
       dedup.ts
-      order.ts                          # 정렬과 Issue ID 부여 (PRD 5.3.6)
+      order.ts                          # 이슈 수 상한과 정렬, Issue ID 부여 (PRD 5.3.6, 5.3.7)
       geometry.ts                       # 보이는 영역 계산 (DETECTION_RULES 3.6)
     compare/match.ts                    # Desktop / Mobile 요소 매칭 (PRD 5.6)
     evidence/
@@ -230,7 +232,7 @@ pnpm collect <name>    # (T04 이후) Fixture 1개의 수집 결과를 JSON으�
 2. **Evidence 문장은 `src/server/evidence/sentences.ts`의 템플릿으로 만든다.** LLM으로 생성하지 않는다.
 3. **최종 코딩 에이전트 프롬프트는 `src/server/prompt/template.ts`가 조립한다.** AI가 작성한 필드(rootCause, suggestedFix, title, description)만 정해진 자리에 넣는다.
 4. **AI 출력은 반드시 `src/server/ai/schemas.ts`의 zod 스키마로 검증한다.** 입력에 없는 `issueId`/`taskId`가 들어 있는 결과는 버린다. 검증 실패 시 1회만 재시도한다.
-5. **같은 측정 데이터를 넣으면 항상 같은 이슈 목록과 우선순위가 나와야 한다.** `src/server/detect`, `src/server/priority`, `src/server/tasks`에서는 `Math.random`, 현재 시각, AI 호출을 쓰지 않는다. 정렬 기준도 명시적으로 지정한다. Issue ID는 PRD 5.3.6(DETECTION_RULES 7.4)의 정렬 키로, Task ID는 PRD 5.8.1의 규칙으로 붙이고, 우선순위 계산은 정수 연산(`score100`)으로 한다.
+5. **같은 측정 데이터를 넣으면 항상 같은 이슈 목록과 우선순위가 나와야 한다.** `src/server/detect`, `src/server/priority`, `src/server/tasks`에서는 `Math.random`, 현재 시각, AI 호출을 쓰지 않는다. 정렬 기준도 명시적으로 지정한다. Issue ID는 이슈 수 상한(PRD 5.3.7)을 적용한 뒤 남은 이슈에 PRD 5.3.6(DETECTION_RULES 7.4)의 정렬 키로, Task ID는 PRD 5.8.1의 규칙으로 붙이고, 우선순위 계산은 정수 연산(`score100`)으로 한다.
 6. **임계값과 점수표는 PRD의 값을 상수로 한 곳에 모아 둔다** (`src/server/detect/constants.ts`, `src/server/priority/rules.ts`). 코드 곳곳에 숫자를 직접 쓰지 않는다. PRD에 없는 값을 새로 정했다면 작업 요약에 보고한다.
 7. **AI 분석 실패가 브라우저 검사 결과를 지워서는 안 된다.** 검사 결과는 AI 단계 전에 Redis에 저장한다.
 
@@ -290,7 +292,7 @@ pnpm collect <name>    # (T04 이후) Fixture 1개의 수집 결과를 JSON으�
 
 - 서버와 클라이언트가 공유하는 도메인 타입은 `src/types/inspection.ts`에서만 정의한다(서버 내부 타입은 3.1 참고). PRD 8.2와 다르게 만들어야 하면 먼저 보고한다.
 - `any` 대신 `unknown`과 zod 파싱을 쓴다.
-- 탐지 함수는 `(collected: CollectedViewport) => RawIssue[]` 형태의 순수 함수로 만든다.
+- 탐지 함수는 `CollectedViewport`만 받는 순수 함수로 만든다. 이슈와 함께 부가 정보(`overlaysDetected`, `unexplainedPageScroll`)를 돌려주므로 반환값은 `{ issues: RawIssue[]; … }` 객체다(DETECTION_RULES 1.4).
 - 에러는 PRD 6.2의 실패 원인 코드(`INVALID_URL`, `BLOCKED_TARGET`, `NAVIGATION_TIMEOUT` 등)를 가진 `InspectionError`로 던진다.
 - UI 문구는 한국어로 쓰고, 이슈 유형과 상태 이름처럼 코드와 연결되는 값은 PRD의 영문 이름을 그대로 쓴다.
 - 컴포넌트는 서버 컴포넌트를 기본으로 하고, polling과 복사 버튼처럼 상호작용이 필요한 부분만 클라이언트 컴포넌트로 만든다.
