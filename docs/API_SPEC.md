@@ -156,11 +156,12 @@ URL의 `#fragment`는 버리고, 나머지(경로, 쿼리)는 그대로 둔다.
      status: pending, url, createdAt, updatedAt,
      viewports/viewportErrors: 모두 null, analysis: { status: 'pending', analyzedIssueCount: 0 },
      issues: [], tasks: []
-5. after(() => runInspection(id, normalizedUrl, origin))   // finally에서 슬롯 반환
+5. after(() => runInspection(id, createInspectionDeps(origin)))   // finally에서 슬롯 반환
 6. 202 { id }
 ```
 
-- `origin`은 요청의 `request.nextUrl.origin`이다. 4.3의 내부 호출 URL을 만드는 데 쓴다.
+- `origin`은 요청의 `request.nextUrl.origin`이다. 4.2의 내부 호출 URL을 만드는 데 쓴다.
+- `runInspection(id, deps)`는 검사 URL을 저장된 문서에서 읽는다. 저장소, Blob, 브라우저, 시계, analyze 호출은 `deps`로 받아 테스트에서 가짜 구현을 넣는다.
 - 문서에는 정규화한 URL을 `url`로 저장한다.
 
 ### 3.3 Response
@@ -213,18 +214,21 @@ x-internal-secret: {INTERNAL_API_SECRET}
 x-vercel-protection-bypass: {VERCEL_AUTOMATION_BYPASS_SECRET}   // 있을 때만
 ```
 
+- `{origin}`의 1순위는 검사 요청이 들어온 주소(3.2의 `origin`)다. 알 수 없을 때만 `https://{VERCEL_URL}`을 쓴다. 배포별 생성 주소(`VERCEL_URL`)는 기본 배포 보호에서 production 배포도 보호 대상이라 401로 막힐 수 있기 때문이다(PRD 8.1.2).
 - 응답이 202면 끝낸다. AI 단계가 끝나기를 기다리지 않는다.
-- 응답 대기 시간은 10초다. 실패하거나 202가 아니면 1회 다시 시도한다.
-- 두 번 모두 실패하면 문서를 `partial` + `analysis: { status: 'failed', error: { code: 'AI_FAILED', … } }`로 저장한다(PRD 8.1.2). 태스크는 만들어지지 않는다.
-- 이슈가 0개면 analyze를 호출하지 않고 바로 `analysis.status = skipped`로 최종 상태를 저장한다(PRD 6.2.2).
+- 응답 대기 시간은 10초다.
+- 확실한 실패(202가 아닌 응답, 연결 거부 등)면 1회 다시 시도한다. 두 번 모두 실패하면 문서를 다시 읽어 `analysis.status`가 아직 `pending`일 때만 `partial` + `analysis: { status: 'failed', error: { code: 'AI_FAILED', … } }`로 저장한다(PRD 8.1.2). 태스크는 만들어지지 않는다.
+- 시간 초과면 다시 시도하지 않고 문서도 쓰지 않는다. analyze가 실제로 시작되었다면 정상 완료되고, 그렇지 않다면 300초 뒤 멈춘 검사 처리(DOMAIN_MODEL 4.4)가 `partial`로 보여준다.
+- 이슈가 0개여도 analyze를 호출한다. `analysis.status = skipped` 처리는 analyze 쪽 책임이다(PRD 6.2.2).
 
 ### 4.3 배포 보호 우회
 
-Vercel Preview 배포에 Deployment Protection이 켜져 있으면 서버가 자기 배포를 호출해도 401로 막힌다.
+Vercel 배포에 Deployment Protection이 켜져 있으면 서버가 자기 배포를 호출해도 401로 막힌다. 기본 설정에서는 Preview 배포와, production 배포의 배포별 생성 주소(`VERCEL_URL`)가 보호 대상이다.
 
 - Vercel 프로젝트 설정에서 "Protection Bypass for Automation"을 켜고, 그 값(`VERCEL_AUTOMATION_BYPASS_SECRET`)을 `x-vercel-protection-bypass` 헤더로 보낸다.
 - 이 값은 `src/server/env.ts`에서 선택 항목으로 검증한다. AGENTS.md 5장 환경변수 표에 추가해야 한다.
-- Production 배포에서 보호를 켜지 않았다면 이 헤더 없이도 동작한다.
+- Preview 확인에 필요하므로 "Protection Bypass for Automation"을 켜고 값을 등록해 둔다.
+- 검사용 Chromium은 이 헤더를 보내지 않는다. 보호가 켜진 배포의 Fixture URL(`/fixtures/...`)을 검사하면 401 → `HTTP_ERROR`가 된다. 쿼리 문자열로 우회하지 않는다(비밀 값이 문서의 `url`에 저장되어 공개된다). Fixture 검사는 보호를 끈 배포에서 한다.
 
 ---
 
@@ -326,15 +330,17 @@ x-internal-secret: {INTERNAL_API_SECRET}
 ```text
 1. x-internal-secret을 INTERNAL_API_SECRET과 crypto.timingSafeEqual로 비교   불일치 → 401
 2. id 형식 확인                                                             실패 → 404
-3. SET inspection:{id}:analyze-lock 1 NX EX 300                            실패 → 409 INVALID_STATE
-4. 문서 읽기: status == analyzing && analysis.status == pending 인지 확인      아니면 잠금 해제, 409 INVALID_STATE
-5. after(() => runAnalysis(id))
-6. 202 {}
+3. 문서 읽기                                                                없음 → 404
+4. status == analyzing && analysis.status == pending 인지 확인              아니면 409 INVALID_STATE
+5. SET inspection:{id}:analyze-lock 1 NX EX 300                            실패 → 409 INVALID_STATE
+6. after(() => runAnalysis(id))
+7. 202 {}
 ```
 
-- 문서가 없으면 404다.
+- 상태를 먼저 확인하고 잠금을 잡는다. 상태가 맞지 않아 409를 돌려줄 때 잠금이 남지 않게 하기 위해서다.
 - `runAnalysis`의 순서는 DOMAIN_MODEL 4.3, 시간 상한은 PRD 8.1.3(240초)을 따른다.
 - 잠금은 TTL(300초)로 풀린다. 정상 종료 시 지우지 않아도 된다. 종료 상태는 4번 조건으로 다시 막히기 때문이다.
+- `INTERNAL_API_SECRET` 설정이 없으면 401로 숨기지 않고 500 `INTERNAL_ERROR`를 반환한다.
 
 ### 6.3 Errors
 
@@ -393,8 +399,8 @@ PRD에 없던 결정이다(AGENTS.md 6장).
 3. URL의 `#fragment`는 버린다(3.1).
 4. 형식이 잘못된 id는 400이 아니라 404(5.1).
 5. `/report/[id]`는 Redis를 직접 읽고 자기 API를 fetch하지 않는다(1.1).
-6. analyze 호출 대기 10초, 1회 재시도(4.2).
-7. 이슈 0개면 analyze를 호출하지 않는다(4.2).
+6. analyze 호출 대기 10초. 확실한 실패만 1회 재시도하고, 시간 초과는 재시도하지 않고 문서를 쓰지 않는다(4.2).
+7. 이슈가 0개여도 analyze를 호출한다. skipped 처리는 analyze가 한다(4.2).
 8. 배포 보호 우회 환경변수 `VERCEL_AUTOMATION_BYPASS_SECRET`(4.3). AGENTS.md 5장에 추가한다.
 9. 오류 코드 `NOT_FOUND`, `INVALID_STATE`, `UNAUTHORIZED`는 API 응답 전용이다. PRD 6.2.4의 검사 실패 코드와 섞지 않는다(2.1).
 10. 화면이 숨겨지면 polling을 멈춘다(7장).

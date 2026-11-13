@@ -86,7 +86,11 @@ src/
 
   server/                               # 서버 전용 코드. 모든 진입 파일 첫 줄에 import 'server-only'
     env.ts                              # 환경변수 zod 검증
-    inspect.ts                          # 전체 검사 파이프라인 오케스트레이션
+    inspect.ts                          # 브라우저 검사 오케스트레이션 runInspection (create의 after())
+    analyze.ts                          # AI 단계 runAnalysis (analyze의 after()). T09는 stub, T10에서 구현
+    status.ts                           # 상태 판정(PRD 6.2.2)과 멈춘 검사 처리(DOMAIN_MODEL 4.4) 순수 함수
+    log.ts                              # 구조화 로그 (ID, 호스트, 단계, 코드, 소요 시간만)
+    http/inspections.ts                 # API 3개의 요청 처리. route 파일은 의존성(저장소, after)만 넣어 호출한다
     browser/
       launch.ts                         # 환경별 Chromium 실행 (Local / Vercel 분기)
       fonts.ts                          # CJK 폰트 로드
@@ -132,7 +136,7 @@ src/
       ssrf.ts                           # IP 범위 판정, DNS 조회
       routeGuard.ts                     # context.route 하위 요청 검사, WebSocket 차단
     store/
-      redis.ts                          # 읽기·쓰기, 동시 실행 슬롯, analyze 잠금, 멈춘 검사 처리
+      redis.ts                          # 읽기·쓰기, 동시 실행 슬롯, analyze 잠금, 멈춘 검사 처리 적용
       blob.ts
       schemas.ts                        # Redis에서 읽은 Inspection 문서 검증
       invariants.ts                     # assertInspectionInvariants(inspection, 'browser' | 'final') (테스트용, DOMAIN_MODEL 3장)
@@ -221,12 +225,13 @@ pnpm collect <name>    # (T04 이후) Fixture 1개의 수집 결과를 JSON으�
 | `AI_MODEL` | 사용할 모델 ID |
 | `INTERNAL_API_SECRET` | `/analyze` 내부 호출 보호 |
 | `MAX_CONCURRENT_INSPECTIONS` | 기본값 2 |
-| `VERCEL_AUTOMATION_BYPASS_SECRET` | 선택. Preview 배포 보호를 켠 경우 내부 `/analyze` 호출에 사용 (API_SPEC 4.3). Vercel의 "Protection Bypass for Automation"을 켜면 제공된다 |
+| `VERCEL_AUTOMATION_BYPASS_SECRET` | 선택. 배포 보호를 켠 경우 내부 `/analyze` 호출에 사용 (API_SPEC 4.3). Vercel의 "Protection Bypass for Automation"을 켜면 제공된다. Preview 확인에 필요하므로 등록해 둔다 |
+| `VERCEL_URL` | Vercel 시스템 환경변수(직접 설정하지 않음). 내부 호출 주소의 2순위 값으로, 요청 host를 알 수 없을 때만 쓴다 (PRD 8.1.2) |
 
 - `.env.example`에는 변수 이름만 두고, 실제 값은 절대 커밋하지 않는다.
 - 서버 전용 값에는 `NEXT_PUBLIC_` 접두어를 붙이지 않는다.
 - `process.env`는 `src/server/env.ts`에서만 읽는다. 실행 환경 판별용 `process.env.VERCEL`도 마찬가지다.
-- `env.ts`는 용도별 getter로 나눠서, 호출한 쪽에 필요한 값만 검증한다. 예: `getRuntimeEnv()`(Vercel 여부, `MAX_CONCURRENT_INSPECTIONS`), `getStoreEnv()`(Redis, Blob), `getAiEnv()`, `getInternalEnv()`(`INTERNAL_API_SECRET`, `VERCEL_AUTOMATION_BYPASS_SECRET`). 로컬 Fixture 테스트가 AI 키나 저장소 설정 없이도 돌아가게 하기 위해서다.
+- `env.ts`는 용도별 getter로 나눠서, 호출한 쪽에 필요한 값만 검증한다. 예: `getRuntimeEnv()`(Vercel 여부, `MAX_CONCURRENT_INSPECTIONS`), `getStoreEnv()`(Redis, Blob), `getAiEnv()`, `getInternalEnv()`(`INTERNAL_API_SECRET`, `VERCEL_AUTOMATION_BYPASS_SECRET`, `VERCEL_URL`). 로컬 Fixture 테스트가 AI 키나 저장소 설정 없이도 돌아가게 하기 위해서다.
 - 검증은 import 시점이 아니라 getter를 처음 호출할 때 한다. `next build`가 route 모듈을 불러올 때 실패하지 않게 하기 위해서다.
 
 ---

@@ -1,6 +1,6 @@
 import 'server-only';
 import { VIEWPORTS } from '@/server/browser/devices';
-import { MAX_CANDIDATES, NEEDS_REVIEW_BELOW, SCREENSHOT_MAX_HEIGHT } from '@/server/detect/constants';
+import { MAX_CANDIDATES, MAX_ISSUES, NEEDS_REVIEW_BELOW, SCREENSHOT_MAX_HEIGHT } from '@/server/detect/constants';
 import { formatIssueId } from '@/server/detect/order';
 import type { SubtypeByType } from '@/server/detect/types';
 import { priorityOf, toScore100 } from '@/server/priority/score';
@@ -9,8 +9,8 @@ import type { Inspection, Issue, IssueType, Viewport, ViewportResult } from '@/t
 // DOMAIN_MODEL 3장 불변 조건. 테스트(단위, Fixture, 샘플 리포트 검증)에서만 실행한다.
 // 운영 중 저장할 때는 호출하지 않는다: 코드 버그 하나로 정상적인 검사 결과 전체가 실패 처리되지 않게 하기 위해서다.
 //
-// 구현 범위: ViewportResult V-1~V-3, Issue S-1~S-13.
-// TODO(T10): Inspection I-1~I-11, DevTask T-1~T-8
+// 구현 범위: Inspection I-1~I-11, ViewportResult V-1~V-3, Issue S-1~S-13.
+// TODO(T10): DevTask T-1~T-8
 
 /**
  * 검사 시점.
@@ -160,15 +160,77 @@ function issueViolations(issue: Issue, index: number, inspection: Inspection, st
   return out;
 }
 
-export function findInspectionViolations(inspection: Inspection, stage: InvariantStage): InvariantViolation[] {
+const STATUSES = ['pending', 'running', 'analyzing', 'completed', 'partial', 'failed'] as const;
+
+/** DOMAIN_MODEL 3.1 Inspection I-1~I-11 */
+export function inspectionLevelViolations(inspection: Inspection): InvariantViolation[] {
   const out: InvariantViolation[] = [];
+  const add = (id: string, message: string) => out.push({ id, message });
+  const { status, analysis, viewports, viewportErrors } = inspection;
+  const before = status === 'pending' || status === 'running';
+  const afterAi = status === 'completed' || status === 'partial';
+  const browserDone = !before;
+
+  // I-1
+  if (!(STATUSES as readonly string[]).includes(status)) add('I-1', `status ${status}`);
+  // I-2
+  if (status === 'failed' && !inspection.error) add('I-2', 'failed인데 error가 없다');
+  if (status !== 'failed' && inspection.error) add('I-2', `${status}인데 error가 있다`);
+  // I-3
+  if (before) {
+    if (inspection.issues.length > 0 || inspection.tasks.length > 0) add('I-3', `${status}인데 issues ${inspection.issues.length}개, tasks ${inspection.tasks.length}개`);
+    if (VIEWPORT_LIST.some((v) => viewports[v] !== null)) add('I-3', `${status}인데 viewports가 채워져 있다`);
+  }
+  // I-4
+  if ((status === 'analyzing' || afterAi) && VIEWPORT_LIST.every((v) => viewports[v] === null)) add('I-4', `${status}인데 viewports가 모두 null`);
+  // I-5 (렌더링 전에 실패한 failed는 네 값이 모두 null일 수 있다)
+  if (browserDone) {
+    const allEmpty = VIEWPORT_LIST.every((v) => viewports[v] === null && viewportErrors[v] === null);
+    if (!(status === 'failed' && allEmpty)) {
+      for (const v of VIEWPORT_LIST) {
+        if ((viewports[v] === null) === (viewportErrors[v] === null)) add('I-5', `${v}: viewports와 viewportErrors 중 정확히 하나만 있어야 한다`);
+      }
+    }
+  }
+  // I-6
+  if (status === 'completed') {
+    if (VIEWPORT_LIST.some((v) => viewportErrors[v] !== null)) add('I-6', 'completed인데 viewportErrors가 있다');
+    if (analysis.status !== 'completed' && analysis.status !== 'skipped') add('I-6', `completed인데 analysis.status ${analysis.status}`);
+  }
+  // I-7
+  if (status === 'partial' && VIEWPORT_LIST.every((v) => viewportErrors[v] === null) && analysis.status !== 'failed') {
+    add('I-7', 'partial인데 viewport 실패도 analysis 실패도 없다');
+  }
+  // I-8
+  if ((afterAi || status === 'failed') && !inspection.completedAt) add('I-8', `${status}인데 completedAt이 없다`);
+  // I-9: AI 단계가 끝난 문서에만 적용한다. analyzing에서는 이슈가 0개여도 analysis가 pending/running이다
+  // (이슈 0개도 analyze를 호출하고 skipped 처리는 analyze가 한다, T09 결정)
+  if (afterAi && inspection.issues.length === 0) {
+    if (analysis.status !== 'skipped') add('I-9', `이슈 0개인데 analysis.status ${analysis.status}`);
+    if (inspection.tasks.length > 0) add('I-9', `이슈 0개인데 tasks ${inspection.tasks.length}개`);
+  }
+  // I-10
+  if (analysis.error && (analysis.status !== 'failed' || analysis.error.code !== 'AI_FAILED')) {
+    add('I-10', `analysis.error ${analysis.error.code}, analysis.status ${analysis.status}`);
+  }
+  // I-11
+  const { issuesDetected, issuesTruncated } = inspection;
+  if (inspection.issues.length > MAX_ISSUES) add('I-11', `issues ${inspection.issues.length}개 > ${MAX_ISSUES}`);
+  if (issuesDetected < inspection.issues.length) add('I-11', `issuesDetected ${issuesDetected} < issues ${inspection.issues.length}`);
+  if (issuesTruncated !== issuesDetected > inspection.issues.length) add('I-11', `issuesTruncated ${issuesTruncated}, issuesDetected ${issuesDetected}, issues ${inspection.issues.length}`);
+  if (before && issuesDetected !== 0) add('I-11', `${status}인데 issuesDetected ${issuesDetected}`);
+  return out;
+}
+
+export function findInspectionViolations(inspection: Inspection, stage: InvariantStage): InvariantViolation[] {
+  const out: InvariantViolation[] = [...inspectionLevelViolations(inspection)];
   for (const v of VIEWPORT_LIST) {
     const result = inspection.viewports[v];
     if (result) out.push(...viewportResultViolations(v, result));
   }
   const byId = new Map(inspection.issues.map((issue) => [issue.id, issue]));
   inspection.issues.forEach((issue, i) => out.push(...issueViolations(issue, i, inspection, stage, byId)));
-  // TODO(T10): I-1~I-11 (Inspection), T-1~T-8 (DevTask)
+  // TODO(T10): T-1~T-8 (DevTask)
   return out;
 }
 

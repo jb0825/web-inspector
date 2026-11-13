@@ -8,6 +8,9 @@ import { isLookupFailure, type HostChecker } from './ssrf';
 
 const ALLOWED_PROTOCOLS = new Set(['http:', 'https:']);
 
+/** DNS 조회 실패 메시지의 앞부분. API 응답에서 "주소를 찾을 수 없습니다" 문구를 고르는 데 쓴다(API_SPEC 3.1-6) */
+export const HOST_LOOKUP_FAILED_MESSAGE = 'Host lookup failed';
+
 /**
  * WHATWG URL로 파싱해 판정하고 정규화한 URL을 돌려준다. `#fragment`는 버린다(API_SPEC 3.1).
  * - 형식 오류, http/https 아님, 계정 정보, DNS 조회 실패 → INVALID_URL
@@ -27,7 +30,7 @@ export async function validateInspectionUrl(input: string, checker: HostChecker)
 
   const result = await checker.check(url.hostname);
   if (!result.allowed) {
-    if (isLookupFailure(result)) throw new InspectionError('INVALID_URL', `Host lookup failed (${result.reason})`);
+    if (isLookupFailure(result)) throw new InspectionError('INVALID_URL', `${HOST_LOOKUP_FAILED_MESSAGE} (${result.reason})`);
     throw new InspectionError('BLOCKED_TARGET', `Blocked target (${result.reason})`);
   }
   url.hash = '';
