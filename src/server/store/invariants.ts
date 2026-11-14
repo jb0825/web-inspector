@@ -4,13 +4,14 @@ import { MAX_CANDIDATES, MAX_ISSUES, NEEDS_REVIEW_BELOW, SCREENSHOT_MAX_HEIGHT }
 import { formatIssueId } from '@/server/detect/order';
 import type { SubtypeByType } from '@/server/detect/types';
 import { priorityOf, toScore100 } from '@/server/priority/score';
-import type { Inspection, Issue, IssueType, Viewport, ViewportResult } from '@/types/inspection';
+import { formatTaskId, issueNumber, MAX_ISSUES_PER_TASK } from '@/server/tasks/group';
+import type { DevTask, Inspection, Issue, IssueType, Priority, Viewport, ViewportResult } from '@/types/inspection';
 
 // DOMAIN_MODEL 3장 불변 조건. 테스트(단위, Fixture, 샘플 리포트 검증)에서만 실행한다.
 // 운영 중 저장할 때는 호출하지 않는다: 코드 버그 하나로 정상적인 검사 결과 전체가 실패 처리되지 않게 하기 위해서다.
 //
-// 구현 범위: Inspection I-1~I-11, ViewportResult V-1~V-3, Issue S-1~S-13.
-// TODO(T10): DevTask T-1~T-8
+// 구현 범위: Inspection I-1~I-11, ViewportResult V-1~V-3, Issue S-1~S-13, DevTask T-1~T-8,
+// 규칙 기반 분석 A-1, A-2 (T10에서 추가, DOMAIN_MODEL에 없는 조건).
 
 /**
  * 검사 시점.
@@ -222,6 +223,95 @@ export function inspectionLevelViolations(inspection: Inspection): InvariantViol
   return out;
 }
 
+const PRIORITY_RANK: Record<Priority, number> = { P0: 0, P1: 1, P2: 2, P3: 3 };
+
+/** DOMAIN_MODEL 3.4 DevTask T-1~T-8 */
+export function taskViolations(inspection: Inspection): InvariantViolation[] {
+  const out: InvariantViolation[] = [];
+  const add = (id: string, message: string) => out.push({ id, message });
+  const byId = new Map(inspection.issues.map((issue) => [issue.id, issue]));
+  const membership = new Map<string, DevTask[]>();
+  const sortKey = (task: DevTask): number[] => {
+    const issues = task.issueIds.map((id) => byId.get(id)).filter((i): i is Issue => i !== undefined);
+    const minNumber = Math.min(...task.issueIds.map(issueNumber));
+    const best = Math.min(...issues.map((i) => PRIORITY_RANK[i.priority]));
+    return [Number(task.needsReview), best, minNumber];
+  };
+
+  inspection.tasks.forEach((task, index) => {
+    const at = task.id;
+    // T-3
+    if (task.issueIds.length < 1 || task.issueIds.length > MAX_ISSUES_PER_TASK) add('T-3', `${at}: issueIds ${task.issueIds.length}개`);
+    const numbers = task.issueIds.map(issueNumber);
+    if (numbers.some((v, i) => i > 0 && v <= numbers[i - 1])) add('T-3', `${at}: issueIds가 오름차순이 아니다 ${json(task.issueIds)}`);
+    const members: Issue[] = [];
+    for (const issueId of task.issueIds) {
+      const issue = byId.get(issueId);
+      if (!issue) {
+        add('T-3', `${at}: 없는 ID ${issueId}`);
+        continue;
+      }
+      members.push(issue);
+      membership.set(issueId, [...(membership.get(issueId) ?? []), task]);
+      // T-1, T-2: 일반 이슈는 일반 태스크에, Needs Review 이슈는 Needs Review 태스크에
+      if (issue.needsReview !== task.needsReview) add(issue.needsReview ? 'T-2' : 'T-1', `${at}: ${issueId}(needsReview ${issue.needsReview})가 needsReview ${task.needsReview} 태스크에 있다`);
+    }
+    // T-4
+    if (members.length > 0) {
+      const best = members.reduce((p, i) => (PRIORITY_RANK[i.priority] < PRIORITY_RANK[p] ? i.priority : p), 'P3' as Priority);
+      if (task.priority !== best) add('T-4', `${at}: priority ${task.priority} ≠ 가장 높은 이슈 ${best}`);
+    }
+    // T-5
+    if (task.id !== formatTaskId(index + 1)) add('T-5', `위치 ${index}의 ID ${task.id}는 ${formatTaskId(index + 1)}이어야 한다`);
+    if (index > 0 && members.length > 0) {
+      const prev = sortKey(inspection.tasks[index - 1]);
+      const cur = sortKey(task);
+      const cmp = prev.map((v, i) => v - cur[i]).find((d) => d !== 0) ?? 0;
+      if (cmp > 0) add('T-5', `${at}: 정렬 순서(needsReview → Priority → 가장 작은 Issue ID)가 맞지 않다`);
+    }
+    // T-6
+    if (task.needsReview && task.titleSource !== 'template') add('T-6', `${at}: Needs Review 태스크인데 titleSource ${task.titleSource}`);
+    // T-7
+    if (task.acceptanceCriteria.length < 1) add('T-7', `${at}: acceptanceCriteria가 비어 있다`);
+    // T-8
+    if (task.prompt.trim() === '') add('T-8', `${at}: prompt가 비어 있다`);
+    for (const issueId of task.issueIds) if (!task.prompt.includes(issueId)) add('T-8', `${at}: prompt에 ${issueId}가 없다`);
+  });
+
+  // T-1, T-2: 태스크를 만든 뒤(analysis completed)에는 모든 이슈가 정확히 한 태스크에 속한다.
+  // 분석 단계가 실패했거나(failed) 멈춘 검사(DOMAIN_MODEL 4.4)는 tasks가 비어 있을 수 있다.
+  if (inspection.analysis.status === 'completed') {
+    for (const issue of inspection.issues) {
+      const count = membership.get(issue.id)?.length ?? 0;
+      if (count !== 1) add(issue.needsReview ? 'T-2' : 'T-1', `${issue.id}: ${count}개 태스크에 속한다`);
+    }
+  }
+  return out;
+}
+
+/**
+ * 규칙 기반 분석(PRD 5.7.1)이 끝난 문서 (stage 'final', analysis.status completed).
+ * - A-1: Needs Review가 아닌 이슈는 analysis가 있고 source가 rule이며 certainty가 confirmed가 아니다
+ * - A-2: analyzedIssueCount = analysis가 있는 이슈 수
+ * T15(AI 연동)에서는 source 'ai'도 허용하도록 바꾼다
+ */
+export function ruleAnalysisViolations(inspection: Inspection): InvariantViolation[] {
+  if (inspection.analysis.status !== 'completed') return [];
+  const out: InvariantViolation[] = [];
+  for (const issue of inspection.issues) {
+    if (issue.needsReview) continue;
+    if (!issue.analysis) out.push({ id: 'A-1', message: `${issue.id}: analysis가 없다` });
+    else if (issue.analysis.source !== 'rule' || issue.analysis.certainty === 'confirmed') {
+      out.push({ id: 'A-1', message: `${issue.id}: source ${issue.analysis.source}, certainty ${issue.analysis.certainty}` });
+    }
+  }
+  const analyzed = inspection.issues.filter((i) => i.analysis !== undefined).length;
+  if (inspection.analysis.analyzedIssueCount !== analyzed) {
+    out.push({ id: 'A-2', message: `analyzedIssueCount ${inspection.analysis.analyzedIssueCount} ≠ analysis가 있는 이슈 ${analyzed}개` });
+  }
+  return out;
+}
+
 export function findInspectionViolations(inspection: Inspection, stage: InvariantStage): InvariantViolation[] {
   const out: InvariantViolation[] = [...inspectionLevelViolations(inspection)];
   for (const v of VIEWPORT_LIST) {
@@ -230,7 +320,8 @@ export function findInspectionViolations(inspection: Inspection, stage: Invarian
   }
   const byId = new Map(inspection.issues.map((issue) => [issue.id, issue]));
   inspection.issues.forEach((issue, i) => out.push(...issueViolations(issue, i, inspection, stage, byId)));
-  // TODO(T10): T-1~T-8 (DevTask)
+  out.push(...taskViolations(inspection));
+  if (stage === 'final') out.push(...ruleAnalysisViolations(inspection));
   return out;
 }
 

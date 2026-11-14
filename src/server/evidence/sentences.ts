@@ -10,7 +10,7 @@ import type { Viewport } from '@/types/inspection';
 /** `{a 대상}`의 텍스트 길이 */
 export const SUBJECT_TEXT_MAX = 20;
 
-const VIEWPORT_LABEL: Record<Viewport, string> = { desktop: 'Desktop', mobile: 'Mobile' };
+export const VIEWPORT_LABEL: Record<Viewport, string> = { desktop: 'Desktop', mobile: 'Mobile' };
 
 /** 방향 목록 순서 (8.1): 왼쪽, 오른쪽, 위쪽, 아래쪽 */
 const DIRECTIONS = [

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { runAnalysis } from '@/server/analyze';
+import { ANALYSIS_FAILED_MESSAGE, runAnalysis } from '@/server/analyze';
+import { InspectionError } from '@/server/errors';
 import {
   handleAnalyze,
   handleCreateInspection,
@@ -14,6 +15,7 @@ import { createInspectionStore, inspectionKey, RUNNING_SET_KEY, type InspectionS
 import type { Inspection, Issue, ViewportResult } from '@/types/inspection';
 import { FakeRedis } from './helpers/fakeRedis';
 import { ID, pendingDoc, T0 } from './helpers/inspection';
+import { P01_ISSUE, P01_VIEWPORTS } from './helpers/p01';
 
 // T09: API route 응답 형식 (PRD 8.3, API_SPEC 2~6장). route 파일은 이 handler에 의존성만 넣는다.
 
@@ -230,7 +232,7 @@ describe('POST /api/inspections/:id/analyze', () => {
   });
 });
 
-describe('runAnalysis (stub, TODO(T10))', () => {
+describe('runAnalysis (T10: 규칙 기반 분석 → 태스크 → 프롬프트)', () => {
   const issue = (id: string, needsReview: boolean): Issue => ({
     id, type: 'viewport-overflow', subtype: 'page-scroll', title: 't', viewports: ['desktop'], viewportTag: null,
     selector: 'div', sourceHints: { htmlSnippet: '<div>', stableAttributes: {}, ancestorPath: 'body' },
@@ -241,20 +243,56 @@ describe('runAnalysis (stub, TODO(T10))', () => {
     }],
     relatedIssueIds: [], scores: { S: 4, I: 4, R: 5, score100: 430 }, priority: 'P0', confidence: needsReview ? 0.4 : 1, needsReview,
   });
-  const run = () => runAnalysis(ID, { store, now: () => now, log: () => undefined });
+  /** P-01 브라우저 단계 결과 (이슈 1개, 두 viewport 성공) */
+  const p01Doc = () => analyzingDoc({ viewports: P01_VIEWPORTS, issuesDetected: 1, issues: [P01_ISSUE] });
 
-  it('이슈 0개: analysis.skipped, completed', async () => {
+  /** 저장할 때마다 (status, step, analysis.status)를 기록하고, fail이 참인 저장에서 던지는 저장소 */
+  function recordingStore(fail: (doc: Inspection) => boolean = () => false) {
+    const saved: string[] = [];
+    const wrapped: InspectionStore = {
+      ...store,
+      async save(doc) {
+        if (fail(doc)) throw new InspectionError('STORAGE_FAILED', 'Redis save failed');
+        saved.push(`${doc.status}/${doc.step}/${doc.analysis.status}`);
+        return store.save(doc);
+      },
+    };
+    return { saved, wrapped };
+  }
+  const run = (s: InspectionStore = store) => runAnalysis(ID, { store: s, now: () => now, log: () => undefined });
+
+  it('정상 흐름: analyzing_issues → generating_tasks → completed를 한 번에 저장 (DOMAIN_MODEL 4.3)', async () => {
+    await store.create(p01Doc());
+    const { saved, wrapped } = recordingStore();
+    now = T0 + 5_000;
+    await run(wrapped);
+    expect(saved).toEqual(['analyzing/analyzing_issues/running', 'analyzing/generating_tasks/running', 'completed/generating_tasks/completed']);
+    const doc = (await store.read(ID)) as Inspection;
+    expect(doc.analysis).toEqual({ status: 'completed', analyzedIssueCount: 1 });
+    expect(doc.completedAt).toBe(new Date(T0 + 5_000).toISOString());
+    expect(doc.issues[0].analysis).toMatchObject({ source: 'rule', certainty: 'likely' });
+    expect(doc.tasks.map((t) => [t.id, t.issueIds, t.priority, t.viewportTag, t.titleSource])).toEqual([['TASK-001', ['ISS-001'], 'P0', 'mobile-only', 'template']]);
+    expect(doc.tasks[0].prompt).toContain('## [ISS-001]');
+    // 결정적 필드는 바뀌지 않는다(AGENTS.md 6장 불변 조건 1)
+    const rest: Issue = { ...doc.issues[0] };
+    delete rest.analysis;
+    expect(rest).toEqual(P01_ISSUE);
+    assertInspectionInvariants(doc, 'final');
+  });
+
+  it('이슈 0개: 분석 없이 analysis.skipped, tasks [], completed', async () => {
     await store.create(analyzingDoc());
     now = T0 + 5_000;
     await run();
     const doc = (await store.read(ID)) as Inspection;
     expect(doc.status).toBe('completed');
     expect(doc.analysis).toEqual({ status: 'skipped', analyzedIssueCount: 0 });
+    expect(doc.tasks).toEqual([]);
     expect(doc.completedAt).toBe(new Date(T0 + 5_000).toISOString());
     assertInspectionInvariants(doc, 'final');
   });
 
-  it('이슈가 있으면 모든 이슈에 analysisSkippedReason, tasks는 []. viewport 실패가 있으면 partial', async () => {
+  it('viewport 실패가 있으면 분석이 끝나도 partial. Needs Review 이슈는 Needs Review 태스크로', async () => {
     await store.create(
       analyzingDoc({
         viewports: { desktop: VIEWPORT, mobile: null },
@@ -266,10 +304,33 @@ describe('runAnalysis (stub, TODO(T10))', () => {
     await run();
     const doc = (await store.read(ID)) as Inspection;
     expect(doc.status).toBe('partial');
-    expect(doc.analysis.status).toBe('skipped');
-    expect(doc.issues.map((i) => i.analysisSkippedReason)).toEqual(['ai-failed', 'needs-review']);
+    expect(doc.analysis).toEqual({ status: 'completed', analyzedIssueCount: 1 });
+    expect(doc.issues.map((i) => [i.analysis?.source, i.analysisSkippedReason])).toEqual([['rule', undefined], [undefined, 'needs-review']]);
+    expect(doc.tasks.map((t) => [t.issueIds, t.needsReview, t.viewportTag])).toEqual([[['ISS-001'], false, null], [['ISS-002'], true, null]]);
+    assertInspectionInvariants(doc, 'final');
+  });
+
+  it('중간 예외: analysis.failed(AI_FAILED) + partial로 저장하고 브라우저 검사 결과는 그대로 남긴다', async () => {
+    await store.create(p01Doc());
+    const { saved, wrapped } = recordingStore((doc) => doc.step === 'generating_tasks' && doc.status === 'analyzing');
+    await run(wrapped);
+    expect(saved).toEqual(['analyzing/analyzing_issues/running', 'partial/analyzing_issues/failed']);
+    const doc = (await store.read(ID)) as Inspection;
+    expect(doc.status).toBe('partial');
+    expect(doc.analysis).toEqual({ status: 'failed', analyzedIssueCount: 0, error: { code: 'AI_FAILED', message: ANALYSIS_FAILED_MESSAGE } });
+    expect(doc.viewports).toEqual(P01_VIEWPORTS);
+    expect(doc.issues).toEqual([{ ...P01_ISSUE, analysisSkippedReason: 'ai-failed' }]);
     expect(doc.tasks).toEqual([]);
     assertInspectionInvariants(doc, 'final');
+  });
+
+  it('끝난 뒤 다시 호출하면 409 (상태가 analyzing이 아니다), runAnalysis도 아무것도 하지 않는다', async () => {
+    await store.create(p01Doc());
+    await run();
+    const before = await store.read(ID);
+    await expectError(await handleAnalyze(analyzeRequest(SECRET), ID, analyzeDeps()), 409, 'INVALID_STATE');
+    await run();
+    expect(await store.read(ID)).toEqual(before);
   });
 
   it('상태가 맞지 않으면 아무것도 하지 않는다', async () => {

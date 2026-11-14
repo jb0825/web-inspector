@@ -135,6 +135,17 @@ Inspection (Redis 문서 1개, 집합의 루트)
 | T-7 | `acceptanceCriteria`는 1개 이상이다. |
 | T-8 | `prompt`는 비어 있지 않고, 포함된 모든 Issue ID를 담고 있다. |
 
+- T-1, T-2의 "정확히 하나에 속한다"는 태스크를 만든 뒤(`analysis.status = completed`)에만 확인한다. 분석 단계가 실패했거나(`failed`) 멈춘 검사(4.4)는 `tasks`가 비어 있다. 이슈와 태스크의 `needsReview`가 맞는지는 항상 확인한다.
+
+### 3.5 규칙 기반 분석 (T10)
+
+`stage = 'final'`이고 `analysis.status = completed`일 때 확인한다.
+
+| # | 조건 |
+|---|---|
+| A-1 | `needsReview = false`인 이슈는 `analysis`가 있고, `source = rule`이며, `certainty`가 `confirmed`가 아니다(PRD 5.7.1). AI 연동(T15) 뒤에는 `source = ai`도 허용한다. |
+| A-2 | `analysis.analyzedIssueCount`는 `analysis`가 있는 이슈 수와 같다. |
+
 ---
 
 ## 4. 상태 전이와 쓰기 주체
@@ -169,10 +180,12 @@ stateDiagram-v2
 
 ### 4.3 AI 단계의 기록 순서
 
-1. `analysis.status = running`, `step = analyzing_issues` 저장
-2. 이슈별 AI 분석 결과를 메모리에서 모은다.
-3. 태스크 그룹화(코드) → 태스크 제목과 설명(AI) → Acceptance Criteria와 프롬프트(코드), `step = generating_tasks`
-4. 최종 상태(6.2.2)와 함께 한 번에 저장
+1. `analysis.status = running`, `step = analyzing_issues` 저장. 이슈가 0개면 `analysis.status = skipped`, `tasks = []`로 바로 최종 저장한다.
+2. 이슈별 원인 분석 결과를 메모리에서 모은다. MVP는 규칙 기반 분석이다(DETECTION_RULES 13.1).
+3. `step = generating_tasks` 저장(분석 결과는 아직 쓰지 않는다) → 태스크 그룹화(코드) → 태스크 제목과 설명(AI, MVP는 템플릿) → Acceptance Criteria와 프롬프트(코드)
+4. 최종 상태(6.2.2), `analysis.status = completed`, `analyzedIssueCount`, `completedAt`을 한 번에 저장
+
+2~4 중 예외가 나면 `analysis = { status: failed, error: AI_FAILED }`, `tasks = []`, 최상위 `partial`로 저장한다. 이슈는 브라우저 단계 결과 그대로 두고 `analysisSkippedReason`만 채운다(needsReview면 `needs-review`, 아니면 `ai-failed`).
 
 중간에 함수가 죽으면 문서는 `analyzing` + `analysis.status = running`으로 남는다. 이 상태는 GET 조회에서 처리한다(4.4).
 
@@ -345,6 +358,8 @@ PRD에 없던 결정이다(AGENTS.md 6장).
 12. 이슈 수 상한 관련 불변 조건 I-11, 겹침 이슈 묶기 관련 불변 조건 S-13을 추가했다(PRD 5.3.3, 5.3.7).
 13. I-9는 AI 단계가 끝난 문서에만 적용한다. 브라우저 실행·결과 저장 실패로 끝난 `failed`는 viewport 결과와 이슈를 비운다(I-5). 멈춘 `analyzing`을 보여줄 때 이슈의 skip 사유를 채운다(4.4). (T09)
 14. 스크린샷 업로드가 실패한 viewport는 `STORAGE_FAILED`로 처리하고, 남은 viewport의 수집 데이터로 이슈를 다시 만든다. `screenshotUrl`이 없는 `ViewportResult`를 만들지 않는다. (T09)
+15. (T10) T-1, T-2는 `analysis.status = completed`일 때만 확인한다(3.4). 규칙 분석 조건 A-1, A-2를 추가했다(3.5).
+16. (T10) 분석 단계의 예외는 규칙 분석 실패도 `AI_FAILED`로 기록한다. `generating_tasks` 단계 저장은 step만 바꾼다(4.3).
 
 ---
 

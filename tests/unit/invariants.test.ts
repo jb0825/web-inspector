@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { buildIssues } from '@/server/detect/pipeline';
 import { buildViewportResult, finalizeIssues } from '@/server/evidence/finalize';
+import { analyzeIssueByRules } from '@/server/analysis/rules';
 import { assertInspectionInvariants, findInspectionViolations, InvariantError, type InvariantStage } from '@/server/store/invariants';
+import { buildTasks } from '@/server/tasks/build';
 import type { Inspection, Issue } from '@/types/inspection';
 import { site } from './helpers/site';
 
-// DOMAIN_MODEL 3.1 (I-1~I-11), 3.2 (V-1~V-3), 3.3 (S-1~S-13). 조건마다 통과 1개, 위반 1개 이상
+// DOMAIN_MODEL 3.1 (I-1~I-11), 3.2 (V-1~V-3), 3.3 (S-1~S-13), 3.4 (T-1~T-8), 규칙 분석 A-1·A-2(T10).
+// 조건마다 통과 1개, 위반 1개 이상
 
 const SHOT = { screenshotWidth: 1440, screenshotHeight: 2000, documentHeight: 2000, screenshotTruncated: false };
 const SHOT_MOBILE = { screenshotWidth: 616, screenshotHeight: 2000, documentHeight: 2000, screenshotTruncated: false };
@@ -39,7 +42,7 @@ function valid(): Inspection {
   };
 }
 
-/** AI 단계가 끝난 정상 Inspection: needsReview가 아닌 이슈에는 analysis를 둔다 */
+/** 분석 단계가 끝난 정상 Inspection: needsReview가 아닌 이슈에는 규칙 분석, 태스크와 프롬프트까지 만든다 */
 function finalValid(): Inspection {
   const inspection = valid();
   inspection.status = 'completed';
@@ -48,8 +51,9 @@ function finalValid(): Inspection {
   inspection.completedAt = '2026-11-13T00:05:00.000Z';
   for (const issue of inspection.issues) {
     if (issue.needsReview) issue.analysisSkippedReason = 'needs-review';
-    else issue.analysis = { rootCause: 'r', certainty: 'likely', cssProblem: 'c', fixDirection: 'f', suggestedFix: 's', source: 'rule' };
+    else issue.analysis = analyzeIssueByRules(issue);
   }
+  inspection.tasks = buildTasks(inspection.issues, inspection.viewports);
   return inspection;
 }
 
@@ -59,6 +63,11 @@ const ids = (inspection: Inspection, stage: InvariantStage = 'browser') => findI
 function violatesWith(mutate: (inspection: Inspection, issues: Issue[]) => void, stage: InvariantStage = 'browser') {
   const inspection = stage === 'final' ? finalValid() : valid();
   mutate(inspection, inspection.issues);
+  if (stage === 'final') {
+    // 이슈를 바꾼 뒤에도 태스크와 analyzedIssueCount는 새 이슈 기준으로 다시 만든다(이슈 조건만 확인하기 위해서)
+    inspection.tasks = buildTasks(inspection.issues, inspection.viewports);
+    inspection.analysis.analyzedIssueCount = inspection.issues.filter((i) => i.analysis !== undefined).length;
+  }
   return ids(inspection, stage);
 }
 
@@ -202,7 +211,8 @@ describe('Issue (3.3)', () => {
   });
 
   it('S-10 (final): analysis와 analysisSkippedReason 중 정확히 하나', () => {
-    expect(violatesWith((_, issues) => { delete issues[0].analysis; }, 'final')).toEqual(['S-10']);
+    // analysis.status가 completed라 일반 이슈에 analysis가 없으면 A-1도 위반이다
+    expect(violatesWith((_, issues) => { delete issues[0].analysis; }, 'final')).toEqual(['S-10', 'A-1']);
     expect(violatesWith((_, issues) => { issues[0].analysisSkippedReason = 'limit-exceeded'; }, 'final')).toEqual(['S-10']);
   });
 
@@ -294,7 +304,7 @@ describe('Inspection (3.1)', () => {
   });
 
   it('I-9: AI 단계가 끝났고 이슈가 0개면 analysis는 skipped, tasks는 비어 있다', () => {
-    const noIssues = { ...finalValid(), issues: [], issuesDetected: 0 };
+    const noIssues = { ...finalValid(), issues: [], issuesDetected: 0, tasks: [] };
     expect(iIds(noIssues, 'final')).toEqual(['I-9']);
     expect(iIds({ ...noIssues, analysis: { status: 'skipped', analyzedIssueCount: 0 } }, 'final')).toEqual([]);
     // analyzing에서는 이슈가 0개여도 analysis가 pending이다 (analyze가 skipped로 바꾼다)
@@ -311,5 +321,112 @@ describe('Inspection (3.1)', () => {
     expect(iIds({ ...valid(), issuesDetected: 10, issuesTruncated: false })).toEqual(['I-11']);
     expect(iIds({ ...valid(), issuesDetected: 10, issuesTruncated: true })).toEqual([]);
     expect(iIds({ ...pending(), issuesDetected: 1, issuesTruncated: true })).toEqual(['I-11']);
+  });
+});
+
+describe('DevTask (3.4)', () => {
+  /** 태스크만 바꾼 사본 (태스크를 다시 만들지 않는다) */
+  function taskIds(mutate: (inspection: Inspection) => void) {
+    const inspection = finalValid();
+    mutate(inspection);
+    return ids(inspection, 'final');
+  }
+
+  it('정상: 이슈 3개(겹침, spill, page-scroll)가 태스크로 묶인다 (landmark 없음 + both인 ISS-001, ISS-002는 한 그룹)', () => {
+    const inspection = finalValid();
+    expect(inspection.tasks.map((t) => `${t.id} ${t.priority} ${t.viewportTag} [${t.issueIds.join(',')}]`)).toEqual([
+      'TASK-001 P0 both [ISS-001,ISS-002]',
+      'TASK-002 P0 mobile-only [ISS-003]',
+    ]);
+    expect(ids(inspection, 'final')).toEqual([]);
+  });
+
+  it('T-1: 일반 이슈는 일반 태스크 정확히 하나에 속한다', () => {
+    expect(taskIds((i) => { i.tasks.splice(1, 1); })).toEqual(['T-1']);
+    expect(taskIds((i) => { i.tasks[1].issueIds = ['ISS-001', 'ISS-003']; })).toContain('T-1');
+    expect(taskIds((i) => { i.tasks[0].needsReview = true; })).toContain('T-1');
+  });
+
+  it('T-2: Needs Review 이슈는 Needs Review 태스크에 속한다', () => {
+    const inspection = finalValid();
+    const issue = inspection.issues[0];
+    issue.occurrences[1].confidence = 0.4;
+    Object.assign(issue, { confidence: 0.4, needsReview: true, analysisSkippedReason: 'needs-review' });
+    delete issue.analysis;
+    inspection.analysis.analyzedIssueCount = 2;
+    // 태스크를 다시 만들지 않으면 Needs Review 이슈가 일반 태스크에 남는다
+    expect(ids(inspection, 'final')).toContain('T-2');
+    inspection.tasks = buildTasks(inspection.issues, inspection.viewports);
+    expect(ids(inspection, 'final')).toEqual([]);
+    expect(inspection.tasks.at(-1)?.needsReview).toBe(true);
+  });
+
+  it('T-3: issueIds는 1~8개, 존재하는 ID, 오름차순', () => {
+    expect(taskIds((i) => { i.tasks[0].issueIds = []; })).toContain('T-3');
+    expect(taskIds((i) => { i.tasks[0].issueIds = ['ISS-001', 'ISS-009']; })).toContain('T-3');
+    expect(taskIds((i) => {
+      i.tasks.splice(1, 1);
+      i.tasks[0].issueIds = ['ISS-003', 'ISS-001'];
+    })).toContain('T-3');
+  });
+
+  it('T-4: priority는 가장 높은 이슈의 Priority', () => {
+    expect(taskIds((i) => { i.tasks[0].priority = 'P1'; })).toContain('T-4');
+  });
+
+  it('T-5: TASK-001부터 이어지고 needsReview → Priority → 가장 작은 Issue ID 순', () => {
+    expect(taskIds((i) => { i.tasks[1].id = 'TASK-005'; })).toEqual(['T-5']);
+    expect(taskIds((i) => {
+      i.tasks.reverse();
+      i.tasks.forEach((t, n) => { t.id = `TASK-00${n + 1}`; });
+    })).toEqual(['T-5']);
+  });
+
+  it('T-6: Needs Review 태스크는 템플릿 제목', () => {
+    const inspection = finalValid();
+    const issue = inspection.issues[1];
+    issue.occurrences.forEach((o) => { o.confidence = 0.4; });
+    Object.assign(issue, { confidence: 0.4, needsReview: true, analysisSkippedReason: 'needs-review' });
+    delete issue.analysis;
+    inspection.analysis.analyzedIssueCount = 2;
+    inspection.tasks = buildTasks(inspection.issues, inspection.viewports);
+    expect(ids(inspection, 'final')).toEqual([]);
+    const review = inspection.tasks.find((t) => t.needsReview);
+    if (review) review.titleSource = 'ai';
+    expect(ids(inspection, 'final')).toEqual(['T-6']);
+  });
+
+  it('T-7: acceptanceCriteria는 1개 이상', () => {
+    expect(taskIds((i) => { i.tasks[0].acceptanceCriteria = []; })).toEqual(['T-7']);
+  });
+
+  it('T-8: prompt는 비어 있지 않고 모든 Issue ID를 담는다', () => {
+    expect(taskIds((i) => { i.tasks[0].prompt = ''; })).toContain('T-8');
+    expect(taskIds((i) => { i.tasks[0].prompt = i.tasks[0].prompt.replaceAll('ISS-001', 'ISS-0O1'); })).toEqual(['T-8']);
+  });
+
+  it('분석 단계가 실패했거나 멈춘 문서는 tasks가 비어 있어도 T-1/T-2 위반이 아니다', () => {
+    const inspection = finalValid();
+    inspection.status = 'partial';
+    inspection.analysis = { status: 'failed', analyzedIssueCount: 0, error: { code: 'AI_FAILED', message: 'x' } };
+    inspection.tasks = [];
+    for (const issue of inspection.issues) {
+      delete issue.analysis;
+      issue.analysisSkippedReason = issue.needsReview ? 'needs-review' : 'ai-failed';
+    }
+    expect(ids(inspection, 'final')).toEqual([]);
+  });
+});
+
+describe('규칙 분석 (A-1, A-2, T10)', () => {
+  it('A-1: analysis completed면 일반 이슈의 analysis는 source rule이고 confirmed가 아니다', () => {
+    expect(violatesWith((_, issues) => { if (issues[0].analysis) issues[0].analysis.source = 'ai'; }, 'final')).toEqual(['A-1']);
+    expect(violatesWith((_, issues) => { if (issues[0].analysis) issues[0].analysis.certainty = 'confirmed'; }, 'final')).toEqual(['A-1']);
+  });
+
+  it('A-2: analyzedIssueCount는 analysis가 있는 이슈 수', () => {
+    const inspection = finalValid();
+    inspection.analysis.analyzedIssueCount = 1;
+    expect(ids(inspection, 'final')).toEqual(['A-2']);
   });
 });

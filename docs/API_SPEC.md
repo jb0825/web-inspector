@@ -421,7 +421,8 @@ src/types/api.ts                                  CreateInspectionResponse, ApiE
 src/server/security/url.ts, ssrf.ts               URL 판정
 src/server/store/redis.ts                         읽기, 쓰기, 슬롯, 잠금, 멈춘 검사 처리
 src/server/inspect.ts                             runInspection (4장)
-src/server/ai/…, src/server/tasks/…, src/server/prompt/…   runAnalysis
+src/server/analyze.ts                             runAnalysis (DOMAIN_MODEL 4.3)
+src/server/analysis/…, src/server/tasks/…, src/server/prompt/…   원인 분석, 태스크, 프롬프트 (DETECTION_RULES 13장)
 ```
 
 route 파일은 다음만 한다:

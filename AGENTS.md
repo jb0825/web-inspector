@@ -87,7 +87,7 @@ src/
   server/                               # 서버 전용 코드. 모든 진입 파일 첫 줄에 import 'server-only'
     env.ts                              # 환경변수 zod 검증
     inspect.ts                          # 브라우저 검사 오케스트레이션 runInspection (create의 after())
-    analyze.ts                          # AI 단계 runAnalysis (analyze의 after()). T09는 stub, T10에서 구현
+    analyze.ts                          # 분석 단계 runAnalysis (analyze의 after()). 원인 분석 → 태스크 → 프롬프트 (DOMAIN_MODEL 4.3)
     status.ts                           # 상태 판정(PRD 6.2.2)과 멈춘 검사 처리(DOMAIN_MODEL 4.4) 순수 함수
     log.ts                              # 구조화 로그 (ID, 호스트, 단계, 코드, 소요 시간만)
     http/inspections.ts                 # API 3개의 요청 처리. route 파일은 의존성(저장소, after)만 넣어 호출한다
@@ -114,6 +114,9 @@ src/
       pipeline.ts                       # buildIssues: 탐지부터 유형 간 연결까지 (DETECTION_RULES 1.3)
       geometry.ts                       # 보이는 영역 계산 (DETECTION_RULES 3.6)
     compare/match.ts                    # Desktop / Mobile 요소 매칭 (PRD 5.6)
+    analysis/
+      rules.ts                          # 규칙 기반 원인 분석 규칙 표 (PRD 5.7.1, DETECTION_RULES 13.1)
+      analyze.ts                        # analyzeIssues: 이슈별 analysis/skip 사유. T15에서 AI로 바뀔 자리
     evidence/
       sentences.ts                      # Evidence 문장 템플릿
       sourceHints.ts
@@ -125,12 +128,15 @@ src/
       score.ts
     tasks/
       group.ts                          # 규칙 기반 그룹화 (PRD 5.8.1)
-      acceptance.ts                     # Acceptance Criteria 생성
+      acceptance.ts                     # Acceptance Criteria 생성 (DETECTION_RULES 13.3)
+      build.ts                          # 그룹화 → Acceptance Criteria → 프롬프트로 DevTask 조립
     ai/
       client.ts
       schemas.ts                        # AI 출력 zod 스키마
       prompts.ts                        # AI에게 보내는 시스템/사용자 프롬프트
-    prompt/template.ts                  # 최종 코딩 에이전트 프롬프트 조립 (PRD 5.9.1)
+    prompt/
+      template.ts                       # 최종 코딩 에이전트 프롬프트 조립 (PRD 5.9.1)
+      markdown.ts                       # 페이지 문자열을 Markdown에 넣는 도구 (줄바꿈, 백틱 구분자)
     security/
       url.ts                            # 입력 URL 검증
       ssrf.ts                           # IP 범위 판정, DNS 조회
@@ -244,7 +250,7 @@ pnpm collect <name>    # (T04 이후) Fixture 1개의 수집 결과를 JSON으�
 2. **Evidence 문장은 `src/server/evidence/sentences.ts`의 템플릿으로 만든다.** LLM으로 생성하지 않는다.
 3. **최종 코딩 에이전트 프롬프트는 `src/server/prompt/template.ts`가 조립한다.** AI가 작성한 필드(rootCause, suggestedFix, title, description)만 정해진 자리에 넣는다.
 4. **AI 출력은 반드시 `src/server/ai/schemas.ts`의 zod 스키마로 검증한다.** 입력에 없는 `issueId`/`taskId`가 들어 있는 결과는 버린다. 검증 실패 시 1회만 재시도한다.
-5. **같은 측정 데이터를 넣으면 항상 같은 이슈 목록과 우선순위가 나와야 한다.** `src/server/detect`, `src/server/priority`, `src/server/tasks`에서는 `Math.random`, 현재 시각, AI 호출을 쓰지 않는다. 정렬 기준도 명시적으로 지정한다. Issue ID는 이슈 수 상한(PRD 5.3.7)을 적용한 뒤 남은 이슈에 PRD 5.3.6(DETECTION_RULES 7.4)의 정렬 키로, Task ID는 PRD 5.8.1의 규칙으로 붙이고, 우선순위 계산은 정수 연산(`score100`)으로 한다.
+5. **같은 측정 데이터를 넣으면 항상 같은 이슈 목록과 우선순위가 나와야 한다.** `src/server/detect`, `src/server/priority`, `src/server/analysis`, `src/server/tasks`, `src/server/prompt`에서는 `Math.random`, 현재 시각, AI 호출을 쓰지 않는다. 정렬 기준도 명시적으로 지정한다. Issue ID는 이슈 수 상한(PRD 5.3.7)을 적용한 뒤 남은 이슈에 PRD 5.3.6(DETECTION_RULES 7.4)의 정렬 키로, Task ID는 PRD 5.8.1의 규칙으로 붙이고, 우선순위 계산은 정수 연산(`score100`)으로 한다.
 6. **임계값과 점수표는 PRD의 값을 상수로 한 곳에 모아 둔다** (`src/server/detect/constants.ts`, `src/server/priority/rules.ts`). 코드 곳곳에 숫자를 직접 쓰지 않는다. PRD에 없는 값을 새로 정했다면 작업 요약에 보고한다.
 7. **AI 분석 실패가 브라우저 검사 결과를 지워서는 안 된다.** 검사 결과는 AI 단계 전에 Redis에 저장한다.
 
@@ -315,7 +321,8 @@ pnpm collect <name>    # (T04 이후) Fixture 1개의 수집 결과를 JSON으�
 
 ## 10. 테스트 규칙
 
-- `src/server/detect`, `src/server/priority`, `src/server/tasks`, `src/server/evidence/sentences.ts`, `src/server/prompt/template.ts`, `src/server/security`의 순수 함수는 Vitest 단위 테스트를 붙인다.
+- `src/server/detect`, `src/server/priority`, `src/server/analysis`, `src/server/tasks`, `src/server/evidence/sentences.ts`, `src/server/prompt/template.ts`, `src/server/security`의 순수 함수는 Vitest 단위 테스트를 붙인다.
+- 원인 분석 규칙(`src/server/analysis/rules.ts`)을 추가하거나 바꾸면 DETECTION_RULES 13.1 표와 `tests/fixtures/run.ts`의 `EXPECTED_RULES`도 함께 고친다.
 - 탐지 규칙을 추가하거나 바꾸면 그 규칙을 검증하는 Fixture를 함께 추가하거나 수정한다.
 - `pnpm test:fixtures`의 통과 기준 (PRD 13.2):
   - Positive Fixture 6개를 모두 기대한 유형과 우선순위로 탐지한다. 기대하지 않은 `needsReview: false` 이슈가 있으면 실패다(허용 이슈 제외, DETECTION_RULES 12.2).
