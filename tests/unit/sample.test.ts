@@ -26,6 +26,17 @@ describe('public/sample/inspection.json', () => {
     expect(sample.status).toBe('completed');
   });
 
+  it('production에서 데모 페이지를 검사한 결과다 (임시 샘플이 아니다)', () => {
+    const sample = inspectionSchema.parse(readSample());
+    // 로컬 --local로 만든 임시 샘플의 고정 ID (tests/fixtures/run.ts PAGE_INSPECTION_ID)
+    expect(sample.id).not.toBe('00000000-0000-4000-8000-00000000d001');
+    const target = new URL(sample.url);
+    expect(target.protocol).toBe('https:');
+    expect(isDemoTarget(sample, new URL(target.origin))).toBe(true);
+    expect(sample.viewportErrors).toEqual({ desktop: null, mobile: null });
+    expect(sample.analysis.status).toBe('completed');
+  });
+
   it('screenshotUrl이 /sample/로 시작하고, PNG 크기가 문서와 같다', () => {
     const sample = inspectionSchema.parse(readSample());
     for (const v of ['desktop', 'mobile'] as const) {

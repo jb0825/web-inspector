@@ -193,10 +193,17 @@ interface Screen {
   fullPage?: boolean;
 }
 
+/** UI_SHOTS_ONLY=sample 처럼 이름 앞부분으로 찍을 화면을 고른다 */
+const ONLY = process.env.UI_SHOTS_ONLY ?? '';
+
 const RETRY_URL = 'https://www.example.com/pricing?plan=team';
 
 const SCREENS: Screen[] = [
   { name: 'home', path: '/', ready: 'form' },
+  // T13 샘플 리포트: 정적 문서(public/sample)라 API mock이 필요 없다
+  { name: 'sample', path: '/report/sample', ready: 'text=샘플 리포트입니다' },
+  { name: 'sample-detail', path: '/report/sample?issue=ISS-005', ready: 'aside h2', fullPage: false },
+  { name: 'sample-tasks', path: '/report/sample?tab=tasks&task=TASK-002', ready: 'textarea' },
   {
     name: 'home-retry',
     path: '/',
@@ -311,7 +318,7 @@ async function main() {
         reducedMotion: 'reduce',
       });
       try {
-        for (const screen of SCREENS) {
+        for (const screen of SCREENS.filter((s) => !ONLY || s.name.startsWith(ONLY))) {
           const page = await context.newPage();
           await mockApi(page, responses);
           await screen.init?.(page);

@@ -1,12 +1,13 @@
 {
-  "id": "00000000-0000-4000-8000-00000000d001",
-  "url": "/demo/landing.html",
+  "id": "eda0469a-507b-4f74-b731-d6d5237e518d",
+  "url": "https://web-inspector-seven.vercel.app/demo/landing.html",
+  "finalUrl": "https://web-inspector-seven.vercel.app/demo/landing.html",
   "status": "completed",
   "step": "generating_tasks",
-  "createdAt": "2000-01-01T00:00:00.000Z",
-  "startedAt": "2000-01-01T00:00:00.000Z",
-  "completedAt": "2000-01-01T00:00:00.000Z",
-  "updatedAt": "2000-01-01T00:00:00.000Z",
+  "createdAt": "2026-11-14T10:23:27.299Z",
+  "startedAt": "2026-11-14T10:23:27.331Z",
+  "completedAt": "2026-11-14T10:23:37.596Z",
+  "updatedAt": "2026-11-14T10:23:37.596Z",
   "viewports": {
     "desktop": {
       "width": 1440,
