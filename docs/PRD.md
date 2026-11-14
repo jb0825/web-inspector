@@ -503,6 +503,7 @@ Reach 보정 (최대 5, 위 표의 R에 더한다):
 - 맞는 규칙이 없으면 `certainty: 'uncertain'`으로 두고, 확인한 CSS 값을 근거로 적는다.
 - 규칙 분석은 같은 입력에 항상 같은 결과를 낸다(12.2 Deterministic Core).
 - 태스크 제목은 템플릿으로 만든다(`titleSource: 'template'`).
+- 규칙 표와 출력 형식은 DETECTION_RULES 13.1이 정한다(`src/server/analysis/rules.ts`).
 
 AI의 출력은 구조화된 JSON으로만 받는다. 측정값과 ID는 AI 출력에서 가져오지 않고, 항상 코드가 원본 데이터에서 직접 넣는다.
 
@@ -646,6 +647,7 @@ Priority: {priority} | Viewport: {viewportTag}
 - `{otherViewportConstraint}`: 한쪽 viewport 태스크면 "다른 viewport({otherViewport})의 레이아웃을 깨뜨리지 않는다.", `both`면 "Desktop과 Mobile 모두에서 아래 Acceptance Criteria를 만족해야 한다."
 - AI 분석이 없는 이슈는 Root Cause와 Required Changes 자리에 "AI 분석 없음 — 위 Evidence와 소스 코드를 직접 확인한다."를 넣는다.
 - 값이 없는 Source Hints 항목은 줄째로 생략한다.
+- `viewportTag`가 `null`인 태스크의 제약 문구, `analysis`가 없는 이슈의 Root Cause 제목, 페이지 문자열의 Markdown 처리는 DETECTION_RULES 13.4를 따른다.
 
 #### 5.9.2 Requirements
 
@@ -725,7 +727,7 @@ Viewport별 오류와 AI 분석 상태를 따로 기록하고(8.2), 최상위 `s
 | `DETECTION_FAILED` | viewport | 측정이나 탐지 코드 실행 오류 |
 | `TIME_BUDGET_EXCEEDED` | 검사 / viewport | 전체 검사 상한(8.1.3) 초과. 끝내지 못한 viewport에 기록한다 |
 | `STORAGE_FAILED` | 검사 | Redis 또는 Blob 저장 실패 |
-| `AI_FAILED` | AI 단계 | `analysis.error`에만 쓴다. Inspection 자체의 실패 코드가 아니다 |
+| `AI_FAILED` | AI 단계 | `analysis.error`에만 쓴다. Inspection 자체의 실패 코드가 아니다. 규칙 기반 분석(5.7.1)만 하는 MVP에서도 분석 단계 전체 실패에 이 코드를 쓴다 |
 | `INTERNAL_ERROR` | 공통 | 그 밖의 예상하지 못한 오류 |
 | `NAVIGATION_FAILED` | viewport | `goto`가 네트워크 오류로 실패(DNS 조회 실패, 연결 거부, TLS 오류 등). 메시지에 오류 종류를 포함한다. 요청 단계의 DNS 조회 실패는 `INVALID_URL`이다 |
 

@@ -1,8 +1,14 @@
 # AI Website Inspector — Detection Rules
 
-> Version: 2.1
+> Version: 2.2
 > Status: Draft
 > Related Documents: PRD.md (v1.2), AGENTS.md
+
+### Changelog (v2.1 → v2.2)
+
+- 추가: 분석 단계 명세(13장). 규칙 기반 원인 분석 규칙 표(PRD 5.7.1), 태스크 그룹화 세부 규칙(PRD 5.8.1), Acceptance Criteria 문장(PRD 5.8.2), 프롬프트 조립 세부 규칙(PRD 5.9.1). (T10)
+- 추가: 원인 분석 규칙 `VM`(반대쪽 margin이 요소를 화면 밖으로 밀어냄). P-04처럼 고정 너비가 화면보다 작은데 margin으로 밀려난 요소를 위해 V6과 V7 사이에 둔다.
+- 장 번호 변경: Out of Scope 13장 → 14장, 새로 정한 값과 규칙 14장 → 15장
 
 ### Changelog (v2.0 → v2.1)
 
@@ -794,7 +800,114 @@ Priority는 Confidence와 관계없이 9.3으로 계산한다(PRD 5.5.4).
 
 ---
 
-## 13. Out of Scope
+## 13. 분석 단계 (PRD 5.7~5.9)
+
+AI를 호출하지 않는 MVP의 분석 단계다(PRD 5.7.1). `/analyze`의 `after()`에서 `runAnalysis`(`src/server/analyze.ts`)가 다음 순서로 실행한다(DOMAIN_MODEL 4.3).
+
+```text
+analysis.running, step = analyzing_issues 저장
+이슈 0개 → analysis.skipped, tasks = [] 로 최종 저장하고 끝
+analyzeIssues(issues)                       // 13.1, src/server/analysis/analyze.ts
+step = generating_tasks 저장
+groupIssues → buildAcceptanceCriteria → buildPrompt   // 13.2~13.4, src/server/tasks/build.ts
+analysis.completed + 최종 상태(PRD 6.2.2) + completedAt 을 한 번에 저장
+예외 → analysis.failed(AI_FAILED) + partial, 이슈는 브라우저 단계 결과 그대로(analysisSkippedReason: ai-failed), tasks = []
+```
+
+모든 함수는 순수 함수다. 같은 입력이면 출력이 바이트 단위로 같고, 입력 이슈의 순서와 무관하다(11장).
+
+### 13.1 규칙 기반 원인 분석 (`src/server/analysis/rules.ts`)
+
+`analyzeIssueByRules(issue)`. `needsReview` 이슈는 분석하지 않고 `analysisSkippedReason: 'needs-review'`만 둔다(DOMAIN_MODEL S-9). 분석 대상 수 제한(PRD 5.7.2의 30개)은 AI 비용 때문이므로 규칙 분석에는 적용하지 않는다.
+
+규칙은 대표 occurrence(`occurrences[0]`)의 측정값과 `computedStyle`로 고른다. 위에서부터 처음 맞는 규칙을 쓴다.
+
+| # | 대상 | 조건 | 원인 요지 | 수정 방향 |
+|---|---|---|---|---|
+| V1 | viewport-overflow 전체 | `white-space`가 `nowrap` 또는 `pre` | 줄바꿈이 금지되어 내용이 화면 밖으로 나감 | 줄바꿈 허용, 또는 `overflow` + `text-overflow` 처리 |
+| V2 | 〃 | `min-width`가 px 값이고 `layoutWidth`보다 큼 | 최소 너비가 화면 너비보다 큼 | `min-width` 제거 또는 `max-width: 100%` |
+| V3 | 〃 | `flex-shrink`가 `0`이고 요소 너비 > `layoutWidth` | flex 항목이 줄어들지 않음 | 축소 허용, `min-width: 0`, 또는 `flex-wrap` |
+| V4 | 〃 | `grid-template-columns`의 px 트랙 합이 `layoutWidth`보다 큼 | 고정 열 너비 합이 화면보다 큼 | `minmax(0, 1fr)`, `auto-fit` |
+| V5 | 〃 | `position`이 `absolute`/`fixed` | 위치 지정 요소가 화면 밖에 놓임 | 위치 값 조정 |
+| V6 | 〃 | `transform`이 `none`이 아님 | transform 이동으로 화면 밖에 놓임 | 이동 값 조정 |
+| VM | 〃 | 오른쪽으로 넘치면 `margin-left`, 왼쪽으로 넘치면 `margin-right`가 양수 px이고 넘친 양(`overflowRight`/`overflowLeft`) 이상 | 반대쪽 margin이 요소를 화면 밖으로 밀어냄 | margin을 줄이거나 flex 정렬로 배치, `max-width: 100%` |
+| V7 | 〃 | 요소 너비(`boundingBox.width`) > `layoutWidth` | 고정 너비로 추정 | `max-width: 100%`, 반응형 단위 |
+| C1 | clipped (x축) | `white-space: nowrap` | 한 줄 고정 상태에서 너비가 부족해 잘림 | 줄바꿈 허용, 또는 의도라면 `text-overflow: ellipsis` |
+| C2 | clipped (y축) | — | 높이가 고정되어 내용이 잘림 | `height` 대신 `min-height`, 또는 `height: auto` |
+| C3 | clipped (x축, C1 아님) | — | 너비가 내용보다 좁음 | 너비 확대, `overflow-wrap` |
+| S1 | spill | 아래쪽으로 넘침(`overflowBottom > 0`) | 상위 영역 높이가 고정되어 텍스트가 아래로 넘침 | 상위 영역 `height: auto` 또는 `min-height` |
+| S2 | spill | 왼쪽 또는 오른쪽으로 넘침 | 긴 단어나 줄바꿈 금지로 가로로 넘침 | `overflow-wrap: anywhere`, `word-break` |
+| O1 | element-overlap | 대상 요소가 `position: absolute`/`fixed` | 위치 지정 요소가 흐름 밖에서 겹침 | 위치 조정, 또는 일반 흐름으로 배치 |
+| O2 | 〃 | 대상 요소의 `margin`에 음수 px | 음수 margin으로 겹침 | margin 조정, `gap` 사용 |
+| O3 | 〃 | 대상 요소의 `transform`이 `none`이 아님 | transform 이동으로 겹침 | 이동 값 조정 |
+| X | 전체 | 위에 해당 없음 | 원인을 특정하지 못함 | 확인한 CSS 값을 나열하고 소스 확인 안내 |
+
+판정 세부:
+- 크기 비교(V2, V3, V4, V7, VM)는 Evidence 문장과 같은 정수 반올림 값으로 한다. 문구에 나오는 숫자와 판정 결과가 어긋나지 않게 하기 위해서다.
+- 계산된 `margin` 단축 값은 CSS 규칙대로 토큰 1~4개를 좌우 값으로 펼친다. px가 아닌 값(`auto` 등)은 판정에 쓰지 않는다.
+- clipped의 축은 `Issue`에 `axes`가 없으므로 `delta`의 `overflowX`/`overflowY` 키로 판단한다.
+- O1~O3는 대상 요소의 `computedStyle`만 본다. 상대 요소(`RelatedElement`)의 `computedStyle`은 수집하지 않기 때문이다.
+- S1의 근거는 `computedStyle`이 아니라 상위 영역(`bordered-ancestor`)의 측정 높이(`boundingBox.height`)다. 상위 영역의 `computedStyle`은 수집하지 않는다.
+
+출력 (`Issue.analysis`):
+
+| 필드 | 내용 |
+|---|---|
+| `source` | `'rule'` |
+| `certainty` | 맞는 규칙이 있으면 `likely`, X면 `uncertain`. `confirmed`는 쓰지 않는다(PRD 5.7.1) |
+| `rootCause` | `{원인 요지}. 근거({Viewport}): {CSS 값}, {측정값}`. occurrence가 2개이고 근거가 같으면 `근거(Desktop, Mobile)` 한 번, 다르면 viewport별로 `;`로 잇는다 |
+| `cssProblem` | 판정에 쓴 CSS 속성과 값 (X는 유형별로 확인한 화이트리스트 값) |
+| `fixDirection` | 표의 수정 방향 |
+| `suggestedFix` | 수정 방향 + 대상 selector를 쓴 CSS 예시 코드 블록 + "selector는 빌드된 DOM 기준이라 소스와 다를 수 있다"는 안내. X는 CSS 예시 없이 소스 확인 안내만 둔다 |
+
+- 숫자는 측정값을 `Math.round`한 정수 px다(8.1). 측정값을 새로 계산하지 않는다.
+- 페이지에서 가져온 텍스트(`textSnippet`, `htmlSnippet`, `landmark`)는 문구에 넣지 않는다. selector와 CSS 값만 쓴다.
+
+### 13.2 태스크 그룹화 (`src/server/tasks/group.ts`, PRD 5.8.1)
+
+- 일반 이슈와 Needs Review 이슈를 따로 묶는다. 규칙 2(연결 이슈 합치기)도 같은 쪽 이슈끼리만 적용한다.
+- 규칙 1의 키는 `(viewportTag, landmark)`이다. `viewportTag: null`(한 viewport 실패)과 "landmark 없음"도 각각 하나의 값이다.
+- 규칙 2로 합쳐진 그룹의 landmark: 모든 이슈의 landmark가 같으면 그 값, 다르면 없음(제목은 "페이지").
+- 규칙 3: 그룹 안을 Priority → ID로 정렬하고, `relatedIssueIds`로 연결된 덩어리 단위로 앞에서부터 8개(`MAX_ISSUES_PER_TASK`)까지 채운다. 덩어리가 현재 조각에 들어가지 않으면 새 조각을 시작한다. 덩어리 하나가 8개를 넘으면 그 덩어리만 순서대로 자른다(같은 요소의 이슈끼리만 연결되므로 실제로는 생기지 않는다).
+- 조각마다 viewportTag(포함된 이슈의 viewport 합집합, `null`이 하나라도 있으면 `null`)와 landmark를 다시 계산한다.
+- 기본 제목의 type 목록은 Priority → ID 순으로 처음 나온 순서다. viewportTag 라벨은 `Mobile` / `Desktop` / `Desktop + Mobile` / `비교 불가`(`null`).
+- `description`은 `- {issueId} ({Viewport}): {evidenceText}`를 이슈 ID 순, occurrence 순으로 나열한다.
+- `issueIds`는 ID 오름차순이다(DOMAIN_MODEL T-3). Issue ID는 문자열이 아니라 번호로 비교한다.
+- 규칙 분석만 하는 MVP에서는 모든 태스크가 `titleSource: 'template'`이다.
+
+### 13.3 Acceptance Criteria (`src/server/tasks/acceptance.ts`, PRD 5.8.2)
+
+이슈(ID 순) → occurrence(desktop → mobile) 순으로 만들고, 같은 문장은 하나만 남긴다. `{lw}`는 해당 viewport의 `layoutWidth`(정수 반올림)다.
+
+| 유형 | 문장 |
+|---|---|
+| `page-scroll` | "{lw}px viewport에서 `document.documentElement.scrollWidth`가 {lw} 이하이다." |
+| `element-out`, `hidden-clip` | 오른쪽으로 넘침: "{lw}px viewport에서 {selector}의 오른쪽 끝(요소와 텍스트 영역)이 {lw}px 이하이다." / 왼쪽으로 넘침: "… 왼쪽 끝(요소와 텍스트 영역)이 0px 이상이다." |
+| `clipped` | x축: "{lw}px viewport에서 {selector}의 `scrollWidth`가 `clientWidth`를 넘지 않는다." / y축: `scrollHeight`, `clientHeight` |
+| `spill` | "{lw}px viewport에서 {selector}의 텍스트 영역(`Range.getClientRects()`)이 {상위 영역 selector}의 테두리 안에 있다." |
+| `element-overlap` | "{lw}px viewport에서 {selector}의 표시 영역이 {relatedElements selector 목록}의 표시 영역과 겹치지 않는다." (탐지 임계값보다 엄격하다) |
+| 한쪽 viewport 태스크 | 마지막에 "{다른 viewport의 layoutWidth}px viewport의 레이아웃은 변경되지 않는다." |
+
+- `viewportTag: null` 태스크는 다른 viewport를 측정하지 못했으므로 마지막 항목을 넣지 않는다.
+- selector는 13.4의 인라인 코드 규칙으로 감싼다.
+
+### 13.4 프롬프트 조립 (`src/server/prompt/template.ts`, PRD 5.9.1)
+
+PRD 5.9.1 템플릿을 그대로 쓴다. PRD가 정하지 않은 경우:
+- `Viewport:` 줄의 `viewportTag`가 `null`이면 `비교 불가`.
+- `{otherViewportConstraint}`가 `null`이면 `다른 viewport는 검사하지 못했으므로, 수정한 뒤 Desktop과 Mobile에서 모두 레이아웃을 확인한다.`
+- `analysis`가 없는 이슈는 certainty와 출처가 없으므로 제목을 괄호 없이 `### Likely Root Cause`로 쓰고, PRD의 대체 문구를 넣는다.
+- `Attributes:`는 `key="value"`를 속성 이름 순으로 인라인 코드로 나열한다. Source Hints 항목이 모두 없으면 `### How to locate the element in source` 제목도 생략한다.
+- `Evidence`의 크기는 `{layoutWidth}×{ViewportResult.height}`다.
+
+페이지에서 가져온 문자열(selector, `textSnippet`, `htmlSnippet`, `landmark`, 속성값, Evidence 문장, 제목)은 내용을 바꾸지 않고 다음만 처리한다(`src/server/prompt/markdown.ts`):
+- 줄바꿈(CR, LF, CRLF, U+2028, U+2029)은 공백 하나로 바꾼다.
+- 인라인 코드는 값 안의 가장 긴 백틱 묶음보다 하나 긴 구분자를 쓰고, 값이 백틱으로 시작하거나 끝나면 양쪽에 공백을 둔다(CommonMark).
+- 코드 블록(`suggestedFix`)은 내용 안의 백틱 묶음보다 긴 구분자(최소 3개)를 쓴다.
+
+---
+
+## 14. Out of Scope
 
 v1.0에 있었지만 PRD v1.2 범위가 아니라 구현하지 않는 것:
 
@@ -808,7 +921,7 @@ v1.0에 있었지만 PRD v1.2 범위가 아니라 구현하지 않는 것:
 
 ---
 
-## 14. 이 문서에서 새로 정한 값과 규칙
+## 15. 이 문서에서 새로 정한 값과 규칙
 
 PRD에 없던 구현 결정이다. AGENTS.md 6장에 따라 보고 대상이다.
 
@@ -848,8 +961,14 @@ PRD에 없던 구현 결정이다. AGENTS.md 6장에 따라 보고 대상이다.
 34. `ViewportResult.documentHeight`는 스크린샷 촬영 시점의 값이다. `screenshotTruncated`와 같은 기준이어야 V-2가 성립하기 때문이다.
 35. `rootClip` 페이지의 스크린샷 너비를 `layoutWidth`로 자른다(PRD 5.2.4).
 36. Viewport Overflow와 `spill`의 크롭 기준 박스에 넘침 범위를 포함한다(8.3).
+37. 원인 분석 규칙 표(13.1). 작업 지시(T10)의 초기 표에 `VM`(margin으로 밀려남)을 V6과 V7 사이에 추가했다. 크기 비교는 정수 반올림 값으로 한다. O1~O3는 대상 요소만 본다.
+38. 그룹화 세부 규칙(13.2): 합쳐진 그룹의 landmark가 다르면 없음, 연결 덩어리 단위 분할, viewportTag 라벨 `Desktop + Mobile`·`비교 불가`, 태스크당 최대 8개를 `group.ts`의 상수로 둔다.
+39. Acceptance Criteria 문장(13.3). spill과 overlap 문장, 모든 문장 앞의 `{lw}px viewport에서`, `viewportTag: null`이면 다른 viewport 항목 생략.
+40. 프롬프트의 PRD 미정 경우(13.4)와 Markdown 처리 규칙. 새 파일 `src/server/prompt/markdown.ts`.
+41. 새 폴더 `src/server/analysis/`(`rules.ts`, `analyze.ts`)와 새 파일 `src/server/tasks/build.ts`.
+42. 분석 단계 예외(규칙 분석 실패 포함)에도 `AI_FAILED`를 쓴다(PRD 6.2.4). 이름은 AI 연동(T15)을 기준으로 둔다.
 
 ---
 
-**Document Status:** Draft v2.1
+**Document Status:** Draft v2.2
 **Next Step:** DOMAIN_MODEL을 PRD v1.2 8.2 기준으로 다시 작성한다.

@@ -3,15 +3,21 @@
 // 실행 (node --conditions=react-server: server-only를 빈 모듈로 불러온다, AGENTS.md 10장)
 //   pnpm test:fixtures                 15개 전체
 //   pnpm test:fixtures P-01 N-07       일부만
-//   pnpm test:fixtures --repeat 2      전체를 두 번 실행하고 buildIssues·finalizeIssues 결과가 같은지 확인한다
+//   pnpm test:fixtures --repeat 2      전체를 두 번 실행하고 buildIssues·finalizeIssues·분석·태스크 결과가 같은지 확인한다
 //
-// 각 Fixture의 스크린샷과 확인용 HTML(cropRect와 boundingBox)을 .tmp/fixtures-report/에 저장한다.
+// T10: finalizeIssues 뒤에 분석 단계(규칙 기반 원인 분석 → 태스크 그룹화 → 프롬프트)를 실행하고
+// 'final' 불변 조건과 Positive Fixture의 기대 규칙(EXPECTED_RULES)을 확인한다.
+//
+// 각 Fixture의 스크린샷과 확인용 HTML(cropRect, boundingBox, 분석 결과, 태스크와 프롬프트 전문), 분석 입출력 JSON을
+// .tmp/fixtures-report/에 저장한다.
 //
 // 하나라도 실패하면 종료 코드 1이다.
 
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { Browser } from 'playwright-core';
+import { analyzeIssues } from '@/server/analysis/analyze';
+import { selectRule, type RuleId } from '@/server/analysis/rules';
 import { createViewportContext } from '@/server/browser/devices';
 import { launchBrowser } from '@/server/browser/launch';
 import { captureFullPage, type CapturedScreenshot } from '@/server/browser/screenshot';
@@ -23,11 +29,25 @@ import { buildIssues, type BuildIssuesResult } from '@/server/detect/pipeline';
 import type { DetectedIssue } from '@/server/detect/types';
 import { buildViewportResult, finalizeIssues } from '@/server/evidence/finalize';
 import { assertInspectionInvariants } from '@/server/store/invariants';
-import type { Inspection, Issue, Viewport, ViewportResult } from '@/types/inspection';
+import { buildTasks } from '@/server/tasks/build';
+import type { DevTask, Inspection, Issue, Viewport, ViewportResult } from '@/types/inspection';
 import { FIXTURE_EXPECTATIONS, type ExpectedIssue, type FixtureExpectation } from './expected';
 import { fixtureGuard, start } from './server';
 
 const REPORT_DIR = path.join(process.cwd(), '.tmp', 'fixtures-report');
+
+/**
+ * T10: Positive Fixture의 기대 이슈(expected.ts의 issues, 같은 순서)마다 허용하는 분석 규칙.
+ * 규칙 기반 분석은 T10에서 추가한 단계라 expected.ts(탐지 기대값)를 바꾸지 않고 여기에 둔다.
+ */
+const EXPECTED_RULES: Record<string, readonly (readonly RuleId[])[]> = {
+  'P-01': [['V2', 'V7']],
+  'P-02': [['C1', 'C3']],
+  'P-03': [['O1']],
+  'P-04': [['V1', 'V2', 'V3', 'V4', 'V5', 'V6', 'VM', 'V7']],
+  'P-05': [['S1']],
+  'P-06': [['V1']],
+};
 
 interface FixtureRun {
   fixture: FixtureExpectation;
@@ -36,6 +56,9 @@ interface FixtureRun {
   result: BuildIssuesResult;
   /** finalizeIssues 결과 (result.issues와 같은 순서) */
   issues: Issue[];
+  /** 분석 단계 뒤의 이슈 (issues와 같은 순서) */
+  analyzed: Issue[];
+  tasks: DevTask[];
   viewportResults: Record<Viewport, ViewportResult>;
   /** Desktop + Mobile의 열기·안정화·수집 시간 */
   browserMs: number;
@@ -115,13 +138,29 @@ async function runFixture(browser: Browser, baseUrl: string, fixture: FixtureExp
   };
   const viewportResults = { desktop: viewportResult('desktop', desktop), mobile: viewportResult('mobile', mobile) };
   // DOMAIN_MODEL 3장: 브라우저 단계 결과의 불변 조건. 위반하면 예외 → 실패
-  assertInspectionInvariants(toInspection(fixture, viewportResults, result, issues), 'browser');
+  const browserDoc = toInspection(fixture, viewportResults, result, issues);
+  assertInspectionInvariants(browserDoc, 'browser');
+  // T10: 분석 단계 (src/server/analyze.ts의 completeAnalysis와 같은 순서)
+  const analysis = await analyzeIssues(issues);
+  const tasks = issues.length === 0 ? [] : buildTasks(analysis.issues, viewportResults);
+  const finalDoc: Inspection = {
+    ...browserDoc,
+    status: 'completed',
+    step: 'generating_tasks',
+    completedAt: browserDoc.createdAt,
+    analysis: issues.length === 0 ? { status: 'skipped', analyzedIssueCount: 0 } : { status: 'completed', analyzedIssueCount: analysis.analyzedIssueCount },
+    issues: analysis.issues,
+    tasks,
+  };
+  assertInspectionInvariants(finalDoc, 'final');
   return {
     fixture,
     collected: { desktop: desktop.collected, mobile: mobile.collected },
     screenshots: { desktop: desktop.screenshot, mobile: mobile.screenshot },
     result,
     issues,
+    analyzed: analysis.issues,
+    tasks,
     viewportResults,
     browserMs,
     buildMs,
@@ -210,6 +249,17 @@ function judge(run: FixtureRun): Verdict {
       problems.push(`${hit.id}: scores ${JSON.stringify(hit.scores)} ≠ 기대 ${JSON.stringify(e.scores)}`);
   }
 
+  // T10: 기대 이슈의 분석 규칙
+  const expectedRules = EXPECTED_RULES[fixture.id];
+  fixture.issues.forEach((e, i) => {
+    const hit = matched.get(e);
+    const allowedRules = expectedRules?.[i];
+    if (!hit || !allowedRules) return;
+    const analyzed = run.analyzed.find((a) => a.id === hit.id);
+    const rule = analyzed ? selectRule(analyzed) : undefined;
+    if (!rule || !allowedRules.includes(rule)) problems.push(`${hit.id}: 분석 규칙 ${rule} ∉ 기대 ${allowedRules.join('/')}`);
+  });
+
   const reviewOnly: DetectedIssue[] = [];
   const allowedSeen: DetectedIssue[] = [];
   for (const issue of result.issues) {
@@ -260,12 +310,20 @@ function printFixture(run: FixtureRun, verdict: Verdict): void {
         verdict: verdict.reviewOnly.includes(i) ? 'needs-review(로그)' : verdict.allowedSeen.includes(i) ? 'allowed' : [...verdict.matched.values()].includes(i) ? 'expected' : 'unexpected',
       })),
     );
-    for (const issue of run.issues) {
+    for (const issue of run.analyzed) {
       console.log(`  ${issue.id} ${issue.title}`);
       for (const o of issue.occurrences) {
         console.log(`    [${o.viewport}] ${o.evidenceText}`);
         console.log(`      boundingBox=${JSON.stringify(o.boundingBox)} cropRect=${JSON.stringify(o.cropRect)}`);
       }
+      if (issue.analysis) {
+        console.log(`    분석 ${selectRule(issue)} (${issue.analysis.certainty}, ${issue.analysis.source}): ${issue.analysis.rootCause}`);
+      } else {
+        console.log(`    분석 없음: ${issue.analysisSkippedReason}`);
+      }
+    }
+    for (const task of run.tasks) {
+      console.log(`  ${task.id} ${task.priority} ${task.viewportTag} [${task.issueIds.join(', ')}]${task.needsReview ? ' (Needs Review)' : ''} ${task.title}`);
     }
   } else {
     console.log('실제: 이슈 0개');
@@ -353,7 +411,13 @@ async function main(): Promise<void> {
   for (const runs of rounds.slice(1)) {
     for (const { run } of runs) {
       const base = first.find((r) => r.run.fixture.id === run.fixture.id);
-      if (base && (JSON.stringify(base.run.result) !== JSON.stringify(run.result) || JSON.stringify(base.run.issues) !== JSON.stringify(run.issues)))
+      if (
+        base &&
+        (JSON.stringify(base.run.result) !== JSON.stringify(run.result) ||
+          JSON.stringify(base.run.issues) !== JSON.stringify(run.issues) ||
+          JSON.stringify(base.run.analyzed) !== JSON.stringify(run.analyzed) ||
+          JSON.stringify(base.run.tasks) !== JSON.stringify(run.tasks))
+      )
         nondeterministic.push(run.fixture.id);
     }
   }
@@ -419,7 +483,7 @@ async function writeReport(run: FixtureRun, verdict: Verdict): Promise<void> {
   for (const v of ['desktop', 'mobile'] as const) {
     await writeFile(path.join(REPORT_DIR, `${id}-${v}.png`), run.screenshots[v].png);
   }
-  const sections = run.issues.map((issue) => {
+  const sections = run.analyzed.map((issue) => {
     const occurrences = issue.occurrences.map((o) => {
       const vr = run.viewportResults[o.viewport];
       const meta = `<p class="meta">${o.viewport} · boundingBox ${escapeHtml(JSON.stringify(o.boundingBox))} · cropRect ${escapeHtml(JSON.stringify(o.cropRect))}</p>`;
@@ -436,10 +500,23 @@ async function writeReport(run: FixtureRun, verdict: Verdict): Promise<void> {
   <div class="box" style="left:${b.x - c.x}px;top:${b.y - c.y}px;width:${b.width}px;height:${b.height}px"></div>
 </div>`;
     });
+    const a = issue.analysis;
+    const analysis = a
+      ? `<h3>분석 ${escapeHtml(selectRule(issue))} (${escapeHtml(a.certainty)}, ${escapeHtml(a.source)})</h3>
+<dl><dt>rootCause</dt><dd>${escapeHtml(a.rootCause)}</dd><dt>cssProblem</dt><dd>${escapeHtml(a.cssProblem)}</dd><dt>fixDirection</dt><dd>${escapeHtml(a.fixDirection)}</dd></dl>
+<pre>${escapeHtml(a.suggestedFix)}</pre>`
+      : `<h3>분석 없음 (${escapeHtml(String(issue.analysisSkippedReason))})</h3>`;
     return `<section><h2>${escapeHtml(issue.id)} · ${escapeHtml(issue.priority)} · ${escapeHtml(String(issue.viewportTag))}${issue.needsReview ? ' · Needs Review' : ''}</h2>
 <p class="title">${escapeHtml(issue.title)}</p>
-${occurrences.join('\n')}</section>`;
+${occurrences.join('\n')}
+${analysis}</section>`;
   });
+  const taskSections = run.tasks.map(
+    (task) => `<section><h2>${escapeHtml(task.id)} · ${escapeHtml(task.priority)} · ${escapeHtml(String(task.viewportTag))}${task.needsReview ? ' · Needs Review' : ''}</h2>
+<p class="title">${escapeHtml(task.title)} <span class="meta">(${escapeHtml(task.titleSource)}, ${escapeHtml(task.issueIds.join(', '))})</span></p>
+<h3>Acceptance Criteria</h3><ul>${task.acceptanceCriteria.map((c) => `<li>${escapeHtml(c)}</li>`).join('')}</ul>
+<h3>Prompt</h3><pre>${escapeHtml(task.prompt)}</pre></section>`,
+  );
   const html = `<!doctype html>
 <html lang="ko"><head><meta charset="utf-8"><title>${escapeHtml(id)} fixture report</title>
 <style>
@@ -452,11 +529,20 @@ section { margin-bottom: 40px; border-top: 1px solid #ddd; padding-top: 12px; }
 .box { position: absolute; outline: 2px solid #e5484d; background: rgba(229, 72, 77, 0.12); }
 .box.related { outline: 2px dashed #0090ff; background: transparent; }
 .out { color: #b45309; }
+pre { background: #f6f8fa; padding: 12px; white-space: pre-wrap; font-size: 12px; }
+dt { font-weight: 600; margin-top: 4px; }
 </style></head><body>
 <h1>${escapeHtml(id)} [${verdict.pass ? 'PASS' : 'FAIL'}] ${escapeHtml(run.fixture.description)}</h1>
 <p>${(['desktop', 'mobile'] as const).map((v) => `${v}: ${run.viewportResults[v].screenshotWidth}×${run.viewportResults[v].screenshotHeight} (layoutWidth ${run.viewportResults[v].layoutWidth}, truncated ${run.viewportResults[v].screenshotTruncated})`).join(' · ')}</p>
 ${sections.length > 0 ? sections.join('\n') : '<p>이슈 0개</p>'}
+<h1>Tasks</h1>
+${taskSections.length > 0 ? taskSections.join('\n') : '<p>태스크 0개</p>'}
 </body></html>
 `;
   await writeFile(path.join(REPORT_DIR, `${id}.html`), html);
+  // 분석 단계의 입력과 출력 (사람이 확인하는 용도, 단위 테스트 데이터를 만들 때도 쓴다)
+  await writeFile(
+    path.join(REPORT_DIR, `${id}.json`),
+    `${JSON.stringify({ viewports: run.viewportResults, issues: run.issues, analyzed: run.analyzed, tasks: run.tasks }, null, 2)}\n`,
+  );
 }
