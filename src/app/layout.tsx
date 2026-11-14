@@ -18,7 +18,7 @@ const googleSansCode = Google_Sans_Code({
 });
 
 export const metadata: Metadata = {
-  title: 'AI Website Inspector',
+  title: { default: 'AI Website Inspector', template: '%s · AI Website Inspector' },
   description: 'Desktop과 Mobile에서 웹사이트의 UI 문제를 찾아 개발 태스크와 코딩 에이전트용 프롬프트로 정리합니다.',
 };
 
