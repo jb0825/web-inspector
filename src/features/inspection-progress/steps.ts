@@ -57,12 +57,12 @@ export function buildStepViews(inspection: Pick<Inspection, 'status' | 'step' | 
   });
 }
 
-/** 경과 시간의 시작과 끝 (epoch ms). 시작은 startedAt, 없으면 createdAt */
-export function elapsedRange(inspection: Pick<Inspection, 'createdAt' | 'startedAt' | 'completedAt' | 'updatedAt' | 'status'>): {
+/** 경과 시간의 시작과 끝. 시작은 createdAt이다(WIREFRAME 4.3: 대기 시간도 사용자가 기다린 시간이다) */
+export function elapsedRange(inspection: Pick<Inspection, 'createdAt' | 'completedAt' | 'updatedAt' | 'status'>): {
   startIso: string;
   endIso: string | null;
 } {
-  const startIso = inspection.startedAt ?? inspection.createdAt;
+  const startIso = inspection.createdAt;
   const ended = inspection.status === 'failed' || inspection.status === 'completed' || inspection.status === 'partial';
   return { startIso, endIso: ended ? inspection.completedAt ?? inspection.updatedAt : null };
 }

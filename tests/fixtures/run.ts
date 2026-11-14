@@ -9,7 +9,7 @@
 // 'final' 불변 조건과 Positive Fixture의 기대 규칙(EXPECTED_RULES)을 확인한다.
 //
 // 각 Fixture의 스크린샷과 확인용 HTML(cropRect, boundingBox, 분석 결과, 태스크와 프롬프트 전문), 분석 입출력 JSON을
-// .tmp/fixtures-report/에 저장한다.
+// .tmp/fixtures-report/에 저장한다. 결과 화면 확인용 전체 Inspection 문서({ID}.inspection.json)도 함께 저장한다(T12).
 //
 // 하나라도 실패하면 종료 코드 1이다.
 
@@ -60,6 +60,8 @@ interface FixtureRun {
   analyzed: Issue[];
   tasks: DevTask[];
   viewportResults: Record<Viewport, ViewportResult>;
+  /** 분석 단계까지 끝낸 Inspection 문서 ('final' 불변 조건 통과). T12: 결과 화면 확인(ui-shots)에 쓴다 */
+  finalDoc: Inspection;
   /** Desktop + Mobile의 열기·안정화·수집 시간 */
   browserMs: number;
   buildMs: number;
@@ -162,6 +164,7 @@ async function runFixture(browser: Browser, baseUrl: string, fixture: FixtureExp
     analyzed: analysis.issues,
     tasks,
     viewportResults,
+    finalDoc,
     browserMs,
     buildMs,
   };
@@ -545,4 +548,6 @@ ${taskSections.length > 0 ? taskSections.join('\n') : '<p>태스크 0개</p>'}
     path.join(REPORT_DIR, `${id}.json`),
     `${JSON.stringify({ viewports: run.viewportResults, issues: run.issues, analyzed: run.analyzed, tasks: run.tasks }, null, 2)}\n`,
   );
+  // T12: 전체 Inspection 문서. scripts/ui-shots.ts가 결과 화면 응답으로 끼워 넣는다(screenshotUrl은 같은 폴더의 PNG 파일 이름)
+  await writeFile(path.join(REPORT_DIR, `${id}.inspection.json`), `${JSON.stringify(run.finalDoc, null, 2)}\n`);
 }
