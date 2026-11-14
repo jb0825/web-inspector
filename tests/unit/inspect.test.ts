@@ -2,6 +2,8 @@ import type { Browser } from 'playwright-core';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CollectedViewport } from '@/server/collect/types';
 import { InspectionError } from '@/server/errors';
+import type { LaunchedBrowser } from '@/server/browser/launch';
+import type { RenderedViewport } from '@/server/browser/render';
 import {
   ANALYZE_CALL_ATTEMPTS,
   AnalyzeCallTimeout,
@@ -9,7 +11,6 @@ import {
   resolveInternalOrigin,
   runInspection,
   type InspectionDeps,
-  type RenderedViewport,
 } from '@/server/inspect';
 import { createHostChecker } from '@/server/security/ssrf';
 import { assertInspectionInvariants } from '@/server/store/invariants';
@@ -30,7 +31,7 @@ const SHOTS = {
 let now: number;
 let redis: FakeRedis;
 let saves: Inspection[];
-let browserClose: ReturnType<typeof vi.fn>;
+let browserClose: ReturnType<typeof vi.fn<() => Promise<"closed" | "killed">>>;
 
 function rendered(viewport: Viewport, data: CollectedViewport = site(viewport)): RenderedViewport {
   return {
@@ -59,7 +60,7 @@ function makeDeps(overrides: Partial<InspectionDeps> = {}): InspectionDeps {
   return {
     store: recordingStore(),
     screenshots: { upload: vi.fn(async (id: string, v: Viewport) => `https://blob.example/inspections/${id}/${v}-full-abc.png`) },
-    launchBrowser: vi.fn(async () => ({ close: browserClose }) as unknown as Browser),
+    launchBrowser: vi.fn(async (): Promise<LaunchedBrowser> => ({ browser: {} as Browser, launchMs: 0, close: browserClose })),
     renderViewport: vi.fn(async (_b: Browser, v: Viewport) => rendered(v)),
     createChecker: () => createHostChecker({ lookup: async () => [{ address: '93.184.216.34', family: 4 }] }),
     triggerAnalyze: vi.fn(async () => undefined),
@@ -82,7 +83,7 @@ beforeEach(async () => {
   now = T0;
   redis = new FakeRedis(() => now);
   saves = [];
-  browserClose = vi.fn(async () => undefined);
+  browserClose = vi.fn(async () => 'closed' as const);
   await setup();
 });
 
@@ -183,14 +184,29 @@ describe('runInspection: viewport 실패', () => {
     expect(browserClose).toHaveBeenCalled();
   });
 
-  it('브라우저 실행 실패는 렌더링 전 실패: failed + BROWSER_CRASH, 슬롯 반환', async () => {
+  it('브라우저 실행 실패는 그 viewport의 BROWSER_CRASH. viewport마다 다시 실행하고, 둘 다 실패하면 failed (T13)', async () => {
     const deps = makeDeps({ launchBrowser: vi.fn(async () => { throw new Error('launch timed out'); }) });
     await runInspection(ID, deps);
+    expect(deps.launchBrowser).toHaveBeenCalledTimes(2);
     expect(last().status).toBe('failed');
     expect(last().error?.code).toBe('BROWSER_CRASH');
-    expect(last().viewportErrors).toEqual({ desktop: null, mobile: null });
+    // viewport마다 실행하므로 실패도 viewport별로 남는다 (DOMAIN_MODEL I-5: 두 viewport 모두 오류)
+    expect(last().viewportErrors.desktop?.code).toBe('BROWSER_CRASH');
+    expect(last().viewportErrors.mobile?.code).toBe('BROWSER_CRASH');
     expect(deps.renderViewport).not.toHaveBeenCalled();
     expect(slotHeld()).toBe(false);
+  });
+
+  it('Desktop 브라우저 실행만 실패하면 Mobile은 새 브라우저로 진행한다 (T13)', async () => {
+    const launch = vi
+      .fn<() => Promise<LaunchedBrowser>>()
+      .mockRejectedValueOnce(new Error('launch timed out'))
+      .mockResolvedValueOnce({ browser: {} as Browser, launchMs: 0, close: browserClose });
+    const deps = makeDeps({ launchBrowser: launch });
+    await runInspection(ID, deps);
+    expect(last().status).toBe('analyzing');
+    expect(last().viewportErrors.desktop?.code).toBe('BROWSER_CRASH');
+    expect(last().viewports.mobile).not.toBeNull();
   });
 
   it('한 viewport의 데이터로 탐지가 실패하면 그 viewport만 DETECTION_FAILED', async () => {
@@ -378,7 +394,10 @@ describe('runInspection: 검사 중지 (POST /api/inspections/:id/cancel)', () =
     const store = createInspectionStore(redis, { now: () => now });
     let closed: () => void = () => undefined;
     const closedPromise = new Promise<void>((resolve) => (closed = resolve));
-    browserClose = vi.fn(async () => closed());
+    browserClose = vi.fn(async () => {
+      closed();
+      return 'closed' as const;
+    });
     const deps = makeDeps({
       cancelPollMs: 5,
       // 브라우저가 닫힐 때까지 끝나지 않는 렌더링 (production에서 멈춘 Mobile viewport와 같은 상황)

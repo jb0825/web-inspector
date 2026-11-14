@@ -297,11 +297,12 @@ async function main() {
   const p01Box = p01.issues[0]!.occurrences.find((o) => o.viewport === 'mobile')!.boundingBox;
   const p01Width = p01.viewports.mobile!.screenshotWidth;
 
-  const browser = await chromium.launch();
   const overflow: string[] = [];
   const problems: string[] = [];
-  try {
-    for (const size of SIZES) {
+  // 크기마다 브라우저를 새로 띄운다. 브라우저 하나에 context를 여러 개 열지 않는다(AGENTS.md 7장과 같은 방식)
+  for (const size of SIZES) {
+    const browser = await chromium.launch();
+    try {
       const context = await browser.newContext({
         viewport: { width: size.width, height: size.height },
         isMobile: size.isMobile,
@@ -337,9 +338,9 @@ async function main() {
       } finally {
         await context.close();
       }
+    } finally {
+      await browser.close();
     }
-  } finally {
-    await browser.close();
   }
   if (overflow.length > 0) console.error(`가로 스크롤이 있는 화면: ${overflow.join(', ')}`);
   for (const problem of problems) console.error(problem);

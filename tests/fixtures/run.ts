@@ -18,14 +18,9 @@
 
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import type { Browser } from 'playwright-core';
 import { analyzeIssues } from '@/server/analysis/analyze';
 import { selectRule, type RuleId } from '@/server/analysis/rules';
-import { createViewportContext } from '@/server/browser/devices';
-import { launchBrowser } from '@/server/browser/launch';
-import { captureFullPage, type CapturedScreenshot } from '@/server/browser/screenshot';
-import { openAndStabilize } from '@/server/browser/stabilize';
-import { collectViewport } from '@/server/collect/collect';
+import type { CapturedScreenshot } from '@/server/browser/screenshot';
 import type { CollectedViewport } from '@/server/collect/types';
 import { buildLookup } from '@/server/detect/geometry';
 import { buildIssues, type BuildIssuesResult } from '@/server/detect/pipeline';
@@ -35,7 +30,8 @@ import { assertInspectionInvariants } from '@/server/store/invariants';
 import { buildTasks } from '@/server/tasks/build';
 import type { DevTask, Inspection, Issue, Viewport, ViewportResult } from '@/types/inspection';
 import { FIXTURE_EXPECTATIONS, type ExpectedIssue, type FixtureExpectation } from './expected';
-import { fixtureGuard, start } from './server';
+import { start } from './server';
+import { inspectLocalViewport } from './viewport';
 
 const REPORT_DIR = path.join(process.cwd(), '.tmp', 'fixtures-report');
 
@@ -142,28 +138,11 @@ function parseArgs(argv: string[]): ParsedArgs {
   return { mode: 'fixtures', fixtures, repeat };
 }
 
-async function collectOne(
-  browser: Browser,
-  url: string,
-  viewport: Viewport,
-): Promise<{ collected: CollectedViewport; screenshot: CapturedScreenshot }> {
-  const context = await createViewportContext(browser, viewport, fixtureGuard(url));
-  try {
-    const { page } = await openAndStabilize(context, url);
-    const collected = await collectViewport(page, viewport);
-    // 수집 직후 같은 page로 찍는다
-    const screenshot = await captureFullPage(page, viewport, collected);
-    return { collected, screenshot };
-  } finally {
-    await context.close();
-  }
-}
-
-async function runFixture(browser: Browser, baseUrl: string, fixture: RunTarget): Promise<FixtureRun> {
+async function runFixture(baseUrl: string, fixture: RunTarget): Promise<FixtureRun> {
   const started = performance.now();
-  // Desktop과 Mobile은 순서대로 실행한다(AGENTS.md 7장)
-  const desktop = await collectOne(browser, `${baseUrl}${fixture.path}`, 'desktop');
-  const mobile = await collectOne(browser, `${baseUrl}${fixture.path}`, 'mobile');
+  // Desktop과 Mobile은 순서대로, viewport마다 브라우저를 새로 띄운다(AGENTS.md 7장, runInspection과 같은 경로)
+  const desktop = await inspectLocalViewport(`${baseUrl}${fixture.path}`, 'desktop');
+  const mobile = await inspectLocalViewport(`${baseUrl}${fixture.path}`, 'mobile');
   const browserMs = performance.now() - started;
   const buildStarted = performance.now();
   const result = buildIssues({ desktop: desktop.collected, mobile: mobile.collected });
@@ -435,16 +414,13 @@ function markdownSummary(runs: JudgedRun[]): string {
 /** --page --report-only: 페이지 1개를 Fixture와 같은 경로로 검사하고 결과만 출력한다. 판정하지 않는다 */
 async function reportPage(page: RunTarget): Promise<void> {
   const server = await start();
-  let browser: Browser | undefined;
   try {
-    browser = await launchBrowser();
-    const run = await runFixture(browser, server.baseUrl, page);
+    const run = await runFixture(server.baseUrl, page);
     printFixture(run);
     await writeReport(run);
     console.log(`\n확인용 HTML: ${path.relative(process.cwd(), REPORT_DIR)}/${page.id}.html`);
     console.log(`Inspection 문서: ${path.relative(process.cwd(), REPORT_DIR)}/${page.id}.inspection.json`);
   } finally {
-    await browser?.close();
     await server.close();
   }
 }
@@ -454,17 +430,15 @@ async function main(): Promise<void> {
   if (args.mode === 'page') return reportPage(args.page);
   const { fixtures, repeat } = args;
   const server = await start();
-  let browser: Browser | undefined;
   const rounds: JudgedRun[][] = [];
   const errors: string[] = [];
 
   try {
-    browser = await launchBrowser();
     for (let round = 1; round <= repeat; round += 1) {
       const runs: JudgedRun[] = [];
       for (const fixture of fixtures) {
         try {
-          const run = await runFixture(browser, server.baseUrl, fixture);
+          const run = await runFixture(server.baseUrl, fixture);
           const verdict = judge(run, fixture);
           runs.push({ fixture, run, verdict });
           if (round === 1) {
@@ -478,7 +452,6 @@ async function main(): Promise<void> {
       rounds.push(runs);
     }
   } finally {
-    await browser?.close();
     await server.close();
   }
 

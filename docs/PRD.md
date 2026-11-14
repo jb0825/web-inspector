@@ -192,7 +192,7 @@ Requirements:
 | Mobile | 390px | 844px | Playwright `devices['iPhone 14']` 기반: `isMobile: true`, `hasTouch: true`, `deviceScaleFactor: 3`, Mobile UA |
 
 - Mobile은 viewport 너비만 바꾸지 않고 디바이스 에뮬레이션을 적용한다. meta viewport, 터치 미디어쿼리, UA 분기가 실제 기기와 같게 반영되어야 하기 때문이다.
-- 브라우저 인스턴스는 한 번만 띄우고, Desktop과 Mobile은 별도의 BrowserContext에서 순서대로 실행한다.
+- Desktop과 Mobile은 viewport마다 브라우저를 새로 띄워 순서대로 실행한다(실행 → 검사 → 닫기). 동시에 떠 있는 브라우저는 하나다. 배포 환경의 Chromium(`@sparticuz/chromium`)은 `--single-process`로 실행되어 브라우저 하나에 context를 하나만 쓸 수 있기 때문이다(T13).
 - Mobile 스크린샷은 저장 용량을 줄이기 위해 `scale: 'css'`로 저장한다.
 
 **측정 기준 너비 (`layoutWidth`)**
@@ -829,9 +829,8 @@ Viewport별 오류와 AI 분석 상태를 따로 기록하고(8.2), 최상위 `s
   ├ Redis에 job 생성 (status: pending)
   ├ 202 { id } 즉시 응답
   └ after(): 브라우저 검사 실행  (finally: 브라우저 종료, 슬롯 반환)
-       ├ Chromium 실행 (폰트 로드 포함)
-       ├ Desktop context → 안정화 → 측정 → 스크린샷
-       ├ Mobile context  → 안정화 → 측정 → 스크린샷
+       ├ Desktop: Chromium 실행(폰트 로드 포함) → context → 안정화 → 측정 → 스크린샷 → 브라우저 종료
+       ├ Mobile:  Chromium 실행(폰트 로드 포함) → context → 안정화 → 측정 → 스크린샷 → 브라우저 종료
        ├ 탐지 → Dedup → Priority → 상한(200) → 정렬·ID → 연결 → Evidence
        ├ 전체 스크린샷 → Vercel Blob
        ├ 결과 JSON → Redis (status: analyzing)
@@ -867,12 +866,14 @@ Viewport별 오류와 AI 분석 상태를 따로 기록하고(8.2), 최상위 `s
 
 | 단계 | 제한 |
 |---|---|
-| Chromium 실행 (콜드 스타트 포함) | 15s |
+| Chromium 실행 (콜드 스타트 포함) | 15s (viewport마다) |
 | viewport당 페이지 로드 (`goto`) | 30s |
 | viewport당 안정화 (networkidle, 스크롤, 폰트) | 20s |
 | viewport당 측정과 스크린샷 | 20s |
 | 저장 | 15s |
 | **전체 검사 상한** | **180s** (넘으면 끝내지 못한 viewport에 `TIME_BUDGET_EXCEEDED`를 기록하고, 이미 얻은 결과로 다음 단계를 진행한다) |
+
+- 각 제한은 Playwright 응답을 기다리지 않는 강제 제한이다. 브라우저가 멈춰도 제한 시간에 그 viewport를 실패로 끝내고 브라우저를 닫는다. 정상 종료가 5초 안에 끝나지 않으면 프로세스를 강제 종료한다(T13, 구현 상수는 `src/server/browser/timeouts.ts`).
 
 AI 단계(analyze 함수)의 상한은 240초다. 넘으면 그때까지 받은 분석 결과로 태스크와 프롬프트를 만들고 끝낸다.
 
