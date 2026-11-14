@@ -1,7 +1,8 @@
-import { ACQUIRE_SLOT_SCRIPT, type RedisClient, type SetOptions } from '@/server/store/redis';
+import { ACQUIRE_SLOT_SCRIPT, SAVE_UNLESS_CANCELLED_SCRIPT, type RedisClient, type SetOptions } from '@/server/store/redis';
 
 // redis.ts가 쓰는 명령만 흉내 내는 메모리 Redis. 시계를 주입해 TTL 만료를 확인한다.
-// eval은 ACQUIRE_SLOT_SCRIPT만 지원하고, 스크립트와 같은 순서(만료 제거 → 개수 확인 → 추가)로 동작한다.
+// eval은 ACQUIRE_SLOT_SCRIPT(만료 제거 → 개수 확인 → 추가)와 SAVE_UNLESS_CANCELLED_SCRIPT(중지 표시 확인 → SET KEEPTTL XX)만
+// 지원하고, 스크립트와 같은 순서로 동작한다.
 // 실제 Redis에서 스크립트가 같은 결과를 내는지는 T09 로컬 확인(실제 Upstash)에서 본다.
 
 export class FakeRedis implements RedisClient {
@@ -55,6 +56,14 @@ export class FakeRedis implements RedisClient {
 
   async eval(script: string, keys: string[], args: string[]) {
     this.maybeFail('eval');
+    if (script === SAVE_UNLESS_CANCELLED_SCRIPT) {
+      this.calls.push({ command: 'eval:save-unless-cancelled', key: keys[0] });
+      if (this.live(keys[1])) return 0;
+      const existing = this.live(keys[0]);
+      if (!existing) return -1;
+      this.strings.set(keys[0], { value: args[0], expiresAt: existing.expiresAt });
+      return 1;
+    }
     if (script !== ACQUIRE_SLOT_SCRIPT) throw new Error('FakeRedis: unknown script');
     const [now, expiresAt, max, member] = args;
     const set = this.zsets.get(keys[0]) ?? new Map<string, number>();

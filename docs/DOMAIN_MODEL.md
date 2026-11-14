@@ -159,6 +159,8 @@ stateDiagram-v2
     pending --> failed: inspect (브라우저 실행 실패)
     running --> analyzing: inspect (결과 저장)
     running --> failed: inspect (두 viewport 실패 또는 저장 실패)
+    pending --> failed: cancel API (CANCELLED)
+    running --> failed: cancel API (CANCELLED)
     analyzing --> completed: analyze
     analyzing --> partial: analyze
 ```
@@ -172,8 +174,10 @@ stateDiagram-v2
 | 생성 | `POST /api/inspections` | 문서 전체 생성 (`pending`) |
 | 브라우저 검사 | create 함수의 `after()` → `src/server/inspect.ts` | `status`, `step`, `startedAt`, `finalUrl`, `viewports`, `viewportErrors`, `issues`(AI 필드 제외), `error`, `completedAt`(failed일 때) |
 | AI 단계 | `POST /api/inspections/:id/analyze`의 `after()` | `status`, `step`, `analysis`, `issues[].analysis`, `issues[].analysisSkippedReason`, `tasks`, `completedAt` |
+| 검사 중지 | `POST /api/inspections/:id/cancel` | 브라우저 단계 문서를 `failed` + `error.code = CANCELLED`로 (측정 결과를 비움, I-5) |
 
 - 한 시점에 문서를 쓰는 함수는 하나뿐이다. 브라우저 검사가 `analyzing`을 저장한 뒤에야 analyze가 시작되기 때문이다.
+- 예외는 검사 중지다. 중지 API는 브라우저 검사와 동시에 쓸 수 있어서, 먼저 중지 표시(6.1)를 남기고 브라우저 검사의 저장은 표시가 없을 때만 쓴다(API_SPEC 6A장).
 - analyze가 중복 호출되는 경우를 막기 위해 analyze 잠금(6.1)을 먼저 잡는다. 잠금을 잡지 못하면 409를 반환한다.
 - 모든 쓰기는 `updatedAt`을 갱신한다.
 - AI 단계는 `issues`의 결정적 필드(측정값, ID, Priority)를 바꾸지 않는다(AGENTS.md 불변 조건 1).
@@ -280,11 +284,13 @@ export const inspectionSchema = z.strictObject({ /* … */ }) satisfies z.ZodTyp
 | `inspection:{id}` | Inspection JSON 문자열 | 7일 | 검사 문서 (PRD 8.1.4) |
 | `inspections:running` | Sorted Set (member = id, score = 만료 시각 ms) | 없음 (member별 만료) | 동시 실행 슬롯 (PRD 8.4) |
 | `inspection:{id}:analyze-lock` | `"1"` | 300초 | analyze 중복 실행 방지 |
+| `inspection:{id}:cancel` | `"1"` | 300초 | 검사 중지 요청 표시 (API_SPEC 6A장) |
 
 쓰기 방식:
 - 생성: `SET inspection:{id} … EX 604800`
 - 이후 갱신: 문서 전체를 다시 쓴다. `SET … KEEPTTL`로 처음 TTL을 유지한다. 부분 갱신을 쓰지 않는 이유는 한 시점에 쓰는 함수가 하나뿐이라(4.2) 충돌이 없고, 문서가 작기 때문이다.
 - analyze 잠금: `SET inspection:{id}:analyze-lock 1 NX EX 300`
+- 브라우저 단계(`runInspection`)의 갱신: Lua 스크립트 하나로 `inspection:{id}:cancel`이 있으면 쓰지 않고, 없으면 `SET … KEEPTTL XX` (검사 중지와의 경합 방지)
 - 슬롯: Lua 스크립트 하나로 만료 member 제거 → 개수 확인 → 추가(PRD 8.4). 반환은 `finally`에서 `ZREM`.
 
 읽기 방식:

@@ -63,3 +63,25 @@ export async function fetchInspection(id: string, signal: AbortSignal, fetchImpl
     return { type: 'failure', retryable: true };
   }
 }
+
+/** POST /api/inspections/:id/cancel 결과 (API_SPEC 6A장) */
+export type CancelInspectionResult =
+  | { ok: true; inspection: Inspection }
+  /** status 409: 이미 끝났거나 결과를 정리하는 중. null: 응답을 받지 못함 */
+  | { ok: false; status: number | null; message?: string };
+
+export async function cancelInspection(id: string, fetchImpl: typeof fetch = fetch): Promise<CancelInspectionResult> {
+  let response: Response;
+  try {
+    response = await fetchImpl(`/api/inspections/${encodeURIComponent(id)}/cancel`, { method: 'POST', cache: 'no-store' });
+  } catch {
+    return { ok: false, status: null };
+  }
+  const json: unknown = await response.json().catch(() => null);
+  if (response.ok) {
+    const parsed = inspectionShapeSchema.safeParse(json);
+    return parsed.success ? { ok: true, inspection: parsed.data as unknown as Inspection } : { ok: false, status: response.status };
+  }
+  const error = apiErrorSchema.safeParse(json);
+  return { ok: false, status: response.status, message: error.success ? error.data.message : undefined };
+}

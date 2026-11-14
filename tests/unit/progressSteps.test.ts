@@ -42,6 +42,12 @@ describe('buildStepViews', () => {
     const views = buildStepViews({ ...base, status: 'failed', step: 'saving_results', error: { code: 'STORAGE_FAILED', message: '' } });
     expect(views[4]).toMatchObject({ state: 'failed', error: { code: 'STORAGE_FAILED' } });
   });
+
+  it('검사 중지(CANCELLED)는 실패로 표시하지 않는다. 진행 중이던 단계는 대기로 남긴다', () => {
+    const views = buildStepViews({ ...base, status: 'failed', step: 'rendering_desktop', error: { code: 'CANCELLED', message: '' } });
+    expect(views.map((v) => v.state)).toEqual(['done', 'pending', 'pending', 'pending', 'pending', 'pending', 'pending']);
+    expect(views.some((v) => v.error)).toBe(false);
+  });
 });
 
 describe('isReportReady', () => {

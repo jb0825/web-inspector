@@ -60,7 +60,7 @@ export function ReportFailedState({ inspection }: { inspection: Inspection }) {
       <div className="flex flex-col items-start gap-2">
         <StatusBadge status="failed" />
         <h1 id="report-failed-title" className="text-h1 font-semibold">
-          검사에 실패했습니다
+          {inspection.error?.code === 'CANCELLED' ? '검사를 중지했습니다' : '검사에 실패했습니다'}
         </h1>
         <p className="font-mono text-code wrap-anywhere text-text-secondary">{inspection.url}</p>
       </div>

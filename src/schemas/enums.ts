@@ -36,6 +36,7 @@ export const errorCodeSchema = z.enum([
   'STORAGE_FAILED',
   'AI_FAILED',
   'INTERNAL_ERROR',
+  'CANCELLED',
 ]) satisfies z.ZodType<T.ErrorCode>;
 
 // satisfies는 스키마 값이 타입의 부분집합인지만 본다. 값이 빠지지 않았는지도 컴파일 시점에 확인한다.

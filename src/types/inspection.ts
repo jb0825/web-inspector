@@ -24,7 +24,9 @@ export type ErrorCode =
   | 'TIME_BUDGET_EXCEEDED'
   | 'STORAGE_FAILED'
   | 'AI_FAILED'
-  | 'INTERNAL_ERROR';
+  | 'INTERNAL_ERROR'
+  /** 사용자가 검사를 중지함 (POST /api/inspections/:id/cancel) */
+  | 'CANCELLED';
 
 export interface InspectionErrorInfo {
   code: ErrorCode;

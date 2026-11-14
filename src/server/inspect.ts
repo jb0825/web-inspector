@@ -12,9 +12,9 @@ import { InspectionError, isInspectionError } from '@/server/errors';
 import { buildViewportResult, finalizeIssues } from '@/server/evidence/finalize';
 import { describeFailure, logEvent, type Logger } from '@/server/log';
 import { createHostChecker, type HostChecker } from '@/server/security/ssrf';
-import { browserStageError, browserStageStatus, withSkippedReasons } from '@/server/status';
+import { browserStageError, browserStageStatus, toFailedDocument, withSkippedReasons } from '@/server/status';
 import { createBlobStorage, type ScreenshotStorage } from '@/server/store/blob';
-import { getInspectionStore, type InspectionStore } from '@/server/store/redis';
+import { getInspectionStore, InspectionCancelledError, type InspectionStore } from '@/server/store/redis';
 import type { InspectionStep } from '@/server/store/schemas';
 import type { Inspection, InspectionErrorInfo, Issue, Viewport, ViewportResult } from '@/types/inspection';
 
@@ -64,7 +64,12 @@ export interface InspectionDeps {
   triggerAnalyze(id: string): Promise<void>;
   now(): number;
   log: Logger;
+  /** 검사 중지 요청을 확인하는 간격. 기본값 CANCEL_POLL_MS (테스트에서 줄인다) */
+  cancelPollMs?: number;
 }
+
+/** 검사 중지 요청 확인 간격. 검사 1회(최대 300초)에 Redis GET 최대 150번 */
+export const CANCEL_POLL_MS = 2_000;
 
 const iso = (ms: number) => new Date(ms).toISOString();
 
@@ -212,14 +217,24 @@ export async function runInspection(id: string, deps: InspectionDeps): Promise<v
   let browser: Browser | null = null;
   let doc: Inspection | null = null;
 
-  /** step만 바뀌는 저장은 진행 표시용이다. 실패해도 검사를 멈추지 않는다(API_SPEC 4.1) */
+  // 검사 중지(POST /api/inspections/:id/cancel): 브라우저 단계의 모든 저장은 중지 요청이 없을 때만 쓴다.
+  // 중지 요청이 있으면 저장이 InspectionCancelledError를 던지고, 아래 catch가 아무것도 쓰지 않고 멈춘다.
+  // 렌더링 중에는 저장이 없으므로 주기적으로 확인해 브라우저를 닫아 진행 중인 Playwright 호출을 끊는다.
+  let cancelled = false;
+  let cancelWatch: ReturnType<typeof setInterval> | undefined;
+  const throwIfCancelled = () => {
+    if (cancelled) throw new InspectionCancelledError(id);
+  };
+
+  /** step만 바뀌는 저장은 진행 표시용이다. 실패해도 검사를 멈추지 않는다(API_SPEC 4.1). 중지 요청은 그대로 던진다 */
   const saveStep = async (next: Inspection): Promise<Inspection> => {
     const at = now();
     try {
-      const saved = await store.save(next);
+      const saved = await store.save(next, { unlessCancelled: true });
       log('save', { id, host, step: next.step, status: next.status, durationMs: now() - at });
       return saved;
     } catch (error) {
+      if (error instanceof InspectionCancelledError) throw error;
       log('save-failed', { id, host, step: next.step, code: errorInfo(error).code });
       return next;
     }
@@ -232,13 +247,14 @@ export async function runInspection(id: string, deps: InspectionDeps): Promise<v
   const saveResult = async (next: Inspection): Promise<Inspection | null> => {
     const at = now();
     try {
-      const saved = await store.save(next);
+      const saved = await store.save(next, { unlessCancelled: true });
       log('save', { id, host, step: next.step, status: next.status, durationMs: now() - at });
       return saved;
     } catch (error) {
+      if (error instanceof InspectionCancelledError) throw error;
       log('save-failed', { id, host, step: next.step, status: next.status, code: errorInfo(error).code });
       if (next.status === 'failed' && next.error?.code === 'STORAGE_FAILED') return null;
-      return saveResult(failedDoc(next, { code: 'STORAGE_FAILED', message: 'Saving results failed' }, now()));
+      return saveResult(toFailedDocument(next, { code: 'STORAGE_FAILED', message: 'Saving results failed' }, now()));
     }
   };
 
@@ -251,6 +267,18 @@ export async function runInspection(id: string, deps: InspectionDeps): Promise<v
     host = new URL(initial.url).hostname;
     log('start', { id, host });
     doc = initial;
+    cancelWatch = setInterval(() => {
+      if (cancelled) return;
+      store.isCancelRequested(id).then(
+        (requested) => {
+          if (!requested || cancelled) return;
+          cancelled = true;
+          log('cancel-detected', { id, host, durationMs: now() - started });
+          if (browser) void closeBrowser(browser);
+        },
+        () => undefined, // 확인 실패는 다음 주기에 다시 본다
+      );
+    }, deps.cancelPollMs ?? CANCEL_POLL_MS);
     doc = await saveStep({ ...doc, status: 'running', startedAt: iso(now()), step: 'initializing_browser' });
 
     // 1. 브라우저 실행 (렌더링 전 실패 → failed, PRD 6.2.2)
@@ -260,10 +288,11 @@ export async function runInspection(id: string, deps: InspectionDeps): Promise<v
       browser = await deps.launchBrowser();
     } catch (error) {
       log('launch-failed', { id, host, durationMs: now() - launchStart, cause: describeFailure(error) });
-      await saveResult(failedDoc(doc, { code: 'BROWSER_CRASH', message: 'Browser launch failed' }, now()));
+      await saveResult(toFailedDocument(doc, { code: 'BROWSER_CRASH', message: 'Browser launch failed' }, now()));
       return;
     }
     log('launch', { id, host, durationMs: now() - launchStart });
+    throwIfCancelled();
 
     // 2. Desktop → Mobile 순서대로 (AGENTS.md 7장). 하나가 실패해도 다른 viewport는 진행한다
     const rendered: Record<Viewport, RenderedViewport | null> = { desktop: null, mobile: null };
@@ -294,6 +323,7 @@ export async function runInspection(id: string, deps: InspectionDeps): Promise<v
       } finally {
         guard.cancel();
       }
+      throwIfCancelled();
     }
     // 측정이 끝나면 브라우저를 먼저 닫아 메모리를 돌려준다
     await closeBrowser(browser);
@@ -360,12 +390,18 @@ export async function runInspection(id: string, deps: InspectionDeps): Promise<v
     // 5. AI 단계 호출. 이슈가 0개여도 호출한다(skipped 처리는 analyze 쪽 책임, PRD 6.2.2)
     await callAnalyze(id, host, deps);
   } catch (error) {
+    // 검사 중지: 문서는 중지 API가 이미 failed(CANCELLED)로 저장했다. 아무것도 쓰지 않는다
+    if (error instanceof InspectionCancelledError || cancelled) {
+      log('cancelled', { id, host, durationMs: now() - started });
+      return;
+    }
     // 예상하지 못한 오류. 아직 브라우저 단계가 끝나지 않았다면 failed로 남긴다
     log('unexpected', { id, host, code: errorInfo(error).code, cause: describeFailure(error) });
     if (doc && (doc.status === 'pending' || doc.status === 'running')) {
-      await saveResult(failedDoc(doc, { code: 'INTERNAL_ERROR', message: 'Unexpected error' }, now())).catch(() => undefined);
+      await saveResult(toFailedDocument(doc, { code: 'INTERNAL_ERROR', message: 'Unexpected error' }, now())).catch(() => undefined);
     }
   } finally {
+    clearInterval(cancelWatch);
     if (browser) await closeBrowser(browser);
     try {
       await store.releaseSlot(id);
@@ -379,22 +415,6 @@ export async function runInspection(id: string, deps: InspectionDeps): Promise<v
 
 async function closeBrowser(browser: Browser): Promise<void> {
   await browser.close().catch(() => undefined);
-}
-
-/** 렌더링 결과가 없는 failed 문서. viewport 결과와 이슈는 비운다(DOMAIN_MODEL I-5: 렌더링 전 실패) */
-function failedDoc(doc: Inspection, error: InspectionErrorInfo, at: number): Inspection {
-  return {
-    ...doc,
-    status: 'failed',
-    error,
-    viewports: { desktop: null, mobile: null },
-    viewportErrors: { desktop: null, mobile: null },
-    issues: [],
-    issuesDetected: 0,
-    issuesTruncated: false,
-    finalUrl: undefined,
-    completedAt: iso(at),
-  };
 }
 
 /** analyze 호출의 응답 대기 시간 초과. analyze가 실제로는 시작되었을 수 있어 확실한 실패와 구분한다 */

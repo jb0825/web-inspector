@@ -3,6 +3,7 @@ import { ANALYSIS_FAILED_MESSAGE, runAnalysis } from '@/server/analyze';
 import { InspectionError } from '@/server/errors';
 import {
   handleAnalyze,
+  handleCancelInspection,
   handleCreateInspection,
   handleGetInspection,
   MAX_REQUEST_BODY_BYTES,
@@ -337,5 +338,42 @@ describe('runAnalysis (T10: 규칙 기반 분석 → 태스크 → 프롬프트)
     await store.create(pendingDoc());
     await run();
     expect((await store.read(ID))?.status).toBe('pending');
+  });
+});
+
+describe('POST /api/inspections/:id/cancel', () => {
+  const cancel = (id = ID) => handleCancelInspection(id, { store, now: () => now, log: () => undefined });
+
+  it('200: pending/running 검사를 failed(CANCELLED)로 저장하고 슬롯을 바로 반환한다', async () => {
+    await store.create(pendingDoc());
+    expect(await store.acquireSlot(ID, 2)).toBe(true);
+    now = T0 + 5_000;
+    const response = await cancel();
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as Inspection;
+    expect(body.status).toBe('failed');
+    expect(body.error).toEqual({ code: 'CANCELLED', message: 'Cancelled by user' });
+    expect(body.completedAt).toBe(new Date(T0 + 5_000).toISOString());
+    assertInspectionInvariants(body, 'browser');
+    expect((await store.read(ID))?.status).toBe('failed');
+    expect(redis.zsets.get(RUNNING_SET_KEY)?.has(ID) ?? false).toBe(false);
+    // 이후 브라우저 단계의 저장은 거부된다
+    await expect(store.save({ ...pendingDoc(), status: 'running' }, { unlessCancelled: true })).rejects.toThrow('cancelled');
+    expect((await store.read(ID))?.status).toBe('failed');
+  });
+
+  it('409 INVALID_STATE: 이미 끝났거나 결과 정리 단계(analyzing)', async () => {
+    await store.create(pendingDoc());
+    expect((await cancel()).status).toBe(200);
+    await expectError(await cancel(), 409, 'INVALID_STATE');
+
+    const other = '00000000-0000-4000-8000-0000000000aa';
+    await store.create({ ...pendingDoc(), id: other, status: 'analyzing', viewports: P01_VIEWPORTS, issues: [P01_ISSUE], issuesDetected: 1 });
+    await expectError(await cancel(other), 409, 'INVALID_STATE');
+  });
+
+  it('404: 없는 검사, UUID가 아닌 id', async () => {
+    await expectError(await cancel(), 404, 'NOT_FOUND');
+    await expectError(await cancel('nope'), 404, 'NOT_FOUND');
   });
 });

@@ -20,6 +20,25 @@ export const REDIS_COMMAND_TIMEOUT_MS = 15_000;
 export const RUNNING_SET_KEY = 'inspections:running';
 export const inspectionKey = (id: string) => `inspection:${id}`;
 export const analyzeLockKey = (id: string) => `inspection:${id}:analyze-lock`;
+/** 검사 중지 요청 표시. 브라우저 단계는 최대 300초라 그 뒤에는 필요 없다 */
+export const cancelKey = (id: string) => `inspection:${id}:cancel`;
+export const CANCEL_FLAG_TTL_SECONDS = 300;
+
+/**
+ * 중지 요청이 없을 때만 문서를 다시 쓴다(SET … KEEPTTL XX). 검사 중지와 브라우저 단계 저장이 겹쳐도
+ * 중지 뒤의 저장이 failed(CANCELLED) 문서를 덮어쓰지 않게 한다.
+ * KEYS[1] = inspection:{id}, KEYS[2] = inspection:{id}:cancel, ARGV[1] = 문서 JSON.
+ * 반환: 1 저장, 0 중지 요청 있음, -1 문서 없음
+ */
+export const SAVE_UNLESS_CANCELLED_SCRIPT = `
+if redis.call('EXISTS', KEYS[2]) == 1 then
+  return 0
+end
+if redis.call('SET', KEYS[1], ARGV[1], 'KEEPTTL', 'XX') then
+  return 1
+end
+return -1
+`;
 
 /**
  * PRD 8.4: 만료 member 제거 → 개수 확인 → 추가를 원자적으로 한다.
@@ -49,12 +68,28 @@ export interface InspectionStore {
   /** 새 문서 (SET … EX 604800 NX) */
   create(inspection: Inspection): Promise<void>;
   /** 문서 전체를 다시 쓴다. updatedAt을 갱신하고 TTL은 유지한다(KEEPTTL). 저장한 문서를 돌려준다 */
-  save(inspection: Inspection): Promise<Inspection>;
+  save(inspection: Inspection, options?: SaveOptions): Promise<Inspection>;
   /** 없으면 null. 멈춘 검사 처리(DOMAIN_MODEL 4.4)를 적용한 결과이며 Redis에는 다시 쓰지 않는다 */
   read(id: string): Promise<Inspection | null>;
   acquireSlot(id: string, max: number): Promise<boolean>;
   releaseSlot(id: string): Promise<void>;
   acquireAnalyzeLock(id: string): Promise<boolean>;
+  /** 검사 중지 요청을 남긴다 (EX 300). 여러 번 불러도 같다 */
+  requestCancel(id: string): Promise<void>;
+  isCancelRequested(id: string): Promise<boolean>;
+}
+
+export interface SaveOptions {
+  /** 브라우저 단계(runInspection)의 저장. 중지 요청이 있으면 쓰지 않고 InspectionCancelledError를 던진다 */
+  unlessCancelled?: boolean;
+}
+
+/** 검사 중지 요청이 있어 브라우저 단계가 저장하지 않았다. runInspection은 이 오류를 받으면 조용히 멈춘다 */
+export class InspectionCancelledError extends Error {
+  constructor(readonly inspectionId: string) {
+    super('Inspection was cancelled');
+    this.name = 'InspectionCancelledError';
+  }
 }
 
 /** 저장된 문서가 JSON이 아니거나 스키마와 맞지 않음. 응답은 500 INTERNAL_ERROR, 로그에는 ID만 (DOMAIN_MODEL 6.1) */
@@ -93,8 +128,18 @@ export function createInspectionStore(client: RedisClient, options: { now?: () =
       if (result !== 'OK') throw new InspectionError('STORAGE_FAILED', 'Inspection already exists');
     },
 
-    async save(inspection) {
+    async save(inspection, options = {}) {
       const next: Inspection = { ...inspection, updatedAt: new Date(now()).toISOString() };
+      if (options.unlessCancelled) {
+        const result = Number(
+          await command('save', () =>
+            client.eval(SAVE_UNLESS_CANCELLED_SCRIPT, [inspectionKey(inspection.id), cancelKey(inspection.id)], [JSON.stringify(next)]),
+          ),
+        );
+        if (result === 0) throw new InspectionCancelledError(inspection.id);
+        if (result !== 1) throw new InspectionError('STORAGE_FAILED', 'Inspection document is missing');
+        return next;
+      }
       // XX: 만료되었거나 없는 문서를 TTL 없이 새로 만들지 않는다
       const result = await command('save', () =>
         client.set(inspectionKey(inspection.id), JSON.stringify(next), { keepTtl: true, xx: true }),
@@ -135,6 +180,14 @@ export function createInspectionStore(client: RedisClient, options: { now?: () =
         client.set(analyzeLockKey(id), '1', { ex: ANALYZE_LOCK_TTL_SECONDS, nx: true }),
       );
       return result === 'OK';
+    },
+
+    async requestCancel(id) {
+      await command('requestCancel', () => client.set(cancelKey(id), '1', { ex: CANCEL_FLAG_TTL_SECONDS }));
+    },
+
+    async isCancelRequested(id) {
+      return (await command('isCancelRequested', () => client.get(cancelKey(id)))) !== null;
     },
   };
 }

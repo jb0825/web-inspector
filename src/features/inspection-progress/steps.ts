@@ -47,6 +47,8 @@ export function buildStepViews(inspection: Pick<Inspection, 'status' | 'step' | 
     if (index > currentIndex) return { step, label, state: 'pending' };
 
     if (status === 'failed') {
+      // 검사 중지는 실패가 아니다. 진행 중이던 단계는 끝내지 않은 단계로 둔다(중지 안내는 화면 아래에 따로 보인다)
+      if (index === currentIndex && inspection.error?.code === 'CANCELLED') return { step, label, state: 'pending' };
       if (index === currentIndex) return { step, label, state: 'failed', error: viewportError ?? inspection.error };
       return viewportError ? { step, label, state: 'failed', error: viewportError } : { step, label, state: 'done' };
     }

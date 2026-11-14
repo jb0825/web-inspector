@@ -5,6 +5,30 @@ import type { Inspection, InspectionErrorInfo, Issue, Viewport } from '@/types/i
 
 const VIEWPORT_LIST: readonly Viewport[] = ['desktop', 'mobile'];
 
+/**
+ * 브라우저 단계가 끝나기 전의 failed 문서 (DOMAIN_MODEL I-5): 측정 결과를 모두 비우고 error와 completedAt을 채운다.
+ * runInspection의 실패 저장과 검사 중지(POST /api/inspections/:id/cancel)가 함께 쓴다.
+ */
+export function toFailedDocument(doc: Inspection, error: InspectionErrorInfo, atMs: number): Inspection {
+  return {
+    ...doc,
+    status: 'failed',
+    error,
+    viewports: { desktop: null, mobile: null },
+    viewportErrors: { desktop: null, mobile: null },
+    issues: [],
+    issuesDetected: 0,
+    issuesTruncated: false,
+    finalUrl: undefined,
+    completedAt: new Date(atMs).toISOString(),
+  };
+}
+
+/** 검사 중지를 받을 수 있는 상태: 브라우저 단계가 끝나기 전 (DOMAIN_MODEL 4.1) */
+export function isCancellable(status: Inspection['status']): boolean {
+  return status === 'pending' || status === 'running';
+}
+
 /** DOMAIN_MODEL 4.4: 함수 maxDuration(300초)과 같은 값 */
 export const STALE_AFTER_MS = 300_000;
 
