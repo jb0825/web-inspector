@@ -1,0 +1,821 @@
+{
+  "id": "00000000-0000-4000-8000-00000000d001",
+  "url": "/demo/landing.html",
+  "status": "completed",
+  "step": "generating_tasks",
+  "createdAt": "2000-01-01T00:00:00.000Z",
+  "startedAt": "2000-01-01T00:00:00.000Z",
+  "completedAt": "2000-01-01T00:00:00.000Z",
+  "updatedAt": "2000-01-01T00:00:00.000Z",
+  "viewports": {
+    "desktop": {
+      "width": 1440,
+      "height": 900,
+      "innerWidth": 1440,
+      "layoutWidth": 1440,
+      "hasMetaViewport": true,
+      "documentHeight": 1857,
+      "screenshotUrl": "/sample/desktop-full.png",
+      "screenshotWidth": 1440,
+      "screenshotHeight": 1857,
+      "screenshotTruncated": false,
+      "elementsInspected": 75,
+      "elementsTruncated": false,
+      "hasCanvas": false,
+      "overlaysDetected": []
+    },
+    "mobile": {
+      "width": 390,
+      "height": 844,
+      "innerWidth": 536,
+      "layoutWidth": 390,
+      "hasMetaViewport": true,
+      "documentHeight": 3424,
+      "screenshotUrl": "/sample/mobile-full.png",
+      "screenshotWidth": 536,
+      "screenshotHeight": 3424,
+      "screenshotTruncated": false,
+      "elementsInspected": 69,
+      "elementsTruncated": false,
+      "hasCanvas": false,
+      "overlaysDetected": []
+    }
+  },
+  "viewportErrors": {
+    "desktop": null,
+    "mobile": null
+  },
+  "analysis": {
+    "status": "completed",
+    "analyzedIssueCount": 4
+  },
+  "issuesDetected": 5,
+  "issuesTruncated": false,
+  "issues": [
+    {
+      "id": "ISS-001",
+      "type": "element-overlap",
+      "subtype": "other",
+      "title": "Element Overlap — [data-testid=\"feature-image-1\"] ↔ span \"NEW\"",
+      "viewports": [
+        "desktop",
+        "mobile"
+      ],
+      "viewportTag": "both",
+      "selector": "[data-testid=\"feature-image-1\"]",
+      "sourceHints": {
+        "landmark": "features",
+        "htmlSnippet": "<img src=\"/demo/assets/feature.svg\" width=\"400\" height=\"200\" alt=\"\" data-testid=\"feature-image-1\">",
+        "stableAttributes": {
+          "data-testid": "feature-image-1"
+        },
+        "ancestorPath": "body > main > section.wrap.section > div.feature-grid > article.feature-card"
+      },
+      "occurrences": [
+        {
+          "viewport": "desktop",
+          "selector": "[data-testid=\"feature-image-1\"]",
+          "boundingBox": {
+            "x": 177,
+            "y": 749.59,
+            "width": 323.33,
+            "height": 160
+          },
+          "measured": {
+            "intersectionArea": 304.04,
+            "overlapRatioPercent": 53.99,
+            "overlapTargetCount": 1
+          },
+          "expected": {
+            "minRatioPercent": 20,
+            "minAreaPx2": 100
+          },
+          "delta": {},
+          "evidenceText": "[data-testid=\"feature-image-1\"]과 span \"NEW\"의 표시 영역이 304px² 겹칩니다. (작은 요소 면적의 54%)",
+          "relatedElements": [
+            {
+              "role": "overlap-target",
+              "selector": "[data-testid=\"feature-badge\"]",
+              "tag": "span",
+              "boundingBox": {
+                "x": 167,
+                "y": 739.59,
+                "width": 45.64,
+                "height": 24
+              }
+            }
+          ],
+          "cropRect": {
+            "x": 143,
+            "y": 715.59,
+            "width": 381.33,
+            "height": 218
+          },
+          "computedStyle": {
+            "display": "block",
+            "position": "static",
+            "width": "323.328px",
+            "min-width": "0px",
+            "max-width": "none",
+            "height": "160px",
+            "flex": "0 1 auto",
+            "flex-wrap": "nowrap",
+            "flex-shrink": "1",
+            "grid-template-columns": "none",
+            "overflow": "clip",
+            "overflow-x": "clip",
+            "white-space": "normal",
+            "word-break": "keep-all",
+            "overflow-wrap": "break-word",
+            "text-overflow": "clip",
+            "font-size": "16px",
+            "line-height": "25.6px",
+            "padding": "0px",
+            "margin": "0px",
+            "box-sizing": "border-box",
+            "transform": "none",
+            "z-index": "auto"
+          },
+          "sourceHints": {
+            "landmark": "features",
+            "htmlSnippet": "<img src=\"/demo/assets/feature.svg\" width=\"400\" height=\"200\" alt=\"\" data-testid=\"feature-image-1\">",
+            "stableAttributes": {
+              "data-testid": "feature-image-1"
+            },
+            "ancestorPath": "body > main > section.wrap.section > div.feature-grid > article.feature-card"
+          },
+          "confidence": 0.4
+        },
+        {
+          "viewport": "mobile",
+          "selector": "[data-testid=\"feature-image-1\"]",
+          "boundingBox": {
+            "x": 33,
+            "y": 1168.55,
+            "width": 324,
+            "height": 160
+          },
+          "measured": {
+            "intersectionArea": 304.04,
+            "overlapRatioPercent": 53.99,
+            "overlapTargetCount": 1
+          },
+          "expected": {
+            "minRatioPercent": 20,
+            "minAreaPx2": 100
+          },
+          "delta": {},
+          "evidenceText": "[data-testid=\"feature-image-1\"]과 span \"NEW\"의 표시 영역이 304px² 겹칩니다. (작은 요소 면적의 54%)",
+          "relatedElements": [
+            {
+              "role": "overlap-target",
+              "selector": "[data-testid=\"feature-badge\"]",
+              "tag": "span",
+              "boundingBox": {
+                "x": 23,
+                "y": 1158.55,
+                "width": 45.64,
+                "height": 24
+              }
+            }
+          ],
+          "cropRect": {
+            "x": 0,
+            "y": 1134.55,
+            "width": 382,
+            "height": 218
+          },
+          "computedStyle": {
+            "display": "block",
+            "position": "static",
+            "width": "324px",
+            "min-width": "0px",
+            "max-width": "none",
+            "height": "160px",
+            "flex": "0 1 auto",
+            "flex-wrap": "nowrap",
+            "flex-shrink": "1",
+            "grid-template-columns": "none",
+            "overflow": "clip",
+            "overflow-x": "clip",
+            "white-space": "normal",
+            "word-break": "keep-all",
+            "overflow-wrap": "break-word",
+            "text-overflow": "clip",
+            "font-size": "16px",
+            "line-height": "25.6px",
+            "padding": "0px",
+            "margin": "0px",
+            "box-sizing": "border-box",
+            "transform": "none",
+            "z-index": "auto"
+          },
+          "sourceHints": {
+            "landmark": "features",
+            "htmlSnippet": "<img src=\"/demo/assets/feature.svg\" width=\"400\" height=\"200\" alt=\"\" data-testid=\"feature-image-1\">",
+            "stableAttributes": {
+              "data-testid": "feature-image-1"
+            },
+            "ancestorPath": "body > main > section.wrap.section > div.feature-grid > article.feature-card"
+          },
+          "confidence": 0.4
+        }
+      ],
+      "relatedIssueIds": [],
+      "scores": {
+        "S": 2,
+        "I": 2,
+        "R": 4,
+        "score100": 260
+      },
+      "priority": "P2",
+      "confidence": 0.4,
+      "needsReview": true,
+      "analysisSkippedReason": "needs-review"
+    },
+    {
+      "id": "ISS-002",
+      "type": "text-overflow",
+      "subtype": "spill",
+      "title": "Text Overflow · spill — p \"프로 요금제의 모든 기능에 더해 단일\"",
+      "viewports": [
+        "desktop",
+        "mobile"
+      ],
+      "viewportTag": "both",
+      "selector": "[data-testid=\"plan-team-note\"]",
+      "sourceHints": {
+        "textSnippet": "프로 요금제의 모든 기능에 더해 단일 로그인, 감사 로그, 전용 데이터 보관 지역, 연간 계약 할인, 전담 매니저 배정을 제공합니다. 도입 전 ",
+        "landmark": "pricing",
+        "htmlSnippet": "<p class=\"plan-note\" data-testid=\"plan-team-note\">",
+        "stableAttributes": {
+          "data-testid": "plan-team-note"
+        },
+        "ancestorPath": "body > main > section.wrap.section > div.plan-grid > article.plan-card"
+      },
+      "occurrences": [
+        {
+          "viewport": "desktop",
+          "selector": "[data-testid=\"plan-team-note\"]",
+          "boundingBox": {
+            "x": 946.66,
+            "y": 1383.16,
+            "width": 309.34,
+            "height": 168
+          },
+          "measured": {
+            "textBottom": 1549.16
+          },
+          "expected": {
+            "containerBottom": 1480.38
+          },
+          "delta": {
+            "overflowBottom": 68.78
+          },
+          "evidenceText": "텍스트가 테두리가 있는 상위 영역(article)의 아래쪽 경계를 최대 69px 벗어납니다.",
+          "relatedElements": [
+            {
+              "role": "bordered-ancestor",
+              "selector": "[data-testid=\"plan-team\"]",
+              "tag": "article",
+              "boundingBox": {
+                "x": 922.66,
+                "y": 1220.38,
+                "width": 357.34,
+                "height": 260
+              }
+            }
+          ],
+          "cropRect": {
+            "x": 922.66,
+            "y": 1359.16,
+            "width": 357.34,
+            "height": 216
+          },
+          "computedStyle": {
+            "display": "block",
+            "position": "static",
+            "width": "309.344px",
+            "min-width": "auto",
+            "max-width": "none",
+            "height": "168px",
+            "flex": "0 0 auto",
+            "flex-wrap": "nowrap",
+            "flex-shrink": "0",
+            "grid-template-columns": "none",
+            "overflow": "visible",
+            "overflow-x": "visible",
+            "white-space": "normal",
+            "word-break": "keep-all",
+            "overflow-wrap": "break-word",
+            "text-overflow": "clip",
+            "font-size": "15px",
+            "line-height": "24px",
+            "padding": "0px",
+            "margin": "0px",
+            "box-sizing": "border-box",
+            "transform": "none",
+            "z-index": "auto"
+          },
+          "sourceHints": {
+            "textSnippet": "프로 요금제의 모든 기능에 더해 단일 로그인, 감사 로그, 전용 데이터 보관 지역, 연간 계약 할인, 전담 매니저 배정을 제공합니다. 도입 전 ",
+            "landmark": "pricing",
+            "htmlSnippet": "<p class=\"plan-note\" data-testid=\"plan-team-note\">",
+            "stableAttributes": {
+              "data-testid": "plan-team-note"
+            },
+            "ancestorPath": "body > main > section.wrap.section > div.plan-grid > article.plan-card"
+          },
+          "confidence": 1
+        },
+        {
+          "viewport": "mobile",
+          "selector": "[data-testid=\"plan-team-note\"]",
+          "boundingBox": {
+            "x": 40,
+            "y": 2928.48,
+            "width": 310,
+            "height": 168
+          },
+          "measured": {
+            "textBottom": 3094.48
+          },
+          "expected": {
+            "containerBottom": 3025.7
+          },
+          "delta": {
+            "overflowBottom": 68.78
+          },
+          "evidenceText": "텍스트가 테두리가 있는 상위 영역(article)의 아래쪽 경계를 최대 69px 벗어납니다.",
+          "relatedElements": [
+            {
+              "role": "bordered-ancestor",
+              "selector": "[data-testid=\"plan-team\"]",
+              "tag": "article",
+              "boundingBox": {
+                "x": 16,
+                "y": 2765.7,
+                "width": 358,
+                "height": 260
+              }
+            }
+          ],
+          "cropRect": {
+            "x": 16,
+            "y": 2904.48,
+            "width": 358,
+            "height": 216
+          },
+          "computedStyle": {
+            "display": "block",
+            "position": "static",
+            "width": "310px",
+            "min-width": "auto",
+            "max-width": "none",
+            "height": "168px",
+            "flex": "0 0 auto",
+            "flex-wrap": "nowrap",
+            "flex-shrink": "0",
+            "grid-template-columns": "none",
+            "overflow": "visible",
+            "overflow-x": "visible",
+            "white-space": "normal",
+            "word-break": "keep-all",
+            "overflow-wrap": "break-word",
+            "text-overflow": "clip",
+            "font-size": "15px",
+            "line-height": "24px",
+            "padding": "0px",
+            "margin": "0px",
+            "box-sizing": "border-box",
+            "transform": "none",
+            "z-index": "auto"
+          },
+          "sourceHints": {
+            "textSnippet": "프로 요금제의 모든 기능에 더해 단일 로그인, 감사 로그, 전용 데이터 보관 지역, 연간 계약 할인, 전담 매니저 배정을 제공합니다. 도입 전 ",
+            "landmark": "pricing",
+            "htmlSnippet": "<p class=\"plan-note\" data-testid=\"plan-team-note\">",
+            "stableAttributes": {
+              "data-testid": "plan-team-note"
+            },
+            "ancestorPath": "body > main > section.wrap.section > div.plan-grid > article.plan-card"
+          },
+          "confidence": 1
+        }
+      ],
+      "relatedIssueIds": [],
+      "scores": {
+        "S": 2,
+        "I": 3,
+        "R": 4,
+        "score100": 295
+      },
+      "priority": "P2",
+      "confidence": 1,
+      "needsReview": false,
+      "analysis": {
+        "rootCause": "상위 영역의 높이가 고정되어 텍스트가 아래로 넘침. 근거(Desktop, Mobile): 상위 영역 `[data-testid=\"plan-team\"]` 높이 260px, 아래쪽으로 69px 넘침",
+        "certainty": "likely",
+        "cssProblem": "판정 근거(Desktop, Mobile): 상위 영역 `[data-testid=\"plan-team\"]`의 높이 260px (측정값)",
+        "fixDirection": "상위 영역의 height를 auto로 두거나 min-height를 쓴다",
+        "suggestedFix": "상위 영역의 height를 auto로 두거나 min-height를 쓴다.\n\n```css\n[data-testid=\"plan-team\"] {\n  height: auto;\n  /* 최소 높이가 필요하면 height 대신 min-height를 쓴다 */\n}\n```\n\n※ selector는 빌드된 DOM 기준이므로 소스 코드의 클래스명이나 컴포넌트 구조와 다를 수 있다. 위 Source Hints로 소스 위치를 찾아 적용한다.",
+        "source": "rule"
+      }
+    },
+    {
+      "id": "ISS-003",
+      "type": "element-overlap",
+      "subtype": "interactive",
+      "title": "Element Overlap — a \"로그인\" ↔ a \"무료로 시작\"",
+      "viewports": [
+        "mobile"
+      ],
+      "viewportTag": "mobile-only",
+      "selector": "[data-testid=\"nav-login\"]",
+      "sourceHints": {
+        "textSnippet": "로그인",
+        "landmark": "main-nav",
+        "htmlSnippet": "<a class=\"btn btn-ghost nav-login\" href=\"#pricing\" data-testid=\"nav-login\">",
+        "stableAttributes": {
+          "data-testid": "nav-login"
+        },
+        "ancestorPath": "body > header.site-header > div.wrap > nav.main-nav > div.nav-actions"
+      },
+      "occurrences": [
+        {
+          "viewport": "mobile",
+          "selector": "[data-testid=\"nav-login\"]",
+          "boundingBox": {
+            "x": 228.59,
+            "y": 14,
+            "width": 65.41,
+            "height": 34.5
+          },
+          "measured": {
+            "intersectionArea": 593.4,
+            "overlapRatioPercent": 26.3,
+            "overlapTargetCount": 1
+          },
+          "expected": {
+            "minRatioPercent": 20,
+            "minAreaPx2": 100
+          },
+          "delta": {},
+          "evidenceText": "a \"로그인\"과 a \"무료로 시작\"의 표시 영역이 593px² 겹칩니다. (작은 요소 면적의 26%)",
+          "relatedElements": [
+            {
+              "role": "overlap-target",
+              "selector": "[data-testid=\"nav-signup\"]",
+              "tag": "a",
+              "boundingBox": {
+                "x": 276.8,
+                "y": 14,
+                "width": 97.2,
+                "height": 34.5
+              }
+            }
+          ],
+          "cropRect": {
+            "x": 141.3,
+            "y": 0,
+            "width": 320,
+            "height": 160
+          },
+          "computedStyle": {
+            "display": "block",
+            "position": "absolute",
+            "width": "65.4062px",
+            "min-width": "0px",
+            "max-width": "none",
+            "height": "34.5px",
+            "flex": "0 1 auto",
+            "flex-wrap": "nowrap",
+            "flex-shrink": "1",
+            "grid-template-columns": "none",
+            "overflow": "visible",
+            "overflow-x": "visible",
+            "white-space": "normal",
+            "word-break": "keep-all",
+            "overflow-wrap": "break-word",
+            "text-overflow": "clip",
+            "font-size": "15px",
+            "line-height": "22.5px",
+            "padding": "6px 12px",
+            "margin": "0px",
+            "box-sizing": "border-box",
+            "transform": "none",
+            "z-index": "auto"
+          },
+          "sourceHints": {
+            "textSnippet": "로그인",
+            "landmark": "main-nav",
+            "htmlSnippet": "<a class=\"btn btn-ghost nav-login\" href=\"#pricing\" data-testid=\"nav-login\">",
+            "stableAttributes": {
+              "data-testid": "nav-login"
+            },
+            "ancestorPath": "body > header.site-header > div.wrap > nav.main-nav > div.nav-actions"
+          },
+          "confidence": 1
+        }
+      ],
+      "relatedIssueIds": [],
+      "scores": {
+        "S": 5,
+        "I": 4,
+        "R": 4,
+        "score100": 435
+      },
+      "priority": "P0",
+      "confidence": 1,
+      "needsReview": false,
+      "analysis": {
+        "rootCause": "위치 지정(absolute/fixed) 요소가 일반 흐름 밖에 놓여 다른 요소와 겹침. 근거(Mobile): `position: absolute`, 겹친 면적 593px², 작은 요소 면적의 26%, 겹친 요소 `[data-testid=\"nav-signup\"]`",
+        "certainty": "likely",
+        "cssProblem": "판정 근거(Mobile): `position: absolute`",
+        "fixDirection": "위치 값을 조정하거나, 일반 흐름(flex, gap)으로 배치한다",
+        "suggestedFix": "위치 값을 조정하거나, 일반 흐름(flex, gap)으로 배치한다.\n\n```css\n[data-testid=\"nav-login\"] {\n  /* 일반 흐름으로 배치하고, 형제 요소 사이 간격은 부모의 display: flex; gap으로 둔다 */\n  position: static;\n}\n```\n\n※ selector는 빌드된 DOM 기준이므로 소스 코드의 클래스명이나 컴포넌트 구조와 다를 수 있다. 위 Source Hints로 소스 위치를 찾아 적용한다.",
+        "source": "rule"
+      }
+    },
+    {
+      "id": "ISS-004",
+      "type": "text-overflow",
+      "subtype": "clipped",
+      "title": "Text Overflow · clipped — a \"14일 무료 체험 시작하기\"",
+      "viewports": [
+        "mobile"
+      ],
+      "viewportTag": "mobile-only",
+      "selector": "[data-testid=\"hero-cta\"]",
+      "sourceHints": {
+        "textSnippet": "14일 무료 체험 시작하기",
+        "landmark": "hero",
+        "htmlSnippet": "<a class=\"btn hero-cta\" href=\"#pricing\" data-testid=\"hero-cta\">",
+        "stableAttributes": {
+          "data-testid": "hero-cta"
+        },
+        "ancestorPath": "body > main > section.wrap.hero > div.hero-copy > div.hero-actions"
+      },
+      "occurrences": [
+        {
+          "viewport": "mobile",
+          "selector": "[data-testid=\"hero-cta\"]",
+          "boundingBox": {
+            "x": 16,
+            "y": 874.36,
+            "width": 168,
+            "height": 44
+          },
+          "measured": {
+            "scrollWidth": 197
+          },
+          "expected": {
+            "clientWidth": 168
+          },
+          "delta": {
+            "overflowX": 29
+          },
+          "evidenceText": "내부 콘텐츠 너비(197px)가 컨테이너 너비(168px)를 29px 초과합니다. (overflow: hidden으로 잘림)",
+          "relatedElements": [],
+          "cropRect": {
+            "x": 0,
+            "y": 816.36,
+            "width": 320,
+            "height": 160
+          },
+          "computedStyle": {
+            "display": "block",
+            "position": "static",
+            "width": "168px",
+            "min-width": "auto",
+            "max-width": "none",
+            "height": "44px",
+            "flex": "0 1 auto",
+            "flex-wrap": "nowrap",
+            "flex-shrink": "1",
+            "grid-template-columns": "none",
+            "overflow": "hidden",
+            "overflow-x": "hidden",
+            "white-space": "nowrap",
+            "word-break": "keep-all",
+            "overflow-wrap": "break-word",
+            "text-overflow": "clip",
+            "font-size": "16px",
+            "line-height": "24px",
+            "padding": "10px 16px",
+            "margin": "0px",
+            "box-sizing": "border-box",
+            "transform": "none",
+            "z-index": "auto"
+          },
+          "sourceHints": {
+            "textSnippet": "14일 무료 체험 시작하기",
+            "landmark": "hero",
+            "htmlSnippet": "<a class=\"btn hero-cta\" href=\"#pricing\" data-testid=\"hero-cta\">",
+            "stableAttributes": {
+              "data-testid": "hero-cta"
+            },
+            "ancestorPath": "body > main > section.wrap.hero > div.hero-copy > div.hero-actions"
+          },
+          "confidence": 1
+        }
+      ],
+      "relatedIssueIds": [],
+      "scores": {
+        "S": 4,
+        "I": 4,
+        "R": 3,
+        "score100": 370
+      },
+      "priority": "P1",
+      "confidence": 1,
+      "needsReview": false,
+      "analysis": {
+        "rootCause": "한 줄 고정(white-space: nowrap) 상태에서 너비가 부족해 텍스트가 잘림. 근거(Mobile): `white-space: nowrap`, `overflow: hidden`, 내용 너비 197px, 컨테이너 너비 168px",
+        "certainty": "likely",
+        "cssProblem": "판정 근거(Mobile): `white-space: nowrap`, `overflow: hidden`, `width: 168px`",
+        "fixDirection": "줄바꿈을 허용하거나, 잘림이 의도라면 text-overflow: ellipsis로 표시한다",
+        "suggestedFix": "줄바꿈을 허용하거나, 잘림이 의도라면 text-overflow: ellipsis로 표시한다.\n\n```css\n[data-testid=\"hero-cta\"] {\n  white-space: normal;\n  /* 한 줄 유지가 의도라면: text-overflow: ellipsis; */\n}\n```\n\n※ selector는 빌드된 DOM 기준이므로 소스 코드의 클래스명이나 컴포넌트 구조와 다를 수 있다. 위 Source Hints로 소스 위치를 찾아 적용한다.",
+        "source": "rule"
+      }
+    },
+    {
+      "id": "ISS-005",
+      "type": "viewport-overflow",
+      "subtype": "page-scroll",
+      "title": "Viewport Overflow · page-scroll — [data-testid=\"hero-image\"]",
+      "viewports": [
+        "mobile"
+      ],
+      "viewportTag": "mobile-only",
+      "selector": "[data-testid=\"hero-image\"]",
+      "sourceHints": {
+        "landmark": "hero",
+        "htmlSnippet": "<img src=\"/demo/assets/hero.svg\" width=\"520\" height=\"420\" alt=\"플로우보드 보드 화면\" data-testid=\"hero-image\">",
+        "stableAttributes": {
+          "data-testid": "hero-image"
+        },
+        "ancestorPath": "body > main > section.wrap.hero > div.hero-visual"
+      },
+      "occurrences": [
+        {
+          "viewport": "mobile",
+          "selector": "[data-testid=\"hero-image\"]",
+          "boundingBox": {
+            "x": 16,
+            "y": 88,
+            "width": 520,
+            "height": 420
+          },
+          "measured": {
+            "elementRight": 536,
+            "documentScrollWidth": 536
+          },
+          "expected": {
+            "layoutWidth": 390
+          },
+          "delta": {
+            "overflowRight": 146
+          },
+          "evidenceText": "요소의 오른쪽 끝(536px)이 Mobile 화면 너비(390px)를 146px 벗어나 페이지 가로 스크롤이 발생합니다.",
+          "relatedElements": [],
+          "cropRect": {
+            "x": 0,
+            "y": 64,
+            "width": 536,
+            "height": 468
+          },
+          "computedStyle": {
+            "display": "block",
+            "position": "static",
+            "width": "520px",
+            "min-width": "0px",
+            "max-width": "none",
+            "height": "420px",
+            "flex": "0 1 auto",
+            "flex-wrap": "nowrap",
+            "flex-shrink": "1",
+            "grid-template-columns": "none",
+            "overflow": "clip",
+            "overflow-x": "clip",
+            "white-space": "normal",
+            "word-break": "keep-all",
+            "overflow-wrap": "break-word",
+            "text-overflow": "clip",
+            "font-size": "16px",
+            "line-height": "25.6px",
+            "padding": "0px",
+            "margin": "0px",
+            "box-sizing": "border-box",
+            "transform": "none",
+            "z-index": "auto"
+          },
+          "sourceHints": {
+            "landmark": "hero",
+            "htmlSnippet": "<img src=\"/demo/assets/hero.svg\" width=\"520\" height=\"420\" alt=\"플로우보드 보드 화면\" data-testid=\"hero-image\">",
+            "stableAttributes": {
+              "data-testid": "hero-image"
+            },
+            "ancestorPath": "body > main > section.wrap.hero > div.hero-visual"
+          },
+          "confidence": 1
+        }
+      ],
+      "relatedIssueIds": [],
+      "affectedDescendants": 0,
+      "scores": {
+        "S": 4,
+        "I": 4,
+        "R": 5,
+        "score100": 430
+      },
+      "priority": "P0",
+      "confidence": 1,
+      "needsReview": false,
+      "analysis": {
+        "rootCause": "요소 너비가 화면 너비보다 커서 고정 너비로 추정됨. 근거(Mobile): `width: 520px`, `max-width: none`, 요소 너비 520px, 요소 오른쪽 끝 536px, 화면 너비 390px",
+        "certainty": "likely",
+        "cssProblem": "판정 근거(Mobile): `width: 520px`, `max-width: none`",
+        "fixDirection": "max-width: 100%를 주거나 반응형 단위(%, fr, min())로 너비를 정한다",
+        "suggestedFix": "max-width: 100%를 주거나 반응형 단위(%, fr, min())로 너비를 정한다.\n\n```css\n[data-testid=\"hero-image\"] {\n  width: auto;\n  max-width: 100%;\n}\n```\n\n※ selector는 빌드된 DOM 기준이므로 소스 코드의 클래스명이나 컴포넌트 구조와 다를 수 있다. 위 Source Hints로 소스 위치를 찾아 적용한다.",
+        "source": "rule"
+      }
+    }
+  ],
+  "tasks": [
+    {
+      "id": "TASK-001",
+      "title": "main-nav 영역 Element Overlap 수정 (Mobile)",
+      "titleSource": "template",
+      "description": "- ISS-003 (Mobile): a \"로그인\"과 a \"무료로 시작\"의 표시 영역이 593px² 겹칩니다. (작은 요소 면적의 26%)",
+      "priority": "P0",
+      "viewportTag": "mobile-only",
+      "landmark": "main-nav",
+      "issueIds": [
+        "ISS-003"
+      ],
+      "needsReview": false,
+      "acceptanceCriteria": [
+        "390px viewport에서 `[data-testid=\"nav-login\"]`의 표시 영역이 `[data-testid=\"nav-signup\"]`의 표시 영역과 겹치지 않는다.",
+        "1440px viewport의 레이아웃은 변경되지 않는다."
+      ],
+      "prompt": "# Task: main-nav 영역 Element Overlap 수정 (Mobile)\nPriority: P0 | Viewport: mobile-only\n\n## Problem\n- ISS-003 (Mobile): a \"로그인\"과 a \"무료로 시작\"의 표시 영역이 593px² 겹칩니다. (작은 요소 면적의 26%)\n\n## [ISS-003] Element Overlap — a \"로그인\" ↔ a \"무료로 시작\"\n\n### Evidence (measured in browser)\n- Mobile (390×844): a \"로그인\"과 a \"무료로 시작\"의 표시 영역이 593px² 겹칩니다. (작은 요소 면적의 26%)\n  - Selector: `[data-testid=\"nav-login\"]`\n\n### How to locate the element in source\n- Section: main-nav\n- Text: \"로그인\"\n- Attributes: `data-testid=\"nav-login\"`\n- HTML: `<a class=\"btn btn-ghost nav-login\" href=\"#pricing\" data-testid=\"nav-login\">`\n\n### Likely Root Cause (likely, rule-based)\n위치 지정(absolute/fixed) 요소가 일반 흐름 밖에 놓여 다른 요소와 겹침. 근거(Mobile): `position: absolute`, 겹친 면적 593px², 작은 요소 면적의 26%, 겹친 요소 `[data-testid=\"nav-signup\"]`\n\n### Required Changes\n위치 값을 조정하거나, 일반 흐름(flex, gap)으로 배치한다.\n\n```css\n[data-testid=\"nav-login\"] {\n  /* 일반 흐름으로 배치하고, 형제 요소 사이 간격은 부모의 display: flex; gap으로 둔다 */\n  position: static;\n}\n```\n\n※ selector는 빌드된 DOM 기준이므로 소스 코드의 클래스명이나 컴포넌트 구조와 다를 수 있다. 위 Source Hints로 소스 위치를 찾아 적용한다.\n\n## Constraints\n- 다른 viewport(Desktop)의 레이아웃을 깨뜨리지 않는다.\n- 관련 없는 컴포넌트와 스타일은 수정하지 않는다.\n- 위 Root Cause는 추정일 수 있으니, 소스 코드를 확인한 뒤 수정한다.\n\n## Acceptance Criteria\n- 390px viewport에서 `[data-testid=\"nav-login\"]`의 표시 영역이 `[data-testid=\"nav-signup\"]`의 표시 영역과 겹치지 않는다.\n- 1440px viewport의 레이아웃은 변경되지 않는다.\n"
+    },
+    {
+      "id": "TASK-002",
+      "title": "hero 영역 Viewport Overflow, Text Overflow 수정 (Mobile)",
+      "titleSource": "template",
+      "description": "- ISS-004 (Mobile): 내부 콘텐츠 너비(197px)가 컨테이너 너비(168px)를 29px 초과합니다. (overflow: hidden으로 잘림)\n- ISS-005 (Mobile): 요소의 오른쪽 끝(536px)이 Mobile 화면 너비(390px)를 146px 벗어나 페이지 가로 스크롤이 발생합니다.",
+      "priority": "P0",
+      "viewportTag": "mobile-only",
+      "landmark": "hero",
+      "issueIds": [
+        "ISS-004",
+        "ISS-005"
+      ],
+      "needsReview": false,
+      "acceptanceCriteria": [
+        "390px viewport에서 `[data-testid=\"hero-cta\"]`의 `scrollWidth`가 `clientWidth`를 넘지 않는다.",
+        "390px viewport에서 `document.documentElement.scrollWidth`가 390 이하이다.",
+        "1440px viewport의 레이아웃은 변경되지 않는다."
+      ],
+      "prompt": "# Task: hero 영역 Viewport Overflow, Text Overflow 수정 (Mobile)\nPriority: P0 | Viewport: mobile-only\n\n## Problem\n- ISS-004 (Mobile): 내부 콘텐츠 너비(197px)가 컨테이너 너비(168px)를 29px 초과합니다. (overflow: hidden으로 잘림)\n- ISS-005 (Mobile): 요소의 오른쪽 끝(536px)이 Mobile 화면 너비(390px)를 146px 벗어나 페이지 가로 스크롤이 발생합니다.\n\n## [ISS-004] Text Overflow · clipped — a \"14일 무료 체험 시작하기\"\n\n### Evidence (measured in browser)\n- Mobile (390×844): 내부 콘텐츠 너비(197px)가 컨테이너 너비(168px)를 29px 초과합니다. (overflow: hidden으로 잘림)\n  - Selector: `[data-testid=\"hero-cta\"]`\n\n### How to locate the element in source\n- Section: hero\n- Text: \"14일 무료 체험 시작하기\"\n- Attributes: `data-testid=\"hero-cta\"`\n- HTML: `<a class=\"btn hero-cta\" href=\"#pricing\" data-testid=\"hero-cta\">`\n\n### Likely Root Cause (likely, rule-based)\n한 줄 고정(white-space: nowrap) 상태에서 너비가 부족해 텍스트가 잘림. 근거(Mobile): `white-space: nowrap`, `overflow: hidden`, 내용 너비 197px, 컨테이너 너비 168px\n\n### Required Changes\n줄바꿈을 허용하거나, 잘림이 의도라면 text-overflow: ellipsis로 표시한다.\n\n```css\n[data-testid=\"hero-cta\"] {\n  white-space: normal;\n  /* 한 줄 유지가 의도라면: text-overflow: ellipsis; */\n}\n```\n\n※ selector는 빌드된 DOM 기준이므로 소스 코드의 클래스명이나 컴포넌트 구조와 다를 수 있다. 위 Source Hints로 소스 위치를 찾아 적용한다.\n\n## [ISS-005] Viewport Overflow · page-scroll — [data-testid=\"hero-image\"]\n\n### Evidence (measured in browser)\n- Mobile (390×844): 요소의 오른쪽 끝(536px)이 Mobile 화면 너비(390px)를 146px 벗어나 페이지 가로 스크롤이 발생합니다.\n  - Selector: `[data-testid=\"hero-image\"]`\n\n### How to locate the element in source\n- Section: hero\n- Attributes: `data-testid=\"hero-image\"`\n- HTML: `<img src=\"/demo/assets/hero.svg\" width=\"520\" height=\"420\" alt=\"플로우보드 보드 화면\" data-testid=\"hero-image\">`\n\n### Likely Root Cause (likely, rule-based)\n요소 너비가 화면 너비보다 커서 고정 너비로 추정됨. 근거(Mobile): `width: 520px`, `max-width: none`, 요소 너비 520px, 요소 오른쪽 끝 536px, 화면 너비 390px\n\n### Required Changes\nmax-width: 100%를 주거나 반응형 단위(%, fr, min())로 너비를 정한다.\n\n```css\n[data-testid=\"hero-image\"] {\n  width: auto;\n  max-width: 100%;\n}\n```\n\n※ selector는 빌드된 DOM 기준이므로 소스 코드의 클래스명이나 컴포넌트 구조와 다를 수 있다. 위 Source Hints로 소스 위치를 찾아 적용한다.\n\n## Constraints\n- 다른 viewport(Desktop)의 레이아웃을 깨뜨리지 않는다.\n- 관련 없는 컴포넌트와 스타일은 수정하지 않는다.\n- 위 Root Cause는 추정일 수 있으니, 소스 코드를 확인한 뒤 수정한다.\n\n## Acceptance Criteria\n- 390px viewport에서 `[data-testid=\"hero-cta\"]`의 `scrollWidth`가 `clientWidth`를 넘지 않는다.\n- 390px viewport에서 `document.documentElement.scrollWidth`가 390 이하이다.\n- 1440px viewport의 레이아웃은 변경되지 않는다.\n"
+    },
+    {
+      "id": "TASK-003",
+      "title": "pricing 영역 Text Overflow 수정 (Desktop + Mobile)",
+      "titleSource": "template",
+      "description": "- ISS-002 (Desktop): 텍스트가 테두리가 있는 상위 영역(article)의 아래쪽 경계를 최대 69px 벗어납니다.\n- ISS-002 (Mobile): 텍스트가 테두리가 있는 상위 영역(article)의 아래쪽 경계를 최대 69px 벗어납니다.",
+      "priority": "P2",
+      "viewportTag": "both",
+      "landmark": "pricing",
+      "issueIds": [
+        "ISS-002"
+      ],
+      "needsReview": false,
+      "acceptanceCriteria": [
+        "1440px viewport에서 `[data-testid=\"plan-team-note\"]`의 텍스트 영역(`Range.getClientRects()`)이 `[data-testid=\"plan-team\"]`의 테두리 안에 있다.",
+        "390px viewport에서 `[data-testid=\"plan-team-note\"]`의 텍스트 영역(`Range.getClientRects()`)이 `[data-testid=\"plan-team\"]`의 테두리 안에 있다."
+      ],
+      "prompt": "# Task: pricing 영역 Text Overflow 수정 (Desktop + Mobile)\nPriority: P2 | Viewport: both\n\n## Problem\n- ISS-002 (Desktop): 텍스트가 테두리가 있는 상위 영역(article)의 아래쪽 경계를 최대 69px 벗어납니다.\n- ISS-002 (Mobile): 텍스트가 테두리가 있는 상위 영역(article)의 아래쪽 경계를 최대 69px 벗어납니다.\n\n## [ISS-002] Text Overflow · spill — p \"프로 요금제의 모든 기능에 더해 단일\"\n\n### Evidence (measured in browser)\n- Desktop (1440×900): 텍스트가 테두리가 있는 상위 영역(article)의 아래쪽 경계를 최대 69px 벗어납니다.\n  - Selector: `[data-testid=\"plan-team-note\"]`\n- Mobile (390×844): 텍스트가 테두리가 있는 상위 영역(article)의 아래쪽 경계를 최대 69px 벗어납니다.\n  - Selector: `[data-testid=\"plan-team-note\"]`\n\n### How to locate the element in source\n- Section: pricing\n- Text: \"프로 요금제의 모든 기능에 더해 단일 로그인, 감사 로그, 전용 데이터 보관 지역, 연간 계약 할인, 전담 매니저 배정을 제공합니다. 도입 전 \"\n- Attributes: `data-testid=\"plan-team-note\"`\n- HTML: `<p class=\"plan-note\" data-testid=\"plan-team-note\">`\n\n### Likely Root Cause (likely, rule-based)\n상위 영역의 높이가 고정되어 텍스트가 아래로 넘침. 근거(Desktop, Mobile): 상위 영역 `[data-testid=\"plan-team\"]` 높이 260px, 아래쪽으로 69px 넘침\n\n### Required Changes\n상위 영역의 height를 auto로 두거나 min-height를 쓴다.\n\n```css\n[data-testid=\"plan-team\"] {\n  height: auto;\n  /* 최소 높이가 필요하면 height 대신 min-height를 쓴다 */\n}\n```\n\n※ selector는 빌드된 DOM 기준이므로 소스 코드의 클래스명이나 컴포넌트 구조와 다를 수 있다. 위 Source Hints로 소스 위치를 찾아 적용한다.\n\n## Constraints\n- Desktop과 Mobile 모두에서 아래 Acceptance Criteria를 만족해야 한다.\n- 관련 없는 컴포넌트와 스타일은 수정하지 않는다.\n- 위 Root Cause는 추정일 수 있으니, 소스 코드를 확인한 뒤 수정한다.\n\n## Acceptance Criteria\n- 1440px viewport에서 `[data-testid=\"plan-team-note\"]`의 텍스트 영역(`Range.getClientRects()`)이 `[data-testid=\"plan-team\"]`의 테두리 안에 있다.\n- 390px viewport에서 `[data-testid=\"plan-team-note\"]`의 텍스트 영역(`Range.getClientRects()`)이 `[data-testid=\"plan-team\"]`의 테두리 안에 있다.\n"
+    },
+    {
+      "id": "TASK-004",
+      "title": "features 영역 Element Overlap 수정 (Desktop + Mobile)",
+      "titleSource": "template",
+      "description": "- ISS-001 (Desktop): [data-testid=\"feature-image-1\"]과 span \"NEW\"의 표시 영역이 304px² 겹칩니다. (작은 요소 면적의 54%)\n- ISS-001 (Mobile): [data-testid=\"feature-image-1\"]과 span \"NEW\"의 표시 영역이 304px² 겹칩니다. (작은 요소 면적의 54%)",
+      "priority": "P2",
+      "viewportTag": "both",
+      "landmark": "features",
+      "issueIds": [
+        "ISS-001"
+      ],
+      "needsReview": true,
+      "acceptanceCriteria": [
+        "1440px viewport에서 `[data-testid=\"feature-image-1\"]`의 표시 영역이 `[data-testid=\"feature-badge\"]`의 표시 영역과 겹치지 않는다.",
+        "390px viewport에서 `[data-testid=\"feature-image-1\"]`의 표시 영역이 `[data-testid=\"feature-badge\"]`의 표시 영역과 겹치지 않는다."
+      ],
+      "prompt": "# Task: features 영역 Element Overlap 수정 (Desktop + Mobile)\nPriority: P2 | Viewport: both\n\n## Problem\n- ISS-001 (Desktop): [data-testid=\"feature-image-1\"]과 span \"NEW\"의 표시 영역이 304px² 겹칩니다. (작은 요소 면적의 54%)\n- ISS-001 (Mobile): [data-testid=\"feature-image-1\"]과 span \"NEW\"의 표시 영역이 304px² 겹칩니다. (작은 요소 면적의 54%)\n\n## [ISS-001] Element Overlap — [data-testid=\"feature-image-1\"] ↔ span \"NEW\"\n\n### Evidence (measured in browser)\n- Desktop (1440×900): [data-testid=\"feature-image-1\"]과 span \"NEW\"의 표시 영역이 304px² 겹칩니다. (작은 요소 면적의 54%)\n  - Selector: `[data-testid=\"feature-image-1\"]`\n- Mobile (390×844): [data-testid=\"feature-image-1\"]과 span \"NEW\"의 표시 영역이 304px² 겹칩니다. (작은 요소 면적의 54%)\n  - Selector: `[data-testid=\"feature-image-1\"]`\n\n### How to locate the element in source\n- Section: features\n- Attributes: `data-testid=\"feature-image-1\"`\n- HTML: `<img src=\"/demo/assets/feature.svg\" width=\"400\" height=\"200\" alt=\"\" data-testid=\"feature-image-1\">`\n\n### Likely Root Cause\nAI 분석 없음 — 위 Evidence와 소스 코드를 직접 확인한다.\n\n### Required Changes\nAI 분석 없음 — 위 Evidence와 소스 코드를 직접 확인한다.\n\n## Constraints\n- Desktop과 Mobile 모두에서 아래 Acceptance Criteria를 만족해야 한다.\n- 관련 없는 컴포넌트와 스타일은 수정하지 않는다.\n- 위 Root Cause는 추정일 수 있으니, 소스 코드를 확인한 뒤 수정한다.\n\n## Acceptance Criteria\n- 1440px viewport에서 `[data-testid=\"feature-image-1\"]`의 표시 영역이 `[data-testid=\"feature-badge\"]`의 표시 영역과 겹치지 않는다.\n- 390px viewport에서 `[data-testid=\"feature-image-1\"]`의 표시 영역이 `[data-testid=\"feature-badge\"]`의 표시 영역과 겹치지 않는다.\n"
+    }
+  ]
+}

@@ -4,6 +4,9 @@
 //   pnpm test:fixtures                 15개 전체
 //   pnpm test:fixtures P-01 N-07       일부만
 //   pnpm test:fixtures --repeat 2      전체를 두 번 실행하고 buildIssues·finalizeIssues·분석·태스크 결과가 같은지 확인한다
+//   pnpm test:fixtures --page demo/landing.html --report-only
+//                                      Fixture가 아닌 페이지(public/ 기준 경로) 1개를 같은 경로로 검사하고 결과만 출력한다.
+//                                      기대값이 없으므로 판정(통과/실패)하지 않는다(T13 데모 페이지 미리 보기)
 //
 // T10: finalizeIssues 뒤에 분석 단계(규칙 기반 원인 분석 → 태스크 그룹화 → 프롬프트)를 실행하고
 // 'final' 불변 조건과 Positive Fixture의 기대 규칙(EXPECTED_RULES)을 확인한다.
@@ -49,8 +52,21 @@ const EXPECTED_RULES: Record<string, readonly (readonly RuleId[])[]> = {
   'P-06': [['V1']],
 };
 
+/** 검사할 페이지. Fixture면 FixtureExpectation, --page면 기대값 없는 페이지 */
+type RunTarget = Pick<FixtureExpectation, 'path' | 'description'> & {
+  id: string;
+  /**
+   * 저장하는 Inspection 문서의 id. 없으면 `fixture-{id}`.
+   * --page는 이 문서로 임시 샘플 리포트를 만들 수 있게(T13) inspectionSchema가 요구하는 UUID를 쓴다.
+   */
+  inspectionId?: string;
+};
+
+/** --page 문서의 고정 id (결정성 비교를 위해 고정값) */
+const PAGE_INSPECTION_ID = '00000000-0000-4000-8000-00000000d001';
+
 interface FixtureRun {
-  fixture: FixtureExpectation;
+  fixture: RunTarget;
   collected: Record<Viewport, CollectedViewport>;
   screenshots: Record<Viewport, CapturedScreenshot>;
   result: BuildIssuesResult;
@@ -80,27 +96,50 @@ interface Verdict {
 function usage(message?: string): never {
   if (message) console.error(message);
   console.error('Usage: pnpm test:fixtures [Fixture ID ...] [--repeat N]');
+  console.error('       pnpm test:fixtures --page <public/ 기준 경로> --report-only');
   process.exit(2);
 }
 
-function parseArgs(argv: string[]): { fixtures: FixtureExpectation[]; repeat: number } {
+type ParsedArgs = { mode: 'fixtures'; fixtures: FixtureExpectation[]; repeat: number } | { mode: 'page'; page: RunTarget };
+
+/** --page 값을 public/ 기준 URL 경로로 바꾼다. Fixture는 판정 대상이므로 --page로 받지 않는다 */
+function pageTarget(value: string | undefined): RunTarget {
+  if (!value) usage('--page needs a path');
+  const pathname = `/${value.replace(/^\/+/, '')}`;
+  if (!pathname.endsWith('.html') || pathname.includes('..')) usage(`Invalid --page: ${value}`);
+  if (pathname.startsWith('/fixtures/')) usage('Fixture는 --page가 아니라 Fixture ID로 검사한다');
+  const id = pathname.slice(1, -'.html'.length).replace(/[^A-Za-z0-9_-]+/g, '-');
+  return { id, path: pathname, description: `${pathname} (판정 없음, --report-only)`, inspectionId: PAGE_INSPECTION_ID };
+}
+
+function parseArgs(argv: string[]): ParsedArgs {
   let repeat = 1;
+  let page: RunTarget | undefined;
+  let reportOnly = false;
   const ids: string[] = [];
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === '--repeat') {
       repeat = Number(argv[(i += 1)]);
       if (!Number.isInteger(repeat) || repeat < 1) usage(`Invalid --repeat: ${argv[i]}`);
-    } else if (!arg.startsWith('-')) ids.push(arg);
+    } else if (arg === '--page') page = pageTarget(argv[(i += 1)]);
+    else if (arg === '--report-only') reportOnly = true;
+    else if (!arg.startsWith('-')) ids.push(arg);
     else usage(`Unknown argument: ${arg}`);
   }
-  if (ids.length === 0) return { fixtures: [...FIXTURE_EXPECTATIONS], repeat };
+  if (page || reportOnly) {
+    // 기대값이 없는 페이지는 판정하지 않는다. 두 옵션은 함께 쓴다
+    if (!page || !reportOnly) usage('--page와 --report-only는 함께 쓴다');
+    if (ids.length > 0 || repeat !== 1) usage('--page는 Fixture ID, --repeat와 함께 쓸 수 없다');
+    return { mode: 'page', page };
+  }
+  if (ids.length === 0) return { mode: 'fixtures', fixtures: [...FIXTURE_EXPECTATIONS], repeat };
   const fixtures = ids.map((id) => {
     const found = FIXTURE_EXPECTATIONS.find((f) => f.id.toLowerCase() === id.toLowerCase());
     if (!found) usage(`Unknown Fixture ID: ${id}`);
     return found;
   });
-  return { fixtures, repeat };
+  return { mode: 'fixtures', fixtures, repeat };
 }
 
 async function collectOne(
@@ -120,7 +159,7 @@ async function collectOne(
   }
 }
 
-async function runFixture(browser: Browser, baseUrl: string, fixture: FixtureExpectation): Promise<FixtureRun> {
+async function runFixture(browser: Browser, baseUrl: string, fixture: RunTarget): Promise<FixtureRun> {
   const started = performance.now();
   // Desktop과 Mobile은 순서대로 실행한다(AGENTS.md 7장)
   const desktop = await collectOne(browser, `${baseUrl}${fixture.path}`, 'desktop');
@@ -172,14 +211,14 @@ async function runFixture(browser: Browser, baseUrl: string, fixture: FixtureExp
 
 /** 불변 조건 검사용 Inspection. 시각과 ID는 고정값이다(결정성 비교를 위해) */
 function toInspection(
-  fixture: FixtureExpectation,
+  fixture: RunTarget,
   viewports: Record<Viewport, ViewportResult>,
   result: BuildIssuesResult,
   issues: Issue[],
 ): Inspection {
   const at = '2000-01-01T00:00:00.000Z';
   return {
-    id: `fixture-${fixture.id}`,
+    id: fixture.inspectionId ?? `fixture-${fixture.id}`,
     url: fixture.path,
     status: 'analyzing',
     createdAt: at,
@@ -220,8 +259,8 @@ function describeIssue(run: FixtureRun, issue: DetectedIssue): string {
 }
 
 /** DETECTION_RULES 12.2 판정 */
-function judge(run: FixtureRun): Verdict {
-  const { fixture, result } = run;
+function judge(run: FixtureRun, fixture: FixtureExpectation): Verdict {
+  const { result } = run;
   const problems: string[] = [];
   const matched = new Map<ExpectedIssue, DetectedIssue>();
   const used = new Set<DetectedIssue>();
@@ -291,12 +330,16 @@ function judge(run: FixtureRun): Verdict {
   return { pass: problems.length === 0, problems, reviewOnly, allowedSeen, matched };
 }
 
-function printFixture(run: FixtureRun, verdict: Verdict): void {
-  const { fixture, result } = run;
-  console.log(`\n=== ${fixture.id} [${verdict.pass ? 'PASS' : 'FAIL'}] ${fixture.description}`);
-  console.log(
-    `기대: ${fixture.issues.length === 0 ? '이슈 0개' : fixture.issues.map((e) => `${e.type}/${e.subtype} ${e.priority} ${e.viewportTag} @${e.testId}`).join(', ')}`,
-  );
+/** verdict와 fixture가 없으면(--page --report-only) 판정 없이 결과만 출력한다 */
+function printFixture(run: FixtureRun, verdict?: Verdict, fixture?: FixtureExpectation): void {
+  const { result } = run;
+  const label = verdict ? (verdict.pass ? 'PASS' : 'FAIL') : 'REPORT';
+  console.log(`\n=== ${run.fixture.id} [${label}] ${run.fixture.description}`);
+  if (fixture) {
+    console.log(
+      `기대: ${fixture.issues.length === 0 ? '이슈 0개' : fixture.issues.map((e) => `${e.type}/${e.subtype} ${e.priority} ${e.viewportTag} @${e.testId}`).join(', ')}`,
+    );
+  }
   if (result.issues.length > 0) {
     console.table(
       result.issues.map((i) => ({
@@ -310,7 +353,15 @@ function printFixture(run: FixtureRun, verdict: Verdict): void {
         confidence: i.confidence,
         needsReview: i.needsReview,
         relatedIssueIds: i.relatedIssueIds.join(','),
-        verdict: verdict.reviewOnly.includes(i) ? 'needs-review(로그)' : verdict.allowedSeen.includes(i) ? 'allowed' : [...verdict.matched.values()].includes(i) ? 'expected' : 'unexpected',
+        verdict: !verdict
+          ? '-'
+          : verdict.reviewOnly.includes(i)
+            ? 'needs-review(로그)'
+            : verdict.allowedSeen.includes(i)
+              ? 'allowed'
+              : [...verdict.matched.values()].includes(i)
+                ? 'expected'
+                : 'unexpected',
       })),
     );
     for (const issue of run.analyzed) {
@@ -345,26 +396,32 @@ function printFixture(run: FixtureRun, verdict: Verdict): void {
     .join(' | ');
   console.log(`${extra} | issuesDetected=${result.issuesDetected} truncated=${result.issuesTruncated}`);
   console.log(`시간: 브라우저(Desktop + Mobile) ${run.browserMs.toFixed(0)}ms, buildIssues ${run.buildMs.toFixed(1)}ms`);
-  for (const p of verdict.problems) console.log(`  ✗ ${p}`);
+  for (const p of verdict?.problems ?? []) console.log(`  ✗ ${p}`);
 }
 
-function markdownSummary(runs: { run: FixtureRun; verdict: Verdict }[]): string {
-  const positives = runs.filter((r) => r.run.fixture.kind === 'positive');
-  const negatives = runs.filter((r) => r.run.fixture.kind === 'negative');
+interface JudgedRun {
+  fixture: FixtureExpectation;
+  run: FixtureRun;
+  verdict: Verdict;
+}
+
+function markdownSummary(runs: JudgedRun[]): string {
+  const positives = runs.filter((r) => r.fixture.kind === 'positive');
+  const negatives = runs.filter((r) => r.fixture.kind === 'negative');
   const detected = positives.filter((r) => r.verdict.pass).length;
   const falsePositives = negatives.filter((r) => !r.verdict.pass).length;
   const lines = [
     '| Fixture | 구분 | 기대 결과 | 실제 결과 (needsReview: false) | Needs Review | 판정 |',
     '|---|---|---|---|---:|---|',
-    ...runs.map(({ run, verdict }) => {
+    ...runs.map(({ fixture, run, verdict }) => {
       const expected =
-        run.fixture.issues.length === 0
+        fixture.issues.length === 0
           ? '이슈 0개'
-          : run.fixture.issues.map((e) => `${e.type}/${e.subtype} ${e.priority} ${e.viewportTag}`).join('<br>');
+          : fixture.issues.map((e) => `${e.type}/${e.subtype} ${e.priority} ${e.viewportTag}`).join('<br>');
       const actual = run.result.issues.filter((i) => !i.needsReview);
       const actualText = actual.length === 0 ? '이슈 0개' : actual.map((i) => `${i.type}/${i.subtype} ${i.priority} ${i.viewportTag}`).join('<br>');
       const review = run.result.issues.filter((i) => i.needsReview).length;
-      return `| ${run.fixture.id} | ${run.fixture.kind === 'positive' ? 'Positive' : 'Negative'} | ${expected} | ${actualText} | ${review} | ${verdict.pass ? '통과' : '실패'} |`;
+      return `| ${fixture.id} | ${fixture.kind === 'positive' ? 'Positive' : 'Negative'} | ${expected} | ${actualText} | ${review} | ${verdict.pass ? '통과' : '실패'} |`;
     }),
     '',
     '| 지표 | 결과 | 기준 (PRD 13.2) |',
@@ -375,24 +432,43 @@ function markdownSummary(runs: { run: FixtureRun; verdict: Verdict }[]): string 
   return lines.join('\n');
 }
 
-async function main(): Promise<void> {
-  const { fixtures, repeat } = parseArgs(process.argv.slice(2));
+/** --page --report-only: 페이지 1개를 Fixture와 같은 경로로 검사하고 결과만 출력한다. 판정하지 않는다 */
+async function reportPage(page: RunTarget): Promise<void> {
   const server = await start();
   let browser: Browser | undefined;
-  const rounds: { run: FixtureRun; verdict: Verdict }[][] = [];
+  try {
+    browser = await launchBrowser();
+    const run = await runFixture(browser, server.baseUrl, page);
+    printFixture(run);
+    await writeReport(run);
+    console.log(`\n확인용 HTML: ${path.relative(process.cwd(), REPORT_DIR)}/${page.id}.html`);
+    console.log(`Inspection 문서: ${path.relative(process.cwd(), REPORT_DIR)}/${page.id}.inspection.json`);
+  } finally {
+    await browser?.close();
+    await server.close();
+  }
+}
+
+async function main(): Promise<void> {
+  const args = parseArgs(process.argv.slice(2));
+  if (args.mode === 'page') return reportPage(args.page);
+  const { fixtures, repeat } = args;
+  const server = await start();
+  let browser: Browser | undefined;
+  const rounds: JudgedRun[][] = [];
   const errors: string[] = [];
 
   try {
     browser = await launchBrowser();
     for (let round = 1; round <= repeat; round += 1) {
-      const runs: { run: FixtureRun; verdict: Verdict }[] = [];
+      const runs: JudgedRun[] = [];
       for (const fixture of fixtures) {
         try {
           const run = await runFixture(browser, server.baseUrl, fixture);
-          const verdict = judge(run);
-          runs.push({ run, verdict });
+          const verdict = judge(run, fixture);
+          runs.push({ fixture, run, verdict });
           if (round === 1) {
-            printFixture(run, verdict);
+            printFixture(run, verdict, fixture);
             await writeReport(run, verdict);
           }
         } catch (error) {
@@ -427,9 +503,9 @@ async function main(): Promise<void> {
 
   console.log('\n=== 요약');
   console.table(
-    first.map(({ run, verdict }) => ({
-      fixture: run.fixture.id,
-      kind: run.fixture.kind,
+    first.map(({ fixture, run, verdict }) => ({
+      fixture: fixture.id,
+      kind: fixture.kind,
       result: verdict.pass ? 'PASS' : 'FAIL',
       issues: run.result.issues.filter((i) => !i.needsReview).length,
       needsReview: run.result.issues.filter((i) => i.needsReview).length,
@@ -480,7 +556,7 @@ const escapeHtml = (text: string) =>
  * 사람이 cropRect와 Evidence 문장을 눈으로 확인하기 위한 HTML. 제품 UI가 아니다.
  * 크롭 이미지를 새로 만들지 않고, 전체 스크린샷을 CSS로 cropRect만큼 잘라 보여준다(PRD 5.4.1).
  */
-async function writeReport(run: FixtureRun, verdict: Verdict): Promise<void> {
+async function writeReport(run: FixtureRun, verdict?: Verdict): Promise<void> {
   await mkdir(REPORT_DIR, { recursive: true });
   const id = run.fixture.id;
   for (const v of ['desktop', 'mobile'] as const) {
@@ -535,7 +611,7 @@ section { margin-bottom: 40px; border-top: 1px solid #ddd; padding-top: 12px; }
 pre { background: #f6f8fa; padding: 12px; white-space: pre-wrap; font-size: 12px; }
 dt { font-weight: 600; margin-top: 4px; }
 </style></head><body>
-<h1>${escapeHtml(id)} [${verdict.pass ? 'PASS' : 'FAIL'}] ${escapeHtml(run.fixture.description)}</h1>
+<h1>${escapeHtml(id)} [${verdict ? (verdict.pass ? 'PASS' : 'FAIL') : 'REPORT'}] ${escapeHtml(run.fixture.description)}</h1>
 <p>${(['desktop', 'mobile'] as const).map((v) => `${v}: ${run.viewportResults[v].screenshotWidth}×${run.viewportResults[v].screenshotHeight} (layoutWidth ${run.viewportResults[v].layoutWidth}, truncated ${run.viewportResults[v].screenshotTruncated})`).join(' · ')}</p>
 ${sections.length > 0 ? sections.join('\n') : '<p>이슈 0개</p>'}
 <h1>Tasks</h1>
