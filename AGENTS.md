@@ -76,6 +76,7 @@ src/
     layout/                             # Header, PageContainer
     inspection/                         # 도메인 값 표시 전용: PriorityBadge, ViewportTagBadge, IssueTypeLabel, CertaintyBadge
     polling/                            # useInspectionPolling (Progress와 결과 화면이 함께 사용, API_SPEC 7장)
+    api/                                # 클라이언트 fetch 래퍼 (POST/GET /api/inspections). Home, Progress, polling이 함께 사용
 
   features/                             # 화면 단위 기능 (UI + 클라이언트 로직)
     inspection-form/                    # URL 입력, 형식 검증, 검사 시작 요청
@@ -182,7 +183,8 @@ docs/
 | `features/` | 화면 기능 단위의 UI와 클라이언트 로직 | `components`, `schemas`, `types`, `lib` |
 | `components/ui`, `components/layout` | 도메인을 모르는 재사용 UI | `lib` |
 | `components/inspection` | 도메인 값(Priority, viewport 태그 등)을 표시만 하는 UI | `components/ui`, `types`, `lib` |
-| `components/polling` | 검사 상태 polling 클라이언트 훅 | `types`, `lib` |
+| `components/polling` | 검사 상태 polling 클라이언트 훅 | `components/api`, `types`, `lib` |
+| `components/api` | 클라이언트에서 쓰는 API 호출(fetch 래퍼). feature끼리 import할 수 없어 공용으로 둔다 | `schemas`, `types` |
 | `server/` | 브라우저 검사, 탐지, AI, 저장소, 보안 | `schemas`, `types`, `lib` |
 | `schemas/` | 클라이언트와 서버가 함께 쓰는 zod 스키마 | `types`, `zod` |
 | `types/` | 공유 타입 | 없음 |
