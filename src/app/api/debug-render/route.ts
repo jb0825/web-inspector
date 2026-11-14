@@ -9,6 +9,10 @@
 //   - webgl false: 브라우저를 --disable-webgl, --disable-3d-apis로 띄운다(WebGL context 생성 불가, 비교용)
 //   - mode "render": 검사와 같은 renderViewport(안정화 → 수집 → 스크린샷 재시도)를 돌리고 단계별 시간, 스크린샷 시도, 오류를 돌려준다.
 //     fontMode는 무시한다. viewport 실패 원인(viewportErrors는 'Unexpected error'만 남는다)을 응답으로 확인하기 위한 것이다
+//   - mode "shot": 새 브라우저·새 page에서 열기·안정화 뒤 첫 촬영 1회만 한다(재시도 없음, 앞 촬영의 영향 없음).
+//     shot "first-screen"은 viewport 크기를 바꾸지 않는 clip 촬영, "full"은 검사와 같은 전체 페이지 촬영이다.
+//     jsFreeze "script-disabled"는 CDP Emulation.setScriptExecutionDisabled(true), "frozen"은 Page.setWebLifecycleState(frozen)를
+//     촬영 직전에 걸고 촬영 뒤 푼다
 //   - freezeRaf true(render 모드): 스크린샷 직전에 window.requestAnimationFrame을 바꿔 애니메이션 루프를 멈춘다.
 //     스크린샷 전후 canvas 크기, resize 이벤트 수, 멈춘 뒤 rAF 요청 수, 스크린샷의 canvas 영역 색 분포를 돌려준다
 //
@@ -44,9 +48,16 @@ const bodySchema = z.object({
   fontMode: z.enum(['fetch', 'continue']).default('fetch'),
   waitMs: z.number().int().min(0).max(15_000).default(5_000),
   webgl: z.boolean().default(true),
-  mode: z.enum(['probe', 'render']).default('probe'),
+  mode: z.enum(['probe', 'render', 'shot']).default('probe'),
   freezeRaf: z.boolean().default(false),
+  shot: z.enum(['first-screen', 'full']).default('first-screen'),
+  jsFreeze: z.enum(['none', 'script-disabled', 'frozen']).default('none'),
 });
+
+/** shot 모드의 촬영 1회 시간 제한 */
+const SHOT_TIMEOUT_MS = 20_000;
+/** JS를 멈춘 뒤 촬영 전까지 기다리는 시간 */
+const JS_FREEZE_SETTLE_MS = 300;
 
 /** rAF를 멈춘 뒤 스크린샷 전까지 기다리는 시간. 이미 예약된 콜백이 한 번 돌고 멈출 시간이다 */
 const FREEZE_SETTLE_MS = 300;
@@ -394,6 +405,110 @@ async function processSnapshot(): Promise<unknown> {
   }
 }
 
+
+interface ShotReport {
+  ok: boolean;
+  timings: Record<string, number>;
+  freeze: { applied: boolean; error: string | null; released: boolean | null; releaseError: string | null };
+  screenshot: { width: number; height: number; pngBytes: number } | null;
+  error: string | null;
+  canvasBefore: unknown;
+  canvasAfter: unknown;
+  canvasPixels: unknown[];
+}
+
+/** 새 page에서 첫 촬영 1회. 앞 촬영의 영향이 없는 조건에서 촬영 방식과 JS 멈춤의 효과를 본다 */
+async function runShot(
+  launched: LaunchedBrowser,
+  viewport: 'desktop' | 'mobile',
+  url: string,
+  checker: ReturnType<typeof createHostChecker>,
+  shot: 'first-screen' | 'full',
+  jsFreeze: 'none' | 'script-disabled' | 'frozen',
+): Promise<ShotReport> {
+  const report: ShotReport = {
+    ok: false,
+    timings: {},
+    freeze: { applied: false, error: null, released: null, releaseError: null },
+    screenshot: null,
+    error: null,
+    canvasBefore: null,
+    canvasAfter: null,
+    canvasPixels: [],
+  };
+  const time = async <T,>(name: string, ms: number, task: () => Promise<T>): Promise<T> => {
+    const start = Date.now();
+    try {
+      return await withHardTimeout(task(), ms, () => new Error(`${name} hard timeout ${ms}ms`));
+    } finally {
+      report.timings[`${name}Ms`] = Date.now() - start;
+    }
+  };
+  let page: Page | null = null;
+  try {
+    const context = await time('context', CONTEXT_TIMEOUT_MS, () => createViewportContext(launched.browser, viewport, { checker }));
+    const opened = await time('openAndStabilize', 70_000, () => openAndStabilize(context, url));
+    page = opened.page;
+    const current = page;
+    await current.evaluate(watchResizeInPage);
+    const before = await time('canvasBefore', 5_000, () => current.evaluate(canvasStateInPage));
+    report.canvasBefore = before;
+    const viewportSize = current.viewportSize() ?? { width: 0, height: 0 };
+
+    const session = jsFreeze === 'none' ? null : await time('cdpSession', 5_000, () => context.newCDPSession(current));
+    if (session) {
+      try {
+        await time('freeze', 5_000, () =>
+          jsFreeze === 'script-disabled'
+            ? session.send('Emulation.setScriptExecutionDisabled', { value: true })
+            : session.send('Page.setWebLifecycleState', { state: 'frozen' }),
+        );
+        report.freeze.applied = true;
+        await new Promise((resolve) => setTimeout(resolve, JS_FREEZE_SETTLE_MS));
+      } catch (error) {
+        report.freeze.error = describeFailure(error);
+      }
+    }
+
+    try {
+      const png = await time('screenshot', SHOT_TIMEOUT_MS + 2_000, () =>
+        current.screenshot({
+          type: 'png',
+          scale: 'css',
+          animations: 'disabled',
+          caret: 'hide',
+          timeout: SHOT_TIMEOUT_MS,
+          ...(shot === 'full' ? { fullPage: true } : { clip: { x: 0, y: 0, width: viewportSize.width, height: viewportSize.height } }),
+        }),
+      );
+      const image = decodePng(png);
+      report.ok = true;
+      report.screenshot = { width: image.width, height: image.height, pngBytes: png.byteLength };
+      report.canvasPixels = before.canvases.map((canvas) => regionColors(image, canvas.docRect));
+    } catch (error) {
+      report.error = describeFailure(error);
+    }
+
+    if (session && report.freeze.applied) {
+      try {
+        await time('release', 5_000, () =>
+          jsFreeze === 'script-disabled'
+            ? session.send('Emulation.setScriptExecutionDisabled', { value: false })
+            : session.send('Page.setWebLifecycleState', { state: 'active' }),
+        );
+        report.freeze.released = true;
+      } catch (error) {
+        report.freeze.released = false;
+        report.freeze.releaseError = describeFailure(error);
+      }
+    }
+    report.canvasAfter = await time('canvasAfter', 5_000, () => current.evaluate(canvasStateInPage)).catch((error: unknown) => describeFailure(error));
+  } catch (error) {
+    report.error = report.error ?? describeFailure(error);
+  }
+  return report;
+}
+
 interface RenderReport {
   ok: boolean;
   /** 시작한 단계와 그때까지 걸린 시간(ms). 멈춘 단계를 알 수 있다 */
@@ -500,7 +615,7 @@ export async function POST(request: NextRequest): Promise<Response> {
 
   const parsed = bodySchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: 'INVALID_BODY', issues: parsed.error.issues.map((i) => i.message) }, { status: 400 });
-  const { viewport, fontMode, waitMs, webgl, mode, freezeRaf } = parsed.data;
+  const { viewport, fontMode, waitMs, webgl, mode, freezeRaf, shot, jsFreeze } = parsed.data;
 
   // 운영과 같은 SSRF 검사(PRD 8.6). 허용 목록 없이 만든다
   const checker = createHostChecker();
@@ -522,6 +637,18 @@ export async function POST(request: NextRequest): Promise<Response> {
     launched = await launchBrowser({ webgl });
     timings.launchMs = launched.launchMs;
     const browserInfo = await withHardTimeout(systemInfo(launched), 10_000, () => new Error('SystemInfo timeout'));
+
+    if (mode === 'shot') {
+      return NextResponse.json({
+        target: { host: target.host, viewport, webgl, mode, shot, jsFreeze },
+        instance,
+        processesAtStart,
+        launchMs: launched.launchMs,
+        result: await runShot(launched, viewport, target.href, checker, shot, jsFreeze),
+        closeResult: await launched.close(),
+        processesAfterClose: await processSnapshot(),
+      });
+    }
 
     if (mode === 'render') {
       return NextResponse.json({
