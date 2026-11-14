@@ -57,10 +57,12 @@ const bodySchema = z.object({
   freezeRaf: z.boolean().default(false),
   shot: z.enum(['first-screen', 'full']).default('first-screen'),
   jsFreeze: z.enum(['none', 'script-disabled', 'frozen']).default('none'),
+  /** shot 모드: 촬영 1회 시간 제한. 촬영에 실제로 몇 초가 드는지 본다 */
+  shotTimeoutMs: z.number().int().min(1_000).max(90_000).default(20_000),
+  /** shot 모드: playwright(검사와 같음) / playwright-allow(animations·caret 처리 없음) / cdp(Page.captureScreenshot, optimizeForSpeed) */
+  capture: z.enum(['playwright', 'playwright-allow', 'cdp']).default('playwright'),
 });
 
-/** shot 모드의 촬영 1회 시간 제한 */
-const SHOT_TIMEOUT_MS = 20_000;
 /** JS를 멈춘 뒤 촬영 전까지 기다리는 시간 */
 const JS_FREEZE_SETTLE_MS = 300;
 
@@ -430,6 +432,8 @@ async function runShot(
   checker: ReturnType<typeof createHostChecker>,
   shot: 'first-screen' | 'full',
   jsFreeze: 'none' | 'script-disabled' | 'frozen',
+  shotTimeoutMs: number,
+  capture: 'playwright' | 'playwright-allow' | 'cdp',
 ): Promise<ShotReport> {
   const report: ShotReport = {
     ok: false,
@@ -476,16 +480,27 @@ async function runShot(
     }
 
     try {
-      const png = await time('screenshot', SHOT_TIMEOUT_MS + 2_000, () =>
-        current.screenshot({
+      const clip = { x: 0, y: 0, width: viewportSize.width, height: viewportSize.height };
+      const png = await time('screenshot', shotTimeoutMs + 2_000, async () => {
+        if (capture === 'cdp') {
+          const cdp = session ?? (await context.newCDPSession(current));
+          const height = shot === 'full' ? await current.evaluate(() => document.documentElement.scrollHeight) : clip.height;
+          const result = (await cdp.send('Page.captureScreenshot', {
+            format: 'png',
+            optimizeForSpeed: true,
+            captureBeyondViewport: shot === 'full',
+            clip: { ...clip, height, scale: 1 },
+          })) as { data: string };
+          return Buffer.from(result.data, 'base64');
+        }
+        return current.screenshot({
           type: 'png',
           scale: 'css',
-          animations: 'disabled',
-          caret: 'hide',
-          timeout: SHOT_TIMEOUT_MS,
-          ...(shot === 'full' ? { fullPage: true } : { clip: { x: 0, y: 0, width: viewportSize.width, height: viewportSize.height } }),
-        }),
-      );
+          ...(capture === 'playwright' ? { animations: 'disabled' as const, caret: 'hide' as const } : {}),
+          timeout: shotTimeoutMs,
+          ...(shot === 'full' ? { fullPage: true } : { clip }),
+        });
+      });
       const image = decodePng(png);
       report.ok = true;
       report.screenshot = { width: image.width, height: image.height, pngBytes: png.byteLength };
@@ -659,7 +674,7 @@ export async function POST(request: NextRequest): Promise<Response> {
 
   const parsed = bodySchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: 'INVALID_BODY', issues: parsed.error.issues.map((i) => i.message) }, { status: 400 });
-  const { viewport, fontMode, waitMs, webgl, mode, freezeRaf, shot, jsFreeze, count, stabilize } = parsed.data;
+  const { viewport, fontMode, waitMs, webgl, mode, freezeRaf, shot, jsFreeze, count, stabilize, shotTimeoutMs, capture } = parsed.data;
 
   // 운영과 같은 SSRF 검사(PRD 8.6). 허용 목록 없이 만든다
   const checker = createHostChecker();
@@ -692,11 +707,11 @@ export async function POST(request: NextRequest): Promise<Response> {
 
     if (mode === 'shot') {
       return NextResponse.json({
-        target: { host: target.host, viewport, webgl, mode, shot, jsFreeze },
+        target: { host: target.host, viewport, webgl, mode, shot, jsFreeze, shotTimeoutMs, capture },
         instance,
         processesAtStart,
         launchMs: launched.launchMs,
-        result: await runShot(launched, viewport, target.href, checker, shot, jsFreeze),
+        result: await runShot(launched, viewport, target.href, checker, shot, jsFreeze, shotTimeoutMs, capture),
         closeResult: await launched.close(),
         processesAfterClose: await processSnapshot(),
       });
