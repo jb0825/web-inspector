@@ -10,7 +10,7 @@ import { buildIssues, type BuildIssuesResult } from '@/server/detect/pipeline';
 import { getInternalEnv } from '@/server/env';
 import { InspectionError, isInspectionError } from '@/server/errors';
 import { buildViewportResult, finalizeIssues } from '@/server/evidence/finalize';
-import { logEvent, type Logger } from '@/server/log';
+import { describeFailure, logEvent, type Logger } from '@/server/log';
 import { createHostChecker, type HostChecker } from '@/server/security/ssrf';
 import { browserStageError, browserStageStatus, withSkippedReasons } from '@/server/status';
 import { createBlobStorage, type ScreenshotStorage } from '@/server/store/blob';
@@ -46,6 +46,11 @@ export interface RenderOptions {
   checker: HostChecker;
   /** 이 viewport에 쓸 수 있는 남은 시간. 넘으면 TIME_BUDGET_EXCEEDED */
   timeLimitMs: number;
+  /**
+   * 단계를 시작할 때 호출한다(로그용). viewport가 멈췄을 때 어느 단계에서 멈췄는지 운영 로그로 알 수 있게 한다.
+   * 결과를 기다리지 않고 바로 남기므로, 끝나지 않은 단계도 기록된다.
+   */
+  onStep?: (step: string) => void;
 }
 
 export interface InspectionDeps {
@@ -87,7 +92,7 @@ export async function renderViewport(
   browser: Browser,
   viewport: Viewport,
   url: string,
-  { checker, timeLimitMs }: RenderOptions,
+  { checker, timeLimitMs, onStep }: RenderOptions,
 ): Promise<RenderedViewport> {
   const timings: Record<string, number> = {};
   let context: BrowserContext | null = null;
@@ -112,11 +117,13 @@ export async function renderViewport(
   const t0 = Date.now();
   cutAfter(timeLimitMs, 'inspection budget');
   try {
+    onStep?.('context');
     context = await createViewportContext(browser, viewport, { checker });
     if (cutReason) throw new Error('cut');
     timings.contextMs = Date.now() - t0;
 
     const stabilizeStart = Date.now();
+    onStep?.('open-and-stabilize');
     const { page, meta } = await openAndStabilize(context, url, {
       ...DEFAULT_STABILIZE_BUDGET,
       navigationMs: Math.min(DEFAULT_STABILIZE_BUDGET.navigationMs, Math.max(1, timeLimitMs - timings.contextMs)),
@@ -125,10 +132,12 @@ export async function renderViewport(
     timings.openAndStabilizeMs = Date.now() - stabilizeStart;
 
     const measureStart = Date.now();
+    onStep?.('collect');
     cutAfter(MEASURE_AND_SCREENSHOT_BUDGET_MS, 'measure budget');
     const collected = await collectViewport(page, viewport, { timeoutMs: Math.min(COLLECT_TIMEOUT_MS, MEASURE_AND_SCREENSHOT_BUDGET_MS) });
     timings.collectMs = Date.now() - measureStart;
     const shotStart = Date.now();
+    onStep?.('screenshot');
     // 수집 직후 같은 page로 찍는다(T07)
     const screenshot = await captureFullPage(page, viewport, collected);
     timings.screenshotMs = Date.now() - shotStart;
@@ -138,6 +147,7 @@ export async function renderViewport(
     throw error;
   } finally {
     for (const timer of timers) clearTimeout(timer);
+    onStep?.('close-context');
     await closeContext();
   }
 }
@@ -248,8 +258,8 @@ export async function runInspection(id: string, deps: InspectionDeps): Promise<v
     const launchStart = now();
     try {
       browser = await deps.launchBrowser();
-    } catch {
-      log('launch-failed', { id, host, durationMs: now() - launchStart });
+    } catch (error) {
+      log('launch-failed', { id, host, durationMs: now() - launchStart, cause: describeFailure(error) });
       await saveResult(failedDoc(doc, { code: 'BROWSER_CRASH', message: 'Browser launch failed' }, now()));
       return;
     }
@@ -270,13 +280,17 @@ export async function runInspection(id: string, deps: InspectionDeps): Promise<v
       const guard = sleepReject(remaining + RENDER_GRACE_MS, () => new InspectionError('TIME_BUDGET_EXCEEDED', 'Viewport did not stop in time'));
       try {
         rendered[viewport] = await Promise.race([
-          deps.renderViewport(browser, viewport, doc.url, { checker, timeLimitMs: remaining }),
+          deps.renderViewport(browser, viewport, doc.url, {
+            checker,
+            timeLimitMs: remaining,
+            onStep: (s) => log('viewport-step', { id, host, viewport, step: s, durationMs: now() - viewportStart }),
+          }),
           guard.promise,
         ]);
         log('viewport', { id, host, viewport, durationMs: now() - viewportStart, timings: rendered[viewport]?.timings });
       } catch (error) {
         errors[viewport] = errorInfo(error);
-        log('viewport-failed', { id, host, viewport, code: errors[viewport]?.code, durationMs: now() - viewportStart });
+        log('viewport-failed', { id, host, viewport, code: errors[viewport]?.code, durationMs: now() - viewportStart, cause: describeFailure(error) });
       } finally {
         guard.cancel();
       }
@@ -347,7 +361,7 @@ export async function runInspection(id: string, deps: InspectionDeps): Promise<v
     await callAnalyze(id, host, deps);
   } catch (error) {
     // 예상하지 못한 오류. 아직 브라우저 단계가 끝나지 않았다면 failed로 남긴다
-    log('unexpected', { id, host, code: errorInfo(error).code });
+    log('unexpected', { id, host, code: errorInfo(error).code, cause: describeFailure(error) });
     if (doc && (doc.status === 'pending' || doc.status === 'running')) {
       await saveResult(failedDoc(doc, { code: 'INTERNAL_ERROR', message: 'Unexpected error' }, now())).catch(() => undefined);
     }
@@ -411,7 +425,7 @@ async function callAnalyze(id: string, host: string | undefined, deps: Inspectio
         log('analyze-call-timeout', { id, host, attempt, durationMs: now() - at });
         return;
       }
-      log('analyze-call-failed', { id, host, attempt, code: errorInfo(error).code, durationMs: now() - at });
+      log('analyze-call-failed', { id, host, attempt, code: errorInfo(error).code, durationMs: now() - at, cause: describeFailure(error) });
     }
   }
   try {
