@@ -9,6 +9,7 @@
 
 - 스크린샷 촬영 실패를 viewport 실패에서 분리: 찍지 못하면 `SCREENSHOT_FAILED`로 스크린샷 없이 결과를 남긴다. 시간 초과 뒤에는 다시 찍지 않는다 (5.2.4, 5.4.1, 6.2.4, 8.2, 10장)
 - 측정과 스크린샷 20s → 40s, Desktop에 Mobile 몫(45s)을 남기는 규칙 추가 (8.1.3)
+- canvas가 있고 실제 픽셀이 8,192px를 넘으면 줄인 크기부터 촬영, 스크린샷이 없으면 측정값으로 그린 도면 표시 (5.2.4, 5.4.1)
 - 동시 실행 기본값 2 → 1, 검사 시간 목표에 production 실측값 추가, Chromium core 덤프 정리 (8.4, 8.5)
 
 ### Changelog (v1.1 → v1.2)
@@ -239,7 +240,7 @@ Requirements:
 - 스크린샷을 볼 수 있게 한다.
 - `html` 또는 `body`가 `overflow-x: hidden`/`clip`이면 스크린샷 너비를 `layoutWidth`로 자른다. 사용자가 볼 수 없는 영역을 보여주지 않기 위해서다. 그 밖의 경우(예: Mobile 축소로 넓어진 페이지)는 실제 페이지 너비대로 찍는다.
 - 촬영이 실패해도 측정 결과는 버리지 않는다(T14). 서버리스 Chromium(1 vCPU, 소프트웨어 렌더링)에서는 촬영이 느리고(production 측정: Desktop 한 장 12~57초, canvas가 없는 페이지의 첫 화면도 12초) 가끔 "Unable to capture screenshot"으로 바로 실패한다.
-  1. 전체(위 높이 상한 적용)를 찍는다. 시도마다 "측정과 스크린샷" 예산(8.1.3)에 남은 시간을 모두 쓴다.
+  1. 전체(위 높이 상한 적용)를 찍는다. 시도마다 "측정과 스크린샷" 예산(8.1.3)에 남은 시간을 모두 쓴다. 단, 페이지에 canvas가 있고 전체 촬영의 실제 픽셀이 가로나 세로로 8,192px를 넘으면 전체를 건너뛰고 2번의 줄인 크기부터 찍는다(production: WebGL 페이지의 Mobile 1170×14,628 촬영은 38초 시간 초과, 1170×8,190은 성공. canvas 없는 1170×15,000은 성공).
   2. 시간 초과가 아닌 오류로 바로 실패했을 때만 줄여서 다시 찍는다: 실제 픽셀(CSS px × `deviceScaleFactor`)이 가로·세로 8,192px 이하(Mobile CSS 2,730px) → 첫 화면 높이(Desktop 900px, Mobile 844px). 앞 방식보다 작아지지 않는 방식은 건너뛴다.
   3. 시간 초과가 나면 다시 찍지 않는다. 시간 초과된 촬영이 page를 계속 붙잡아, 같은 page의 다음 촬영이 크기와 관계없이 모두 실패하기 때문이다(production 확인).
   - 줄여 찍은 결과는 높이 상한으로 자른 것과 같이 `screenshotTruncated`로 표시하고, 스크린샷 밖의 이슈는 `cropRect`가 `null`이다(5.4.1).
@@ -398,7 +399,7 @@ Confidence 하향 조건:
 - 크롭 이미지를 따로 만들어 업로드하지 않는다. 화면에서 전체 스크린샷을 `cropRect` 영역만 보이게 잘라 표시하고, 그 위에 대상 요소의 박스를 그린다.
 - `cropRect`는 코드(`src/server/evidence/crop.ts`)가 계산한다: `boundingBox`를 사방 24px 넓히고, 최소 크기 320×160px을 보장한 뒤, 실제 스크린샷 경계(`screenshotWidth × screenshotHeight`) 안으로 맞춘다.
 - 대상 요소가 잘린 스크린샷 높이(5.2.4) 밖에 있으면 `cropRect`는 `null`이고, 화면에 "스크린샷 범위 밖" 안내를 표시한다.
-- 스크린샷을 찍지 못한 viewport(`SCREENSHOT_FAILED`, 5.2.4)는 `cropRect`가 모두 `null`이고, 화면에 "스크린샷 없음"을 표시한다.
+- 스크린샷을 찍지 못한 viewport(`SCREENSHOT_FAILED`, 5.2.4)는 `cropRect`가 모두 `null`이고, 화면은 저장된 측정값으로 그린 이슈 도면을 보여준다(WIREFRAME 5.6, 6.4).
 - 이유: 이슈마다 이미지를 업로드하면 Blob 사용량과 검사 시간이 늘고, 별도 이미지 처리 라이브러리가 필요해진다.
 
 #### 5.4.2 Source Hints

@@ -169,6 +169,8 @@ src/
   lib/                                  # 서버·클라이언트 공용 유틸 (도메인 로직 없음)
     utils.ts                            # cn() 등
     format.ts                           # 숫자, 날짜, px 표기
+    rect.ts                             # 사각형 교집합·합집합
+    cropBasis.ts                        # cropRect 기준 박스(DETECTION_RULES 8.3). 서버 cropRect와 화면 이슈 도면이 함께 쓴다
 
 public/fonts/                           # Noto Sans KR 폰트 파일과 OFL 라이선스 (단일 원본, 7.1)
 public/fixtures/                        # 모든 페이지가 /fonts/의 폰트를 @font-face로 사용 (7.1)

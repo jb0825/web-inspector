@@ -342,10 +342,11 @@ MVP에는 그 밖의 내비게이션 메뉴를 두지 않는다.
 - 이슈 박스와 마커
 - 하단 요약: 이슈 수, 스크린샷 범위 밖 이슈 수
 - 실패한 viewport는 이미지 자리에 실패 원인을 표시한다
-- 스크린샷만 없는 viewport(`SCREENSHOT_FAILED`, PRD 5.2.4)는 이미지 자리에 "{Viewport} 스크린샷이 없습니다"와 안내 문구, 코드를 표시하고 마커와 하단 요약을 그리지 않는다. 이슈 목록에는 그대로 나온다
+- 스크린샷만 없는 viewport(`SCREENSHOT_FAILED`, PRD 5.2.4)는 이미지 자리에 측정값으로 그린 페이지 도면을 보여준다. 페이지 윤곽(`layoutWidth` × `documentHeight`)과 화면 경계선(`layoutWidth`, 점선)만 그리고, 화면 밖으로 나간 이슈 박스까지 들어가게 도면을 넓힌다. 이슈 박스와 마커, 클릭 동작, 하단 요약은 스크린샷과 같다. 아래에 "스크린샷을 찍지 못해 측정값으로 그린 배치도입니다. SCREENSHOT_FAILED"를 표시한다
+- 도면은 iframe으로 실제 페이지를 넣지 않는다. 삽입이 막힌 사이트가 많고, 측정 시점과 다른 화면이 나오며, 검사 대상 페이지를 서비스 화면 안에서 실행하게 되기 때문이다
 
 **마커 좌표 규칙**
-- 이미지 위에 SVG 오버레이를 겹치고, `viewBox="0 0 {screenshotWidth} {screenshotHeight}"`로 둔다(DETECTION_RULES 3.1.1: Mobile 축소 시 스크린샷이 `layoutWidth`보다 넓다). 그 안에 `occurrence.boundingBox`(문서 기준 CSS px)를 그대로 그린다. 이미지 표시 크기가 바뀌어도 SVG가 같은 비율로 늘고 줄어 마커 위치가 맞는다.
+- 이미지 위에 SVG 오버레이를 겹치고, `viewBox="0 0 {screenshotWidth} {screenshotHeight}"`로 둔다(도면이면 `{max(layoutWidth, 이슈 박스 오른쪽 끝)} × {max(documentHeight, 이슈 박스 아래쪽 끝)}`)(DETECTION_RULES 3.1.1: Mobile 축소 시 스크린샷이 `layoutWidth`보다 넓다). 그 안에 `occurrence.boundingBox`(문서 기준 CSS px)를 그대로 그린다. 이미지 표시 크기가 바뀌어도 SVG가 같은 비율로 늘고 줄어 마커 위치가 맞는다.
 - `boundingBox.y`가 `screenshotHeight` 이상이면 마커를 그리지 않고 "범위 밖" 개수에 포함한다.
 - meta viewport가 없는 Mobile 페이지에서도 이 규칙이 맞는지 구현 시 Fixture로 확인한다.
 - 마커 번호는 현재 필터를 통과한 이슈 목록의 순번이다. Needs Review 이슈는 그룹을 펼쳤을 때만 흐린 스타일로 표시한다.
@@ -489,7 +490,16 @@ P1  Text Overflow · clipped   button "지금 무료로 시작하기"   mobile-o
 ### 6.4 Evidence
 
 - occurrence마다 반복한다(Desktop → Mobile 순). `both`면 두 블록이 나온다.
-- 하이라이트 스크린샷: 전체 스크린샷을 `cropRect` 영역만 보이게 잘라 표시하고, 대상 요소의 박스를 그린다. `cropRect`가 `null`이면 "스크린샷 범위 밖"을, 그 viewport에 스크린샷이 없으면(`SCREENSHOT_FAILED`) "스크린샷 없음"을 표시한다.
+- 하이라이트 스크린샷: 전체 스크린샷을 `cropRect` 영역만 보이게 잘라 표시하고, 대상 요소의 박스를 그린다. `cropRect`가 `null`이면 "스크린샷 범위 밖"을 표시한다.
+- 이슈 도면: 그 viewport에 스크린샷이 없으면(`SCREENSHOT_FAILED`) 하이라이트 자리에 저장된 측정값으로 그린 SVG 배치도를 보여준다(데이터 모델은 그대로).
+  - 영역: `cropRect`와 같은 기준 박스(DETECTION_RULES 8.3)에 아래 도형을 더하고, 같은 여백(24px)과 최소 크기(320×160)를 쓴다. 화면 경계로 자르지 않는다.
+  - 공통: 화면 경계선(0과 `layoutWidth`, 점선), 화면 밖은 회색 배경, 대상 요소 박스, `relatedElements` 박스(역할별 이름)
+  - viewport-overflow: `elementLeft`~`elementRight` 중 화면 밖 부분을 강조한다("화면 밖 {n}px")
+  - spill: 컨테이너(`bordered-ancestor`) 박스와 넘친 방향의 텍스트 범위("아래로 넘친 텍스트 {n}px" 등)
+  - clipped: 요소 박스와 `scrollWidth − clientWidth`(또는 `scrollHeight − clientHeight`) 크기의 잘린 내용. 잘린 글자의 실제 위치는 저장되지 않아 요소 끝에 붙여 그리고, 그 사실을 안내한다
+  - overlap: 두 요소 박스와 교차 영역
+  - 도면 아래에 "측정값으로 그린 배치도입니다. 스크린샷을 찍지 못했습니다(SCREENSHOT_FAILED)."와 도형 범례를 둔다(색에만 의존하지 않는다).
+- Header 아래 도구 (모든 이슈): "실제 페이지 열기"(최종 URL을 새 탭으로, http/https만)와 "개발자 도구에서 찾기"(콘솔에 붙여 넣을 `document.querySelector("{selector}")`를 복사). 실제 페이지는 검사 시점과 다를 수 있다.
 - 측정값 표: `measured`, `expected`, `delta`의 키와 값. 값은 px 정수로 표시한다.
 - Selector에는 복사 버튼을 둔다.
 - 관련 요소: `relatedElements`의 selector와 역할. Element Overlap은 상대 요소를 반드시 표시한다. 첫 번째가 대표 상대 요소(교차 면적 최대)이고 최대 5개다. `measured.overlapTargetCount`가 5보다 크면 "외 {overlapTargetCount − 5}개 요소와도 겹칩니다"를 덧붙인다(PRD 5.3.3).
