@@ -53,12 +53,12 @@ describe('isReportReady', () => {
 
 describe('elapsedRange', () => {
   const times = { createdAt: 'c', updatedAt: 'u' };
-  it('startedAt이 없으면 createdAt 기준', () => {
+  it('startedAt이 있어도 createdAt 기준 (WIREFRAME 4.3)', () => {
     expect(elapsedRange({ ...times, status: 'pending' })).toEqual({ startIso: 'c', endIso: null });
-    expect(elapsedRange({ ...times, startedAt: 's', status: 'running' })).toEqual({ startIso: 's', endIso: null });
+    expect(elapsedRange({ ...times, status: 'running' })).toEqual({ startIso: 'c', endIso: null });
   });
   it('종료 상태면 completedAt(없으면 updatedAt)에서 멈춘다', () => {
-    expect(elapsedRange({ ...times, startedAt: 's', completedAt: 'd', status: 'failed' })).toEqual({ startIso: 's', endIso: 'd' });
+    expect(elapsedRange({ ...times, completedAt: 'd', status: 'failed' })).toEqual({ startIso: 'c', endIso: 'd' });
     expect(elapsedRange({ ...times, status: 'failed' })).toEqual({ startIso: 'c', endIso: 'u' });
   });
 });

@@ -1,16 +1,21 @@
-// TEMP(T11): T12에서 교체
+import { Suspense } from 'react';
 import { Header } from '@/components/layout/Header';
 import { PageContainer } from '@/components/layout/PageContainer';
-import { TempReport } from './TempReport';
+import { ReportSkeleton } from '@/features/report';
+import { ReportScreen } from './ReportScreen';
 
-// 진행 화면이 이동할 대상이 있어야 해서 둔 최소 화면. 본 화면(features/report)은 T12에서 만든다
+// PRD 7.3, WIREFRAME 5장. 결과는 클라이언트가 polling으로 받는다(API_SPEC 7장).
+// 선택 상태(useSearchParams)를 읽는 부분은 Suspense 경계 안에 둔다.
 export default async function ReportPage(props: PageProps<'/report/[id]'>) {
   const { id } = await props.params;
   return (
     <>
       <Header />
-      <PageContainer className="py-12">
-        <TempReport key={id} id={id} />
+      <PageContainer size="wide" className="py-8">
+        <Suspense fallback={<ReportSkeleton />}>
+          {/* 다른 검사로 이동하면 polling과 화면 상태를 새로 시작한다 */}
+          <ReportScreen key={id} id={id} />
+        </Suspense>
       </PageContainer>
     </>
   );

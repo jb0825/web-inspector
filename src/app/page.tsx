@@ -12,6 +12,9 @@ export default function HomePage() {
       <PageContainer className="flex flex-col gap-8 py-12 sm:py-16">
         <div className="flex flex-col gap-3">
           <h1 className="text-h1 font-semibold sm:text-display">웹사이트 UI 문제를 찾아드립니다</h1>
+          <p lang="en" className="text-h3 font-medium text-text-secondary">
+            Find UI issues. Turn them into fixes.
+          </p>
           <p className="text-body-lg text-text-secondary">
             URL을 입력하면 Desktop과 Mobile에서 페이지를 렌더링해 텍스트 넘침, 요소 겹침, 화면 밖 넘침을 측정하고, 고칠 일을 개발 태스크와
             코딩 에이전트용 프롬프트로 정리합니다.

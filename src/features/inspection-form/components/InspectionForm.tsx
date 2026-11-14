@@ -1,9 +1,10 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useId, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { createInspection } from '@/components/api/inspections';
 import { requestErrorMessage } from '@/components/inspection/labels';
+import { takeRetryUrl } from '@/components/inspection/retryUrl';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { cn } from '@/lib/utils';
@@ -21,6 +22,13 @@ export function InspectionForm() {
   // 상태 갱신 전에 Enter를 두 번 눌러도 요청이 한 번만 나가게 한다
   const inFlight = useRef(false);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // WIREFRAME 3.4: 다시 시도로 들어오면 이전 URL을 채운다. sessionStorage는 브라우저에만 있으므로 마운트 뒤에 읽는다
+  useEffect(() => {
+    const retryUrl = takeRetryUrl();
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 서버 렌더링 결과와 맞추려고 마운트 뒤 한 번만 채운다
+    if (retryUrl) setValue(retryUrl);
+  }, []);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

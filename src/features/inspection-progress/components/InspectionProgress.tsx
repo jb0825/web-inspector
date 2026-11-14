@@ -2,9 +2,9 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useRef, useState } from 'react';
-import { createInspection } from '@/components/api/inspections';
-import { errorDetail, ERROR_MESSAGES, isInspectionStep, requestErrorMessage, STEP_LABELS } from '@/components/inspection/labels';
+import { useEffect } from 'react';
+import { errorDetail, ERROR_MESSAGES, isInspectionStep, STEP_LABELS } from '@/components/inspection/labels';
+import { stashRetryUrl } from '@/components/inspection/retryUrl';
 import { StatusBadge } from '@/components/inspection/StatusBadge';
 import { useInspectionPolling } from '@/components/polling/useInspectionPolling';
 import { Button, buttonClassName } from '@/components/ui/Button';
@@ -133,25 +133,13 @@ function PollError({ onRetry }: { onRetry: () => void }) {
 
 function FailedActions({ inspection }: { inspection: Inspection }) {
   const router = useRouter();
-  const [submitting, setSubmitting] = useState(false);
-  const [retryError, setRetryError] = useState<string | null>(null);
-  const inFlight = useRef(false);
   const error = inspection.error;
   const detail = error ? errorDetail(error) : null;
 
-  async function retryInspection() {
-    if (inFlight.current) return;
-    inFlight.current = true;
-    setSubmitting(true);
-    setRetryError(null);
-    const result = await createInspection(inspection.url);
-    if (result.ok) {
-      router.push(`/inspections/${encodeURIComponent(result.id)}`);
-      return;
-    }
-    inFlight.current = false;
-    setSubmitting(false);
-    setRetryError(requestErrorMessage(result.code));
+  // WIREFRAME 4.5: 새 검사를 바로 만들지 않고, URL을 넘겨 Home에서 다시 시작하게 한다
+  function retryFromHome() {
+    stashRetryUrl(inspection.url);
+    router.push('/');
   }
 
   return (
@@ -163,18 +151,13 @@ function FailedActions({ inspection }: { inspection: Inspection }) {
         </div>
       </Notice>
       <div className="flex flex-col gap-2 sm:flex-row">
-        <Button onClick={retryInspection} loading={submitting} className="min-h-11 w-full sm:w-auto">
-          다시 검사
+        <Button onClick={retryFromHome} className="min-h-11 w-full sm:w-auto">
+          다시 시도
         </Button>
         <Link href="/" className={buttonClassName('secondary', 'md', 'min-h-11 w-full sm:w-auto')}>
           홈으로
         </Link>
       </div>
-      {retryError ? (
-        <p role="alert" className="text-body-sm text-error-text">
-          {retryError}
-        </p>
-      ) : null}
     </section>
   );
 }
