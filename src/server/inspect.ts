@@ -2,6 +2,7 @@ import 'server-only';
 import type { Browser } from 'playwright-core';
 import { launchBrowser, type LaunchedBrowser } from '@/server/browser/launch';
 import { renderViewport, type RenderedViewport, type RenderOptions } from '@/server/browser/render';
+import { flattenSnapshot, resourceSnapshot, type ResourceSnapshot } from '@/server/browser/resources';
 import { inspectViewportInFreshBrowser } from '@/server/browser/session';
 import { BROWSER_CLOSE_TIMEOUT_MS, BROWSER_KILL_TIMEOUT_MS } from '@/server/browser/timeouts';
 import { buildIssues, type BuildIssuesResult } from '@/server/detect/pipeline';
@@ -47,6 +48,8 @@ export interface InspectionDeps {
   log: Logger;
   /** 검사 중지 요청을 확인하는 간격. 기본값 CANCEL_POLL_MS (테스트에서 줄인다) */
   cancelPollMs?: number;
+  /** 인스턴스 자원 사용량(로그용, T14). 브라우저 실행 전후와 종료 뒤에 남긴다. 없으면 남기지 않는다 */
+  resourceSnapshot?: () => Promise<ResourceSnapshot | null>;
 }
 
 /** 검사 중지 요청 확인 간격. 검사 1회(최대 300초)에 Redis GET 최대 150번 */
@@ -207,6 +210,14 @@ export async function runInspection(id: string, deps: InspectionDeps): Promise<v
       }
       await step(viewport === 'desktop' ? 'rendering_desktop' : 'rendering_mobile');
       const viewportStart = now();
+      // 같은 인스턴스에서 브라우저를 여러 번 띄운 뒤 실행이 바로 실패하는 문제(T14) 진단용. 로그 실패는 무시한다
+      const logResources = (phase: string) =>
+        deps.resourceSnapshot?.()
+          .then((snapshot) => {
+            if (snapshot) log('resources', { id, host, viewport, step: phase, resources: flattenSnapshot(snapshot) });
+          })
+          .catch(() => undefined);
+      await logResources('before-launch');
       // 마지막 안전장치: 단계별 강제 제한(render.ts)과 브라우저 강제 종료(launch.ts)까지 끝났어야 하는 시각
       const guard = sleepReject(remaining + RENDER_GRACE_MS, () => new InspectionError('TIME_BUDGET_EXCEEDED', 'Viewport did not stop in time'));
       try {
@@ -229,12 +240,14 @@ export async function runInspection(id: string, deps: InspectionDeps): Promise<v
             onLaunched: (launched) => {
               current = launched;
               log('launch', { id, host, viewport, durationMs: launched.launchMs });
+              void logResources('after-launch');
               // 실행 중에 중지 요청을 받았으면 바로 닫는다
               if (cancelled) void launched.close();
             },
             onClosed: (result, durationMs) => {
               current = null;
               log(result === 'killed' ? 'browser-killed' : 'browser-closed', { id, host, viewport, durationMs });
+              void logResources('after-close');
             },
           }),
           guard.promise,
@@ -477,6 +490,7 @@ export function createInspectionDeps(requestOrigin: string | undefined): Inspect
     renderViewport,
     createChecker: () => createHostChecker(),
     triggerAnalyze: createAnalyzeTrigger(requestOrigin),
+    resourceSnapshot,
     now: Date.now,
     log: logEvent,
   };

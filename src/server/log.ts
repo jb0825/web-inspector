@@ -19,6 +19,8 @@ export interface LogFields {
   cause?: string;
   /** 스크린샷 진단 값(크기, 배율, canvas 수, 촬영 방식). 숫자와 정해진 이름만 넣는다(T14) */
   screenshot?: Record<string, number | string>;
+  /** 인스턴스 자원 사용량(파일 디스크립터 수, /tmp 크기와 상위 항목 이름, Chromium 프로세스 수, T14) */
+  resources?: Record<string, number | string>;
 }
 
 export type Logger = (event: string, fields: LogFields) => void;

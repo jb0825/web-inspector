@@ -13,6 +13,8 @@
 //     shot "first-screen"은 viewport 크기를 바꾸지 않는 clip 촬영, "full"은 검사와 같은 전체 페이지 촬영이다.
 //     jsFreeze "script-disabled"는 CDP Emulation.setScriptExecutionDisabled(true), "frozen"은 Page.setWebLifecycleState(frozen)를
 //     촬영 직전에 걸고 촬영 뒤 푼다
+//   - mode "launch-loop": 한 요청 안에서(같은 인스턴스) 브라우저를 count번 띄운다. 매번 실행 → context·page 열기·안정화 → 닫기를 하고,
+//     실행 전, 실행 후, 닫은 뒤의 자원 사용량(fd, /tmp, Chromium 프로세스)을 돌려준다
 //   - freezeRaf true(render 모드): 스크린샷 직전에 window.requestAnimationFrame을 바꿔 애니메이션 루프를 멈춘다.
 //     스크린샷 전후 canvas 크기, resize 이벤트 수, 멈춘 뒤 rAF 요청 수, 스크린샷의 canvas 영역 색 분포를 돌려준다
 //
@@ -26,6 +28,7 @@ import { z } from 'zod';
 import { createViewportContext } from '@/server/browser/devices';
 import { launchBrowser, type LaunchedBrowser } from '@/server/browser/launch';
 import { renderViewport } from '@/server/browser/render';
+import { resourceSnapshot } from '@/server/browser/resources';
 import { randomUUID } from 'node:crypto';
 import { readdir, readFile } from 'node:fs/promises';
 import { inflateSync } from 'node:zlib';
@@ -48,7 +51,9 @@ const bodySchema = z.object({
   fontMode: z.enum(['fetch', 'continue']).default('fetch'),
   waitMs: z.number().int().min(0).max(15_000).default(5_000),
   webgl: z.boolean().default(true),
-  mode: z.enum(['probe', 'render', 'shot']).default('probe'),
+  mode: z.enum(['probe', 'render', 'shot', 'launch-loop']).default('probe'),
+  count: z.number().int().min(1).max(20).default(12),
+  stabilize: z.boolean().default(true),
   freezeRaf: z.boolean().default(false),
   shot: z.enum(['first-screen', 'full']).default('first-screen'),
   jsFreeze: z.enum(['none', 'script-disabled', 'frozen']).default('none'),
@@ -509,6 +514,45 @@ async function runShot(
   return report;
 }
 
+
+/** 같은 인스턴스에서 브라우저를 count번 띄우고 닫으며 자원 사용량 변화를 본다 */
+async function runLaunchLoop(
+  viewport: 'desktop' | 'mobile',
+  url: string,
+  checker: ReturnType<typeof createHostChecker>,
+  count: number,
+  stabilize: boolean,
+): Promise<unknown[]> {
+  const rows: unknown[] = [];
+  for (let i = 1; i <= count; i += 1) {
+    const row: Record<string, unknown> = { i, before: await resourceSnapshot() };
+    const start = Date.now();
+    let launched: LaunchedBrowser | null = null;
+    try {
+      launched = await launchBrowser();
+      row.launchMs = launched.launchMs;
+      row.afterLaunch = await resourceSnapshot();
+      const context = await withHardTimeout(createViewportContext(launched.browser, viewport, { checker }), CONTEXT_TIMEOUT_MS, () => new Error('context timeout'));
+      if (stabilize) {
+        await withHardTimeout(openAndStabilize(context, url), 70_000, () => new Error('open-and-stabilize timeout'));
+      } else {
+        const page = await context.newPage();
+        await withHardTimeout(page.goto(url, { waitUntil: 'load', timeout: 30_000 }), 32_000, () => new Error('goto timeout'));
+      }
+      row.ok = true;
+    } catch (error) {
+      row.ok = false;
+      row.error = describeFailure(error);
+    } finally {
+      if (launched) row.close = await launched.close();
+    }
+    row.totalMs = Date.now() - start;
+    row.afterClose = await resourceSnapshot();
+    rows.push(row);
+  }
+  return rows;
+}
+
 interface RenderReport {
   ok: boolean;
   /** 시작한 단계와 그때까지 걸린 시간(ms). 멈춘 단계를 알 수 있다 */
@@ -615,7 +659,7 @@ export async function POST(request: NextRequest): Promise<Response> {
 
   const parsed = bodySchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: 'INVALID_BODY', issues: parsed.error.issues.map((i) => i.message) }, { status: 400 });
-  const { viewport, fontMode, waitMs, webgl, mode, freezeRaf, shot, jsFreeze } = parsed.data;
+  const { viewport, fontMode, waitMs, webgl, mode, freezeRaf, shot, jsFreeze, count, stabilize } = parsed.data;
 
   // 운영과 같은 SSRF 검사(PRD 8.6). 허용 목록 없이 만든다
   const checker = createHostChecker();
@@ -629,6 +673,14 @@ export async function POST(request: NextRequest): Promise<Response> {
   INSTANCE.requests += 1;
   const instance = { id: INSTANCE.id, ageMs: Date.now() - INSTANCE.startedAt, request: INSTANCE.requests };
   const processesAtStart = await processSnapshot();
+  if (mode === 'launch-loop') {
+    return NextResponse.json({
+      target: { host: target.host, viewport, mode, count, stabilize },
+      instance,
+      loop: await runLaunchLoop(viewport, target.href, checker, count, stabilize),
+    });
+  }
+
   const collected: Collected = { consoleErrors: [], pageErrors: [], failedRequests: [], fontResponses: [], fontRequestsContinued: 0, fontRequestsBlocked: 0 };
   const timings: Record<string, number> = {};
   const started = Date.now();
