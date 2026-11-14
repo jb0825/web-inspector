@@ -99,13 +99,15 @@ src/
     http/inspections.ts                 # API 4개의 요청 처리. route 파일은 의존성(저장소, after)만 넣어 호출한다
     browser/
       launch.ts                         # 환경별 Chromium 실행 (Local / Vercel 분기), 닫기와 강제 종료
+      crashDumps.ts                     # Vercel /tmp의 Chromium core 덤프 삭제 (닫은 뒤, 실행 전. PRD 8.5)
+      resources.ts                      # 인스턴스 자원 사용량 로그 (fd, /tmp, Chromium 프로세스)
       session.ts                        # viewport마다 실행 → 검사 → 닫기 (withFreshBrowser, inspectViewportInFreshBrowser)
       render.ts                         # viewport 1개: context → 안정화 → 수집 → 스크린샷, 단계별 강제 시간 제한
       timeouts.ts                       # withHardTimeout과 강제 제한 상수 (PRD에 없는 값)
       fonts.ts                          # CJK 폰트 로드
       stabilize.ts                      # PRD 5.2.2 렌더링 안정화 절차
       devices.ts                        # Desktop / Mobile context 설정
-      screenshot.ts                     # 전체 페이지 스크린샷, PNG 헤더에서 실제 크기 읽기 (PRD 5.2.4)
+      screenshot.ts                     # 전체 페이지 스크린샷, PNG 헤더에서 실제 크기 읽기, 실패 시 SCREENSHOT_FAILED (PRD 5.2.4)
     collect/
       inpage/                           # page.evaluate로 실행되는 브라우저 내부 코드
       collect.ts                        # viewport별 측정 데이터 수집, 반올림, 후보 정리
@@ -249,7 +251,7 @@ pnpm compare-inspections <before.json> <after.json>   # Before/After 비교 Mark
 | `AI_API_KEY` | LLM API |
 | `AI_MODEL` | 사용할 모델 ID |
 | `INTERNAL_API_SECRET` | `/analyze` 내부 호출 보호 |
-| `MAX_CONCURRENT_INSPECTIONS` | 기본값 2 |
+| `MAX_CONCURRENT_INSPECTIONS` | 기본값 1 (PRD 8.4: Hobby 1 vCPU에서 Chromium 두 개가 CPU를 나눠 쓰지 않게) |
 | `VERCEL_AUTOMATION_BYPASS_SECRET` | 선택. 배포 보호를 켠 경우 내부 `/analyze` 호출에 사용 (API_SPEC 4.3). Vercel의 "Protection Bypass for Automation"을 켜면 제공된다. Preview 확인에 필요하므로 등록해 둔다 |
 | `VERCEL_URL` | Vercel 시스템 환경변수(직접 설정하지 않음). 내부 호출 주소의 2순위 값으로, 요청 host를 알 수 없을 때만 쓴다 (PRD 8.1.2) |
 

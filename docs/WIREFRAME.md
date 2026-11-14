@@ -303,6 +303,7 @@ MVP에는 그 밖의 내비게이션 메뉴를 두지 않는다.
 | 조건 | 문구 예시 |
 |---|---|
 | 실패한 viewport | Mobile 검사에 실패했습니다: {실패 원인}. Desktop 결과만 표시합니다. |
+| 스크린샷 없음 (`SCREENSHOT_FAILED`) | {Viewport} 스크린샷을 찍지 못했습니다. 측정과 이슈는 그대로 볼 수 있지만 화면 위 위치 표시는 없습니다. |
 | 스크린샷 잘림 | {Viewport} 스크린샷은 {screenshotHeight}px까지만 저장되었습니다. (측정은 전체 페이지) |
 | 요소 수 잘림 | 요소가 많아 문서 앞쪽 3,000개만 검사했습니다. |
 | 이슈 수 잘림 (`issuesTruncated`) | 이슈가 {issuesDetected}개 발견되어 우선순위가 높은 상위 200개만 표시합니다. (PRD 5.3.7) |
@@ -341,6 +342,7 @@ MVP에는 그 밖의 내비게이션 메뉴를 두지 않는다.
 - 이슈 박스와 마커
 - 하단 요약: 이슈 수, 스크린샷 범위 밖 이슈 수
 - 실패한 viewport는 이미지 자리에 실패 원인을 표시한다
+- 스크린샷만 없는 viewport(`SCREENSHOT_FAILED`, PRD 5.2.4)는 이미지 자리에 "{Viewport} 스크린샷이 없습니다"와 안내 문구, 코드를 표시하고 마커와 하단 요약을 그리지 않는다. 이슈 목록에는 그대로 나온다
 
 **마커 좌표 규칙**
 - 이미지 위에 SVG 오버레이를 겹치고, `viewBox="0 0 {screenshotWidth} {screenshotHeight}"`로 둔다(DETECTION_RULES 3.1.1: Mobile 축소 시 스크린샷이 `layoutWidth`보다 넓다). 그 안에 `occurrence.boundingBox`(문서 기준 CSS px)를 그대로 그린다. 이미지 표시 크기가 바뀌어도 SVG가 같은 비율로 늘고 줄어 마커 위치가 맞는다.
@@ -487,7 +489,7 @@ P1  Text Overflow · clipped   button "지금 무료로 시작하기"   mobile-o
 ### 6.4 Evidence
 
 - occurrence마다 반복한다(Desktop → Mobile 순). `both`면 두 블록이 나온다.
-- 하이라이트 스크린샷: 전체 스크린샷을 `cropRect` 영역만 보이게 잘라 표시하고, 대상 요소의 박스를 그린다. `cropRect`가 `null`이면 "스크린샷 범위 밖"을 표시한다.
+- 하이라이트 스크린샷: 전체 스크린샷을 `cropRect` 영역만 보이게 잘라 표시하고, 대상 요소의 박스를 그린다. `cropRect`가 `null`이면 "스크린샷 범위 밖"을, 그 viewport에 스크린샷이 없으면(`SCREENSHOT_FAILED`) "스크린샷 없음"을 표시한다.
 - 측정값 표: `measured`, `expected`, `delta`의 키와 값. 값은 px 정수로 표시한다.
 - Selector에는 복사 버튼을 둔다.
 - 관련 요소: `relatedElements`의 selector와 역할. Element Overlap은 상대 요소를 반드시 표시한다. 첫 번째가 대표 상대 요소(교차 면적 최대)이고 최대 5개다. `measured.overlapTargetCount`가 5보다 크면 "외 {overlapTargetCount − 5}개 요소와도 겹칩니다"를 덧붙인다(PRD 5.3.3).

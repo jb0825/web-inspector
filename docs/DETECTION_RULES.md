@@ -672,6 +672,8 @@ r을 [0, screenshotWidth] × [0, screenshotHeight] 안으로 이동 (크기가 �
 if box.y >= screenshotHeight: cropRect = null
 ```
 
+- 스크린샷을 찍지 못한 viewport(`SCREENSHOT_FAILED`, PRD 5.2.4)는 계산하지 않고 모든 occurrence의 `cropRect`가 `null`이다(`src/server/evidence/finalize.ts`).
+
 - Overlap의 b는 대표 상대 요소(`relatedElements[0]`)다.
 - `box`는 크롭으로 **무엇을 보여줄지**만 정한다. 하이라이트 위치인 `boundingBox`는 요소의 rect 그대로다.
 - Viewport Overflow와 `spill`은 넘친 범위까지 `box`를 넓힌다. 글자가 요소 박스 밖으로 나간 모습이 이 이슈의 핵심 증거이기 때문이다(P-06: 박스 너비 358px, 글자 오른쪽 끝 493px).

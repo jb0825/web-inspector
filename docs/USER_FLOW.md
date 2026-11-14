@@ -627,6 +627,11 @@ Mobile: 실패 — 제한 시간 안에 페이지를 불러오지 못했습니�
 - 측정이나 탐지 코드가 실패한 viewport에 기록한다. 그 viewport의 결과(`viewports[viewport]`)는 `null`이다.
 - 처리 방식은 9.5와 같다.
 
+### 9.7.1 Screenshot Failure (`SCREENSHOT_FAILED`)
+
+- 스크린샷만 찍지 못한 경우다(PRD 5.2.4). viewport 실패가 아니어서 상태는 바뀌지 않고, 측정과 이슈는 그대로 보여준다.
+- 그 viewport의 미리보기 자리와 검사 범위 안내에 "{Viewport} 스크린샷을 찍지 못했습니다. 측정과 이슈는 그대로 볼 수 있지만 화면 위 위치 표시는 없습니다."를 표시한다. 마커와 하이라이트 스크린샷은 없고, Issue Detail의 이미지 자리에는 "스크린샷 없음"을 표시한다.
+
 ### 9.8 AI Analysis Failure (`AI_FAILED`)
 
 - 검사 상태는 `partial`이 되고, 규칙 기반 결과(이슈, Evidence, Priority)는 그대로 보여준다.
