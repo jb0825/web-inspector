@@ -47,7 +47,11 @@ export function ScreenshotViewer({ viewport, size, result, error, layout, select
   const [loaded, setLoaded] = useState(false);
   const [failedToLoad, setFailedToLoad] = useState(false);
   const [hovered, setHovered] = useState<string | null>(null);
-  const scale = result && width > 0 ? width / result.screenshotWidth : 0;
+  const image =
+    result && result.screenshotUrl !== null && result.screenshotWidth !== null && result.screenshotHeight !== null
+      ? { url: result.screenshotUrl, width: result.screenshotWidth, height: result.screenshotHeight }
+      : null;
+  const scale = image && width > 0 ? width / image.width : 0;
 
   // hydration 전에 이미 받은(캐시된) 이미지는 load 이벤트가 오지 않는다
   useEffect(() => {
@@ -86,6 +90,20 @@ export function ScreenshotViewer({ viewport, size, result, error, layout, select
     );
   }
 
+  if (!image) {
+    // 스크린샷만 실패한 viewport(SCREENSHOT_FAILED, PRD 5.2.4). 측정과 이슈는 그대로 있다
+    return (
+      <section className={cn('flex min-w-0 flex-col gap-2', className)} aria-label={`${VIEWPORT_LABELS[viewport]} 미리보기`}>
+        {label}
+        <div className="flex h-120 flex-col items-center justify-center gap-1 rounded-lg border border-border bg-background-secondary px-4 text-center lg:h-160">
+          <p className="text-body font-medium text-text-primary">{VIEWPORT_LABELS[viewport]} 스크린샷이 없습니다</p>
+          <p className="text-body-sm text-text-secondary">{ERROR_MESSAGES.SCREENSHOT_FAILED}</p>
+          <code className="font-mono text-caption text-text-tertiary">SCREENSHOT_FAILED</code>
+        </div>
+      </section>
+    );
+  }
+
   const hoveredMarker = layout?.markers.find((m) => m.issueId === hovered) ?? null;
   const pct = (value: number, total: number) => `${(value / total) * 100}%`;
 
@@ -98,9 +116,9 @@ export function ScreenshotViewer({ viewport, size, result, error, layout, select
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             ref={imageRef}
-            src={result.screenshotUrl}
-            width={result.screenshotWidth}
-            height={result.screenshotHeight}
+            src={image.url}
+            width={image.width}
+            height={image.height}
             loading="lazy"
             decoding="async"
             alt={`${VIEWPORT_LABELS[viewport]} 전체 페이지 스크린샷`}
@@ -181,7 +199,7 @@ export function ScreenshotViewer({ viewport, size, result, error, layout, select
         </div>
         {result.screenshotTruncated ? (
           <p className="border-t-2 border-dashed border-border-strong px-3 py-2 text-center text-caption text-text-secondary">
-            스크린샷 끝 (<span className="font-mono tabular-nums">{formatPx(result.screenshotHeight)}px</span>)
+            스크린샷 끝 (<span className="font-mono tabular-nums">{formatPx(image.height)}px</span>)
           </p>
         ) : null}
       </div>

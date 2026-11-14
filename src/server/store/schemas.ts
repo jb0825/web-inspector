@@ -42,9 +42,10 @@ const viewportResultSchema = z.strictObject({
   layoutWidth: z.number(),
   hasMetaViewport: z.boolean(),
   documentHeight: z.number(),
-  screenshotUrl: z.string().min(1),
-  screenshotWidth: z.number().int().positive(),
-  screenshotHeight: z.number().int().positive(),
+  // null: 스크린샷만 실패한 viewport (SCREENSHOT_FAILED, PRD 5.2.4). 세 값이 함께 null인지는 불변 조건 V-2가 본다
+  screenshotUrl: z.string().min(1).nullable(),
+  screenshotWidth: z.number().int().positive().nullable(),
+  screenshotHeight: z.number().int().positive().nullable(),
   screenshotTruncated: z.boolean(),
   elementsInspected: z.number().int().nonnegative(),
   elementsTruncated: z.boolean(),

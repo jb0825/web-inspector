@@ -78,6 +78,8 @@ export function screenshotSources(inspection: Inspection): Record<Viewport, stri
   for (const v of SAMPLE_VIEWPORTS) {
     const result = inspection.viewports[v];
     if (!result) throw new Error(`${v} viewport result is missing`);
+    // 스크린샷이 없는 viewport(SCREENSHOT_FAILED)가 있는 검사는 샘플·사례로 쓰지 않는다
+    if (result.screenshotUrl === null) throw new Error(`${v} screenshot is missing (SCREENSHOT_FAILED)`);
     out[v] = result.screenshotUrl;
   }
   return out;

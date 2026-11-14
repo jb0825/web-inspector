@@ -57,6 +57,7 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
   HTTP_ERROR: '페이지가 오류를 반환했습니다. 봇 차단 때문일 수도 있습니다.',
   BROWSER_CRASH: '검사 브라우저가 비정상 종료되었습니다.',
   DETECTION_FAILED: '페이지를 측정하거나 문제를 탐지하는 중 오류가 발생했습니다.',
+  SCREENSHOT_FAILED: '스크린샷을 찍지 못했습니다. 측정과 이슈는 그대로 볼 수 있습니다.',
   TIME_BUDGET_EXCEEDED: '검사 제한 시간 안에 끝내지 못했습니다.',
   STORAGE_FAILED: '검사 결과를 저장하지 못했습니다.',
   AI_FAILED: '원인 분석 단계를 끝내지 못했습니다. 측정 결과는 그대로 볼 수 있습니다.',
@@ -125,6 +126,8 @@ export const ANALYSIS_UNAVAILABLE_MESSAGES = {
 /** WIREFRAME 5.4 검사 범위 안내 (T12: "AI 실패"는 원인 분석 표현으로 바꾸고, "AI 분석 대상 초과"는 두지 않는다) */
 export const SCOPE_NOTICE_MESSAGES = {
   viewportFailed: (failed: string, reason: string, succeeded: string) => `${failed} 검사에 실패했습니다: ${reason} ${succeeded} 결과만 표시합니다.`,
+  /** 스크린샷만 실패한 viewport (SCREENSHOT_FAILED). viewport 실패가 아니다 */
+  screenshotMissing: (viewport: string) => `${viewport} 스크린샷을 찍지 못했습니다. 측정과 이슈는 그대로 볼 수 있지만 화면 위 위치 표시는 없습니다.`,
   screenshotTruncated: (viewport: string, height: string) => `${viewport} 스크린샷은 ${height}px까지만 저장되었습니다. (측정은 전체 페이지)`,
   elementsTruncated: (viewport: string, count: string) => `요소가 많아 ${viewport} 문서 앞쪽 ${count}개만 검사했습니다.`,
   issuesTruncated: (detected: string, shown: string) => `이슈가 ${detected}개 발견되어 우선순위가 높은 상위 ${shown}개만 표시합니다.`,

@@ -1,6 +1,7 @@
 import { deflateSync } from 'node:zlib';
 import { describe, expect, it, vi } from 'vitest';
 import type { Page } from 'playwright-core';
+import { InspectionError } from '@/server/errors';
 import {
   captureFullPage,
   isRootClip,
@@ -9,8 +10,7 @@ import {
   screenshotClip,
   screenshotPlans,
   SCREENSHOT_MAX_DEVICE_PX,
-  SCREENSHOT_RETRY_RESERVE_MS,
-  SCREENSHOT_TIMEOUT_MS,
+  SCREENSHOT_MIN_ATTEMPT_MS,
   type ScreenshotAttemptFailure,
 } from '@/server/browser/screenshot';
 
@@ -186,10 +186,23 @@ describe('captureFullPage 재시도', () => {
     expect(failures[0]!.diagnostics).toMatchObject({ mode: 'full', cssHeight: 4925, deviceScaleFactor: 3, deviceHeight: 14775, canvasCount: 1 });
   });
 
-  it('모두 실패하면 마지막 오류를 던진다', async () => {
+  it('모두 실패하면 SCREENSHOT_FAILED를 던지고 마지막 오류를 cause에 둔다', async () => {
     const { page, screenshot } = fakePage([new Error('a'), new Error('b'), new Error('last')]);
-    await expect(captureFullPage(page, 'mobile', layout)).rejects.toThrow('last');
+    const error = await captureFullPage(page, 'mobile', layout).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(InspectionError);
+    expect((error as InspectionError).code).toBe('SCREENSHOT_FAILED');
+    expect(((error as InspectionError).cause as Error).message).toBe('last');
     expect(screenshot).toHaveBeenCalledTimes(3);
+  });
+
+  it('시간 초과가 나면 같은 page에서 다시 찍지 않는다 (T14: 앞 촬영이 page를 붙잡는다)', async () => {
+    const timeout = Object.assign(new Error('page.screenshot: Timeout 30000ms exceeded.'), { name: 'TimeoutError' });
+    const { page, screenshot } = fakePage([timeout, png(390, 2730)]);
+    const failures: ScreenshotAttemptFailure[] = [];
+    const error = await captureFullPage(page, 'mobile', layout, { onAttemptFailed: (f) => failures.push(f) }).catch((e: unknown) => e);
+    expect((error as InspectionError).code).toBe('SCREENSHOT_FAILED');
+    expect(screenshot).toHaveBeenCalledTimes(1);
+    expect(failures).toHaveLength(1);
   });
 
   it('처음에 성공하면 full이다', async () => {
@@ -199,40 +212,36 @@ describe('captureFullPage 재시도', () => {
   });
 });
 
-describe('screenshotAttemptTimeout (재시도 시간 남기기)', () => {
-  it('뒤 방식 몫을 남기고 SCREENSHOT_TIMEOUT_MS를 넘지 않는다', () => {
-    // production 사례: 수집 후 약 18.3s 남음, 방식 3개 → full 10s, reduced 4.3s, first-screen 4s
-    expect(screenshotAttemptTimeout(18_300, 2)).toBe(SCREENSHOT_TIMEOUT_MS);
-    expect(screenshotAttemptTimeout(14_000, 2)).toBe(14_000 - 2 * SCREENSHOT_RETRY_RESERVE_MS);
-    expect(screenshotAttemptTimeout(4_000, 0)).toBe(4_000);
-    expect(screenshotAttemptTimeout(30_000, 0)).toBe(SCREENSHOT_TIMEOUT_MS);
+describe('screenshotAttemptTimeout (남은 시간을 모두 쓴다)', () => {
+  it('남은 시간을 그대로 준다. 나누지 않는다', () => {
+    expect(screenshotAttemptTimeout(36_300)).toBe(36_300);
+    expect(screenshotAttemptTimeout(4_000.7)).toBe(4_000);
   });
 
   it('남은 시간이 거의 없어도 최소 시간은 준다', () => {
-    expect(screenshotAttemptTimeout(500, 1)).toBe(1_000);
-    expect(screenshotAttemptTimeout(-100, 0)).toBe(1_000);
+    expect(screenshotAttemptTimeout(500)).toBe(SCREENSHOT_MIN_ATTEMPT_MS);
+    expect(screenshotAttemptTimeout(-100)).toBe(SCREENSHOT_MIN_ATTEMPT_MS);
   });
 });
 
 describe('captureFullPage 시간 제한', () => {
   const layout = { rootOverflowX: { html: 'visible', body: 'visible' }, layoutWidth: 390 };
 
-  it('deadline이 있으면 시도마다 남은 시간을 나눠 준다', async () => {
+  it('deadline이 있으면 시도마다 그때 남은 시간을 모두 준다', async () => {
     const timeouts: number[] = [];
     const page = {
       evaluate: vi.fn(async () => ({ width: 390, height: 4925, canvasCount: 1 })),
       screenshot: vi.fn(async (opts: { timeout: number }) => {
         timeouts.push(opts.timeout);
-        throw new Error('timeout');
+        throw new Error('Protocol error (Page.captureScreenshot): Unable to capture screenshot');
       }),
       isClosed: () => false,
     } as unknown as Page;
     const failures: ScreenshotAttemptFailure[] = [];
     await expect(captureFullPage(page, 'mobile', layout, { deadline: Date.now() + 12_000, onAttemptFailed: (f) => failures.push(f) })).rejects.toThrow();
     expect(timeouts).toHaveLength(3);
-    // full은 뒤 방식 2개 몫(8s)을 남긴다
-    expect(timeouts[0]).toBeLessThanOrEqual(12_000 - 2 * SCREENSHOT_RETRY_RESERVE_MS);
-    expect(timeouts[0]).toBeGreaterThan(3_000);
+    expect(timeouts[0]).toBeGreaterThan(11_000);
+    expect(timeouts[0]).toBeLessThanOrEqual(12_000);
     expect(failures.map((f) => f.timeoutMs)).toEqual(timeouts);
   });
 });

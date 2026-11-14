@@ -21,7 +21,8 @@ const runtimeSchema = z.object({
   VERCEL: optionalString,
   MAX_CONCURRENT_INSPECTIONS: z.preprocess(
     (value) => (value === '' || value === undefined ? undefined : Number(value)),
-    z.number().int().min(1).max(10).default(2),
+    // PRD 8.5: Hobby 1 vCPU에서 검사 두 개가 겹치면 Chromium 두 개가 CPU를 나눠 쓴다(T14)
+    z.number().int().min(1).max(10).default(1),
   ),
 });
 

@@ -303,6 +303,7 @@ async function main() {
   const p01 = responses[ID.p01]!.body as Inspection;
   const p01Box = p01.issues[0]!.occurrences.find((o) => o.viewport === 'mobile')!.boundingBox;
   const p01Width = p01.viewports.mobile!.screenshotWidth;
+  if (p01Width === null) throw new Error('P-01 Mobile screenshot is missing');
 
   const overflow: string[] = [];
   const problems: string[] = [];

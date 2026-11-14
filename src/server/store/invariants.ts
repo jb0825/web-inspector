@@ -53,15 +53,25 @@ export function viewportResultViolations(viewport: Viewport, result: ViewportRes
   if (result.width !== expected.width || result.height !== expected.height) {
     out.push({ id: 'V-1', message: `${at}: ${result.width}×${result.height} ≠ 설정값 ${expected.width}×${expected.height}` });
   }
-  if (result.screenshotHeight > SCREENSHOT_MAX_HEIGHT[viewport]) {
-    out.push({ id: 'V-2', message: `${at}: screenshotHeight ${result.screenshotHeight} > 상한 ${SCREENSHOT_MAX_HEIGHT[viewport]}` });
-  }
-  const truncated = result.documentHeight > result.screenshotHeight;
-  if (result.screenshotTruncated !== truncated) {
-    out.push({
-      id: 'V-2',
-      message: `${at}: screenshotTruncated=${result.screenshotTruncated}, documentHeight ${result.documentHeight} / screenshotHeight ${result.screenshotHeight}`,
-    });
+  if (result.screenshotUrl === null || result.screenshotWidth === null || result.screenshotHeight === null) {
+    // 스크린샷만 실패한 viewport(SCREENSHOT_FAILED, PRD 5.2.4): 세 값이 함께 null이고 잘림 표시는 하지 않는다
+    if (result.screenshotUrl !== null || result.screenshotWidth !== null || result.screenshotHeight !== null || result.screenshotTruncated) {
+      out.push({
+        id: 'V-2',
+        message: `${at}: 스크린샷 없음이면 screenshotUrl/Width/Height가 모두 null이고 screenshotTruncated가 false여야 한다 (${json([result.screenshotUrl !== null, result.screenshotWidth, result.screenshotHeight, result.screenshotTruncated])})`,
+      });
+    }
+  } else {
+    if (result.screenshotHeight > SCREENSHOT_MAX_HEIGHT[viewport]) {
+      out.push({ id: 'V-2', message: `${at}: screenshotHeight ${result.screenshotHeight} > 상한 ${SCREENSHOT_MAX_HEIGHT[viewport]}` });
+    }
+    const truncated = result.documentHeight > result.screenshotHeight;
+    if (result.screenshotTruncated !== truncated) {
+      out.push({
+        id: 'V-2',
+        message: `${at}: screenshotTruncated=${result.screenshotTruncated}, documentHeight ${result.documentHeight} / screenshotHeight ${result.screenshotHeight}`,
+      });
+    }
   }
   if (result.elementsTruncated && result.elementsInspected !== MAX_CANDIDATES) {
     out.push({ id: 'V-3', message: `${at}: elementsTruncated인데 elementsInspected ${result.elementsInspected} ≠ ${MAX_CANDIDATES}` });
@@ -138,6 +148,10 @@ function issueViolations(issue: Issue, index: number, inspection: Inspection, st
     const vr = inspection.viewports[o.viewport];
     if (!o.cropRect || !vr) continue;
     const c = o.cropRect;
+    if (vr.screenshotWidth === null || vr.screenshotHeight === null) {
+      add('S-11', `${o.viewport} 스크린샷이 없는데 cropRect ${json(c)}가 있다`);
+      continue;
+    }
     const inside =
       c.x >= -EPSILON && c.y >= -EPSILON && c.width > 0 && c.height > 0 &&
       c.x + c.width <= vr.screenshotWidth + EPSILON && c.y + c.height <= vr.screenshotHeight + EPSILON;

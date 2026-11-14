@@ -21,7 +21,7 @@ describe('env', () => {
     expect(env.getRuntimeEnv()).toEqual({
       isVercel: false,
       platform: process.platform,
-      maxConcurrentInspections: 2,
+      maxConcurrentInspections: 1,
     });
   });
 
@@ -30,8 +30,8 @@ describe('env', () => {
   });
 
   it('MAX_CONCURRENT_INSPECTIONS를 숫자로 읽고, 빈 값은 기본값으로 본다', () => {
-    expect(createEnv({ MAX_CONCURRENT_INSPECTIONS: '1' }).getRuntimeEnv().maxConcurrentInspections).toBe(1);
-    expect(createEnv({ MAX_CONCURRENT_INSPECTIONS: '' }).getRuntimeEnv().maxConcurrentInspections).toBe(2);
+    expect(createEnv({ MAX_CONCURRENT_INSPECTIONS: '2' }).getRuntimeEnv().maxConcurrentInspections).toBe(2);
+    expect(createEnv({ MAX_CONCURRENT_INSPECTIONS: '' }).getRuntimeEnv().maxConcurrentInspections).toBe(1);
     expect(() => createEnv({ MAX_CONCURRENT_INSPECTIONS: 'abc' }).getRuntimeEnv()).toThrow(EnvError);
   });
 

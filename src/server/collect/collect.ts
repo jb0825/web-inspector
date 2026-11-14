@@ -17,7 +17,7 @@ import {
   TEXT_SNIPPET_MAX,
   UNSTABLE_CLASS_PATTERNS,
 } from '@/server/detect/constants';
-import { InspectionError } from '@/server/errors';
+import { InspectionError, isBrowserGone } from '@/server/errors';
 import { collectInPage } from './inpage/collectInPage';
 import { roundMeasure } from './round';
 import { inPageResultSchema } from './schemas';
@@ -165,9 +165,6 @@ export function normalizeCollected(
   };
 }
 
-function isPageCrash(error: unknown): boolean {
-  return error instanceof Error && /crash|Target (page, context or browser )?closed/i.test(error.message);
-}
 
 /**
  * 안정화가 끝난 page에서 측정 데이터를 수집한다(DETECTION_RULES 1.3).
@@ -194,7 +191,7 @@ export async function collectViewport(
     raw = await Promise.race([page.evaluate(expression), timeout]);
   } catch (error) {
     if (error instanceof InspectionError) throw error;
-    if (isPageCrash(error)) {
+    if (isBrowserGone(error)) {
       throw new InspectionError('BROWSER_CRASH', 'Page crashed during collect', { cause: error });
     }
     throw new InspectionError('DETECTION_FAILED', 'In-page collect failed', { cause: error });

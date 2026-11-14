@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ANALYSIS_SOURCE_LABELS, ANALYSIS_UNAVAILABLE_MESSAGES, NO_ISSUES_MESSAGES, SCOPE_NOTICE_MESSAGES, SHARE_DISCLOSURE, TASK_TAB_MESSAGES } from '@/components/inspection/labels';
 import { buildIssueList, EMPTY_FILTER, isViewportFilterAvailable, issueTarget, sortIssues, summarizeIssues } from '@/features/report/logic/issues';
-import { layoutMarkers, placeBox } from '@/features/report/logic/markers';
+import { layoutMarkers, placeBox, type ScreenshotSize } from '@/features/report/logic/markers';
 import { buildScopeNotices } from '@/features/report/logic/scope';
 import { parseSelection, selectionSearch } from '@/features/report/logic/selection';
 import type { Inspection, ViewportResult } from '@/types/inspection';
@@ -126,13 +126,13 @@ describe('마커 좌표 (WIREFRAME 5.6, DETECTION_RULES 8.3)', () => {
   });
 
   it('P-01 Mobile: 축소된 616px 스크린샷의 viewBox에 boundingBox를 그대로 그린다', () => {
-    const mobile = P01_VIEWPORTS.mobile as ViewportResult;
+    const mobile = P01_VIEWPORTS.mobile as ViewportResult & ScreenshotSize;
     const listed = buildIssueList([P01_ISSUE], EMPTY_FILTER);
     const layout = layoutMarkers(listed, 'mobile', mobile, { includeNeedsReview: false });
     expect(layout.viewBox).toEqual({ width: 616, height: 1334 });
     expect(layout.markers).toHaveLength(1);
     expect(layout.markers[0]!.rect).toEqual(P01_ISSUE.occurrences[0]!.boundingBox);
-    expect(layoutMarkers(listed, 'desktop', P01_VIEWPORTS.desktop as ViewportResult, { includeNeedsReview: false }).issueCount).toBe(0);
+    expect(layoutMarkers(listed, 'desktop', P01_VIEWPORTS.desktop as ViewportResult & ScreenshotSize, { includeNeedsReview: false }).issueCount).toBe(0);
   });
 
   it('범위 밖 개수를 세고, Needs Review는 펼쳤을 때만 넣는다', () => {

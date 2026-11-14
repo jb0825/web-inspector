@@ -21,6 +21,8 @@ export type ErrorCode =
   | 'HTTP_ERROR'
   | 'BROWSER_CRASH'
   | 'DETECTION_FAILED'
+  /** 스크린샷만 실패함. viewport 실패가 아니다(ViewportResult.screenshotUrl = null, PRD 5.2.4) */
+  | 'SCREENSHOT_FAILED'
   | 'TIME_BUDGET_EXCEEDED'
   | 'STORAGE_FAILED'
   | 'AI_FAILED'
@@ -79,11 +81,15 @@ export interface ViewportResult {
   layoutWidth: number;
   hasMetaViewport: boolean;
   documentHeight: number;
-  screenshotUrl: string;
+  /**
+   * 스크린샷 URL. 촬영에 실패했으면(SCREENSHOT_FAILED, PRD 5.2.4) null이고, 이때 screenshotWidth/Height도 null,
+   * screenshotTruncated는 false다. 측정과 이슈는 그대로 있고 이 viewport의 cropRect는 모두 null이다.
+   */
+  screenshotUrl: string | null;
   /** 저장된 스크린샷 너비 (CSS px). Mobile 축소 시 layoutWidth보다 넓을 수 있다 */
-  screenshotWidth: number;
+  screenshotWidth: number | null;
   /** 저장된 스크린샷 높이 (CSS px) */
-  screenshotHeight: number;
+  screenshotHeight: number | null;
   screenshotTruncated: boolean;
   elementsInspected: number;
   elementsTruncated: boolean;

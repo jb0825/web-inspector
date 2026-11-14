@@ -57,7 +57,11 @@ export function ReportView({ inspection, variant, selection, onSelectionChange, 
     const result = {} as Record<Viewport, MarkerLayout | null>;
     for (const v of VIEWPORTS) {
       const vr = inspection.viewports[v];
-      result[v] = vr ? layoutMarkers(list, v, vr, { includeNeedsReview: needsReviewOpen }) : null;
+      // 스크린샷이 없는 viewport(SCREENSHOT_FAILED)에는 마커를 그리지 않는다
+      result[v] =
+        vr && vr.screenshotWidth !== null && vr.screenshotHeight !== null
+          ? layoutMarkers(list, v, { screenshotWidth: vr.screenshotWidth, screenshotHeight: vr.screenshotHeight }, { includeNeedsReview: needsReviewOpen })
+          : null;
     }
     return result;
   }, [inspection.viewports, list, needsReviewOpen]);

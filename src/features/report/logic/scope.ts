@@ -6,6 +6,7 @@ import type { Inspection, Viewport } from '@/types/inspection';
 
 export type ScopeNoticeKind =
   | 'viewport-failed'
+  | 'screenshot-missing'
   | 'screenshot-truncated'
   | 'elements-truncated'
   | 'issues-truncated'
@@ -38,7 +39,9 @@ export function buildScopeNotices(
 
   for (const v of VIEWPORTS) {
     const result = inspection.viewports[v];
-    if (result?.screenshotTruncated) {
+    if (result && result.screenshotUrl === null) {
+      notices.push({ kind: 'screenshot-missing', viewport: v, text: M.screenshotMissing(VIEWPORT_LABELS[v]) });
+    } else if (result?.screenshotTruncated && result.screenshotHeight !== null) {
       notices.push({ kind: 'screenshot-truncated', viewport: v, text: M.screenshotTruncated(VIEWPORT_LABELS[v], formatPx(result.screenshotHeight)) });
     }
   }

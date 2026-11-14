@@ -185,7 +185,7 @@ describe('withFreshBrowser / inspectViewportInFreshBrowser', () => {
   });
 
   it('실행 시간을 viewport 예산에서 빼고 timings에 launchMs를 남긴다', async () => {
-    const render = vi.fn<InspectionDeps['renderViewport']>(async () => ({ collected: site('desktop'), screenshot: {} as RenderedViewport['screenshot'], finalUrl: 'x', timings: {} }));
+    const render = vi.fn<InspectionDeps['renderViewport']>(async () => ({ collected: site('desktop'), screenshot: {} as RenderedViewport['screenshot'], screenshotError: null, finalUrl: 'x', timings: {} }));
     const result = await inspectViewportInFreshBrowser({ launchBrowser: async () => launchedWith({} as Browser), renderViewport: render }, 'desktop', 'https://example.com/', {
       guard,
       timeLimitMs: 1_000,
@@ -249,6 +249,7 @@ describe('runInspection: 멈춘 viewport를 끊고 다음 viewport를 새 브라
     const mobileRendered: RenderedViewport = {
       collected: site('mobile'),
       screenshot: { png: Buffer.from('png'), screenshotWidth: 616, screenshotHeight: 2000, documentHeight: 2000, screenshotTruncated: false, mode: 'full', failedAttempts: 0 },
+      screenshotError: null,
       finalUrl: 'https://example.com/',
       timings: {},
     };

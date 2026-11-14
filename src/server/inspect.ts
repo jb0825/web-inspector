@@ -22,6 +22,23 @@ import type { Inspection, InspectionErrorInfo, Issue, Viewport, ViewportResult }
 
 /** PRD 8.1.3: 전체 검사 상한 */
 export const INSPECTION_TIME_BUDGET_MS = 180_000;
+/**
+ * PRD 8.1.3: Desktop이 느려도 Mobile이 쓸 수 있게 남겨 두는 시간. PRD에 없는 값이다(T14).
+ * production 측정(Mobile): 실행 0.1~4s, 열기·안정화 5.6~6.9s, 수집 0.9s, 촬영 3.4~4.2s, 닫기 최대 7s(강제 종료 포함) → 합계 약 15~23s.
+ * 그 두 배 정도를 남긴다.
+ */
+export const MOBILE_RESERVE_MS = 45_000;
+
+/**
+ * viewport 하나에 줄 시간. 순수 함수다(PRD 8.1.3).
+ * Desktop은 남은 전체 시간에서 Mobile 몫을 뺀다. 그래서 Desktop의 측정·촬영 제한은 min(40초, 남은 전체 시간 − MOBILE_RESERVE_MS)이 된다(render.ts).
+ * 남은 시간이 Mobile 몫보다 적으면 Desktop이 남은 시간을 모두 쓴다(Mobile은 시간이 없으면 건너뛴다).
+ * Mobile은 남은 시간을 모두 쓴다. 어느 쪽이든 전체 상한(INSPECTION_TIME_BUDGET_MS)을 넘지 않는다.
+ */
+export function viewportTimeLimit(viewport: Viewport, remainingMs: number): number {
+  if (viewport === 'mobile') return remainingMs;
+  return remainingMs > MOBILE_RESERVE_MS ? remainingMs - MOBILE_RESERVE_MS : remainingMs;
+}
 /** API_SPEC 4.2: analyze 호출 1회의 응답 대기 */
 export const ANALYZE_CALL_TIMEOUT_MS = 10_000;
 /** API_SPEC 4.2: 실패하면 1회 다시 시도 → 최대 2회 */
@@ -218,13 +235,14 @@ export async function runInspection(id: string, deps: InspectionDeps): Promise<v
           })
           .catch(() => undefined);
       await logResources('before-launch');
+      const timeLimitMs = viewportTimeLimit(viewport, remaining);
       // 마지막 안전장치: 단계별 강제 제한(render.ts)과 브라우저 강제 종료(launch.ts)까지 끝났어야 하는 시각
-      const guard = sleepReject(remaining + RENDER_GRACE_MS, () => new InspectionError('TIME_BUDGET_EXCEEDED', 'Viewport did not stop in time'));
+      const guard = sleepReject(timeLimitMs + RENDER_GRACE_MS, () => new InspectionError('TIME_BUDGET_EXCEEDED', 'Viewport did not stop in time'));
       try {
         rendered[viewport] = await Promise.race([
           inspectViewportInFreshBrowser(deps, viewport, doc.url, {
             guard: guardOptions,
-            timeLimitMs: remaining,
+            timeLimitMs,
             onStep: (s) => log('viewport-step', { id, host, viewport, step: s, durationMs: now() - viewportStart }),
             // 스크린샷이 실패하면 줄여서 다시 찍는다(browser/screenshot.ts). 실패한 시도마다 크기와 원인을 남긴다
             onScreenshotFailed: (failure) =>
@@ -253,6 +271,11 @@ export async function runInspection(id: string, deps: InspectionDeps): Promise<v
           guard.promise,
         ]);
         const shot = rendered[viewport]?.screenshot;
+        const screenshotError = rendered[viewport]?.screenshotError;
+        // PRD 5.2.4: 스크린샷만 실패했다. viewport 결과는 남는다
+        if (screenshotError) {
+          log('screenshot-missing', { id, host, viewport, code: screenshotError.code, step: screenshotError.step, cause: describeFailure(screenshotError) });
+        }
         log('viewport', {
           id,
           host,
@@ -263,7 +286,16 @@ export async function runInspection(id: string, deps: InspectionDeps): Promise<v
         });
       } catch (error) {
         errors[viewport] = errorInfo(error);
-        log('viewport-failed', { id, host, viewport, code: errors[viewport]?.code, durationMs: now() - viewportStart, cause: describeFailure(error) });
+        log('viewport-failed', {
+          id,
+          host,
+          viewport,
+          code: errors[viewport]?.code,
+          // 실패한 단계와 원래 오류 종류(cause의 name)를 남긴다(T14)
+          step: isInspectionError(error) ? error.step : undefined,
+          durationMs: now() - viewportStart,
+          cause: describeFailure(error),
+        });
       } finally {
         guard.cancel();
         // 오케스트레이터가 끊은 경우(위 guard) 브라우저가 아직 떠 있다. 다음 viewport를 띄우기 전에 닫는다(강제 종료 포함).
@@ -290,11 +322,12 @@ export async function runInspection(id: string, deps: InspectionDeps): Promise<v
     let uploadFailed = false;
     for (const viewport of VIEWPORT_LIST) {
       const r = rendered[viewport];
-      if (!r) continue;
+      // 스크린샷을 찍지 못한 viewport(SCREENSHOT_FAILED)는 올릴 것이 없다. screenshotUrl = null로 남긴다(PRD 5.2.4)
+      if (!r || !r.screenshot) continue;
       try {
         urls[viewport] = await deps.screenshots.upload(id, viewport, r.screenshot.png);
       } catch {
-        // screenshotUrl이 없는 ViewportResult를 만들지 않는다. 이 viewport는 실패로 처리하고 이슈를 다시 만든다
+        // 찍은 스크린샷을 올리지 못한 것은 저장 실패다(DOMAIN_MODEL 규칙 14). 이 viewport는 실패로 처리하고 이슈를 다시 만든다
         rendered[viewport] = null;
         errors[viewport] = { code: 'STORAGE_FAILED', message: `Screenshot upload failed (${viewport})` };
         uploadFailed = true;
@@ -308,7 +341,10 @@ export async function runInspection(id: string, deps: InspectionDeps): Promise<v
       const r = rendered[viewport];
       const url = urls[viewport];
       const detection = assembled.result?.viewports[viewport];
-      if (r && url && detection) viewports[viewport] = buildViewportResult(r.collected, r.screenshot, detection, url);
+      if (!r || !detection) continue;
+      // 스크린샷이 없으면 url도 null이다. 있으면 업로드한 url이 있어야 한다(위에서 실패하면 rendered가 null이 된다)
+      if (r.screenshot && !url) continue;
+      viewports[viewport] = buildViewportResult(r.collected, r.screenshot, detection, url);
     }
 
     if (browserStageStatus(viewports) === 'failed') {

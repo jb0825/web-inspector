@@ -32,6 +32,7 @@ export const errorCodeSchema = z.enum([
   'HTTP_ERROR',
   'BROWSER_CRASH',
   'DETECTION_FAILED',
+  'SCREENSHOT_FAILED',
   'TIME_BUDGET_EXCEEDED',
   'STORAGE_FAILED',
   'AI_FAILED',

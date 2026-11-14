@@ -8,9 +8,11 @@ import {
   ANALYZE_CALL_ATTEMPTS,
   AnalyzeCallTimeout,
   INSPECTION_TIME_BUDGET_MS,
+  MOBILE_RESERVE_MS,
   resolveInternalOrigin,
   describeAnalyzeResponse,
   runInspection,
+  viewportTimeLimit,
   type InspectionDeps,
 } from '@/server/inspect';
 import { createHostChecker } from '@/server/security/ssrf';
@@ -38,6 +40,7 @@ function rendered(viewport: Viewport, data: CollectedViewport = site(viewport)):
   return {
     collected: data,
     screenshot: { ...SHOTS[viewport], png: Buffer.from(`png-${viewport}`), mode: 'full', failedAttempts: 0 },
+    screenshotError: null,
     finalUrl: `https://www.example.com/?from=${viewport}`,
     timings: { gotoMs: 100 },
   };
@@ -242,8 +245,8 @@ describe('runInspection: 시간 예산 (PRD 8.1.3)', () => {
   it('상한을 넘기면 끝내지 못한 viewport에 TIME_BUDGET_EXCEEDED를 기록하고 얻은 결과로 진행한다', async () => {
     const deps = makeDeps({
       renderViewport: vi.fn(async (_b: Browser, v: Viewport, _u: string, options: { timeLimitMs: number }) => {
-        expect(options.timeLimitMs).toBe(INSPECTION_TIME_BUDGET_MS);
-        now = T0 + INSPECTION_TIME_BUDGET_MS; // Desktop이 예산을 다 썼다
+        expect(options.timeLimitMs).toBe(INSPECTION_TIME_BUDGET_MS - MOBILE_RESERVE_MS);
+        now = T0 + INSPECTION_TIME_BUDGET_MS; // Desktop이 예산을 다 썼다(Mobile 몫까지 넘김)
         return rendered(v);
       }),
     });
@@ -257,7 +260,7 @@ describe('runInspection: 시간 예산 (PRD 8.1.3)', () => {
     expect(saves.map((d) => d.step)).not.toContain('rendering_mobile');
   });
 
-  it('viewport에 남은 시간만 넘긴다', async () => {
+  it('Desktop에는 Mobile 몫을 뺀 시간, Mobile에는 남은 시간을 넘긴다', async () => {
     const deps = makeDeps({
       renderViewport: vi.fn(async (_b: Browser, v: Viewport) => {
         now += 100_000;
@@ -266,7 +269,28 @@ describe('runInspection: 시간 예산 (PRD 8.1.3)', () => {
     });
     await runInspection(ID, deps);
     const limits = vi.mocked(deps.renderViewport).mock.calls.map((c) => c[3].timeLimitMs);
-    expect(limits).toEqual([INSPECTION_TIME_BUDGET_MS, INSPECTION_TIME_BUDGET_MS - 100_000]);
+    expect(limits).toEqual([INSPECTION_TIME_BUDGET_MS - MOBILE_RESERVE_MS, INSPECTION_TIME_BUDGET_MS - 100_000]);
+  });
+
+  it('Desktop이 받은 시간을 모두 써도 Mobile 몫이 남고, 두 viewport 합계가 전체 상한을 넘지 않는다', async () => {
+    const deps = makeDeps({
+      renderViewport: vi.fn(async (_b: Browser, v: Viewport, _u: string, options: { timeLimitMs: number }) => {
+        now += options.timeLimitMs; // 받은 시간을 모두 쓴다
+        return rendered(v);
+      }),
+    });
+    await runInspection(ID, deps);
+    const limits = vi.mocked(deps.renderViewport).mock.calls.map((c) => c[3].timeLimitMs);
+    expect(limits).toHaveLength(2);
+    expect(limits[1]).toBeGreaterThanOrEqual(MOBILE_RESERVE_MS);
+    expect(limits[0]! + limits[1]!).toBeLessThanOrEqual(INSPECTION_TIME_BUDGET_MS);
+    expect(last().viewports.mobile).not.toBeNull();
+  });
+
+  it('viewportTimeLimit: 남은 시간이 Mobile 몫보다 적으면 Desktop이 남은 시간을 쓴다', () => {
+    expect(viewportTimeLimit('desktop', 180_000)).toBe(180_000 - MOBILE_RESERVE_MS);
+    expect(viewportTimeLimit('desktop', MOBILE_RESERVE_MS)).toBe(MOBILE_RESERVE_MS);
+    expect(viewportTimeLimit('mobile', 70_000)).toBe(70_000);
   });
 
   it('남은 시간 안에 끝나지 않는 viewport는 오케스트레이터가 끊는다', async () => {
@@ -283,6 +307,31 @@ describe('runInspection: 시간 예산 (PRD 8.1.3)', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('runInspection: 스크린샷만 실패한 viewport (PRD 5.2.4, T14)', () => {
+  it('viewport 실패가 아니다: 결과는 남고 screenshotUrl = null, cropRect는 모두 null, 업로드하지 않는다', async () => {
+    const logs: [string, unknown][] = [];
+    const deps = makeDeps({
+      log: (event, fields) => void logs.push([event, fields]),
+      renderViewport: vi.fn(async (_b: Browser, v: Viewport) =>
+        v === 'desktop'
+          ? { ...rendered(v), screenshot: null, screenshotError: new InspectionError('SCREENSHOT_FAILED', 'Screenshot failed', { step: 'screenshot' }) }
+          : rendered(v),
+      ),
+    });
+    await runInspection(ID, deps);
+    const doc = last();
+    expect(doc.status).toBe('analyzing');
+    expect(doc.viewportErrors.desktop).toBeNull();
+    expect(doc.viewports.desktop).toMatchObject({ screenshotUrl: null, screenshotWidth: null, screenshotHeight: null, screenshotTruncated: false });
+    expect(doc.viewports.mobile?.screenshotUrl).not.toBeNull();
+    expect(vi.mocked(deps.screenshots.upload).mock.calls.map((c) => c[1])).toEqual(['mobile']);
+    const desktopOccurrences = doc.issues.flatMap((i) => i.occurrences).filter((o) => o.viewport === 'desktop');
+    expect(desktopOccurrences.length).toBeGreaterThan(0);
+    expect(desktopOccurrences.every((o) => o.cropRect === null)).toBe(true);
+    expect(logs.some(([event]) => event === 'screenshot-missing')).toBe(true);
   });
 });
 

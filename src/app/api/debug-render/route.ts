@@ -629,6 +629,7 @@ async function runRender(
           cause: describeFailure(failure.error),
         }),
     });
+    if (!result.screenshot) throw result.screenshotError ?? new Error('screenshot missing');
     const { png, ...meta } = result.screenshot;
     report.ok = true;
     report.timings = result.timings;
