@@ -90,7 +90,7 @@ interface Started {
   connect(wsEndpoint: string): Promise<Browser>;
 }
 
-async function startVercel(extraArgs: readonly string[]): Promise<Started> {
+async function startVercel(): Promise<Started> {
   // dynamic import: 로컬에서는 @sparticuz/chromium을 불러오지 않는다.
   const [{ default: sparticuz }, { chromium }] = await Promise.all([
     import('@sparticuz/chromium'),
@@ -101,7 +101,7 @@ async function startVercel(extraArgs: readonly string[]): Promise<Started> {
   const fonts = await ensureFonts('vercel');
   const server = await chromium.launchServer({
     executablePath,
-    args: [...sparticuz.args, ...extraArgs],
+    args: sparticuz.args,
     headless: true,
     timeout: LAUNCH_TIMEOUT_MS,
     // FONTCONFIG_FILE: 시스템 폰트 별칭을 더한 fonts.conf (fonts.ts). 나머지 환경(FONTCONFIG_PATH 등)은 그대로 물려준다
@@ -110,7 +110,7 @@ async function startVercel(extraArgs: readonly string[]): Promise<Started> {
   return { server, connect: (ws) => chromium.connect(ws, { timeout: LAUNCH_TIMEOUT_MS }) };
 }
 
-async function startLocal(target: FontTarget, extraArgs: readonly string[]): Promise<Started> {
+async function startLocal(target: FontTarget): Promise<Started> {
   const fonts = await ensureFonts(target);
   // dynamic import: devDependency인 playwright가 Vercel 함수 번들에 들어가지 않게 한다.
   const { chromium } = await import('playwright');
@@ -118,7 +118,6 @@ async function startLocal(target: FontTarget, extraArgs: readonly string[]): Pro
   const server = await chromium.launchServer({
     headless: true,
     timeout: LAUNCH_TIMEOUT_MS,
-    ...(extraArgs.length > 0 ? { args: [...extraArgs] } : {}),
     ...(hasExtraEnv ? { env: getChildProcessEnv(fonts.env) } : {}),
   });
   return { server, connect: (ws) => chromium.connect(ws, { timeout: LAUNCH_TIMEOUT_MS }) };
@@ -128,25 +127,14 @@ async function startLocal(target: FontTarget, extraArgs: readonly string[]): Pro
  * 브라우저를 실행하고 연결한다. 압축 해제와 폰트 등록을 포함한 전체 과정에 LAUNCH_TIMEOUT_MS를 적용한다(PRD 8.1.3, viewport마다).
  * 시간 제한을 넘긴 뒤 늦게 실행된 브라우저는 바로 닫는다(필요하면 강제 종료).
  */
-export interface LaunchOptions {
-  /**
-   * TEMP(T14 진단): false면 WebGL을 끈다(--disable-webgl, --disable-3d-apis). 진단 route(api/debug-render)만 쓴다.
-   * 검사 경로는 이 옵션을 넘기지 않으므로 기본값(켜짐, @sparticuz/chromium의 SwiftShader)이 그대로다.
-   */
-  webgl?: boolean;
-}
-
-const DISABLE_WEBGL_ARGS = ['--disable-webgl', '--disable-3d-apis'] as const;
-
-export async function launchBrowser(options: LaunchOptions = {}): Promise<LaunchedBrowser> {
+export async function launchBrowser(): Promise<LaunchedBrowser> {
   const target = getLaunchTarget();
-  const extraArgs = options.webgl === false ? DISABLE_WEBGL_ARGS : [];
   const startedAt = Date.now();
   const starting = (async (): Promise<LaunchedBrowser> => {
     // Vercel: 앞 브라우저의 크래시 덤프가 남아 있으면(닫기 정리가 시간 안에 끝나지 않은 경우) 먼저 지운다
     const cleanup = target === 'vercel' ? () => removeCrashDumps(VERCEL_CRASH_DUMP_DIR) : undefined;
     if (cleanup) await cleanup();
-    const { server, connect } = target === 'vercel' ? await startVercel(extraArgs) : await startLocal(target, extraArgs);
+    const { server, connect } = target === 'vercel' ? await startVercel() : await startLocal(target);
     try {
       const browser = await connect(server.wsEndpoint());
       return createLaunchedBrowser(browser, server, Date.now() - startedAt, undefined, cleanup);
