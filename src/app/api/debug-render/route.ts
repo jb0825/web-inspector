@@ -9,6 +9,8 @@
 //   - webgl false: 브라우저를 --disable-webgl, --disable-3d-apis로 띄운다(WebGL context 생성 불가, 비교용)
 //   - mode "render": 검사와 같은 renderViewport(안정화 → 수집 → 스크린샷 재시도)를 돌리고 단계별 시간, 스크린샷 시도, 오류를 돌려준다.
 //     fontMode는 무시한다. viewport 실패 원인(viewportErrors는 'Unexpected error'만 남는다)을 응답으로 확인하기 위한 것이다
+//   - freezeRaf true(render 모드): 스크린샷 직전에 window.requestAnimationFrame을 바꿔 애니메이션 루프를 멈춘다.
+//     스크린샷 전후 canvas 크기, resize 이벤트 수, 멈춘 뒤 rAF 요청 수, 스크린샷의 canvas 영역 색 분포를 돌려준다
 //
 // 운영 검사와 같은 경로를 쓴다: launchBrowser(Vercel이면 @sparticuz/chromium) → createViewportContext(routeGuard 연결) → openAndStabilize.
 // 브라우저는 하나, context도 하나다(AGENTS.md 7장). 응답에는 스크린샷을 넣지 않고 진단 값만 넣는다.
@@ -20,6 +22,7 @@ import { z } from 'zod';
 import { createViewportContext } from '@/server/browser/devices';
 import { launchBrowser, type LaunchedBrowser } from '@/server/browser/launch';
 import { renderViewport } from '@/server/browser/render';
+import { inflateSync } from 'node:zlib';
 import type { ScreenshotAttemptFailure } from '@/server/browser/screenshot';
 import { InspectionError } from '@/server/errors';
 import { openAndStabilize } from '@/server/browser/stabilize';
@@ -40,7 +43,11 @@ const bodySchema = z.object({
   waitMs: z.number().int().min(0).max(15_000).default(5_000),
   webgl: z.boolean().default(true),
   mode: z.enum(['probe', 'render']).default('probe'),
+  freezeRaf: z.boolean().default(false),
 });
+
+/** rAF를 멈춘 뒤 스크린샷 전까지 기다리는 시간. 이미 예약된 콜백이 한 번 돌고 멈출 시간이다 */
+const FREEZE_SETTLE_MS = 300;
 
 /** render 모드의 viewport 시간 제한. 검사(INSPECTION_TIME_BUDGET_MS 안의 남은 시간)보다 넉넉히 준다 */
 const RENDER_TIME_LIMIT_MS = 100_000;
@@ -207,6 +214,136 @@ async function systemInfo(launched: LaunchedBrowser): Promise<unknown> {
   }
 }
 
+
+/** 브라우저 안에서 실행한다. rAF를 가로채 콜백을 실행하지 않는다. 이후 요청 수만 센다 */
+function freezeRafInPage() {
+  const w = window as unknown as { __diag?: { rafCalls: number; resizes: number } };
+  const diag = { rafCalls: 0, resizes: 0 };
+  w.__diag = diag;
+  window.addEventListener('resize', () => {
+    diag.resizes += 1;
+  });
+  window.requestAnimationFrame = () => {
+    diag.rafCalls += 1;
+    return 0;
+  };
+  return true;
+}
+
+/** 브라우저 안에서 실행한다. resize 이벤트만 센다(rAF 멈춤 없이 비교용) */
+function watchResizeInPage() {
+  const w = window as unknown as { __diag?: { rafCalls: number; resizes: number } };
+  const diag = { rafCalls: -1, resizes: 0 };
+  w.__diag = diag;
+  window.addEventListener('resize', () => {
+    diag.resizes += 1;
+  });
+  return true;
+}
+
+/** 브라우저 안에서 실행한다. canvas의 문서 기준 위치와 버퍼 크기 */
+function canvasStateInPage() {
+  const w = window as unknown as { __diag?: { rafCalls: number; resizes: number } };
+  return {
+    diag: w.__diag ? { ...w.__diag } : null,
+    innerWidth: window.innerWidth,
+    innerHeight: window.innerHeight,
+    canvases: Array.from(document.getElementsByTagName('canvas'))
+      .slice(0, 5)
+      .map((canvas) => {
+        const rect = canvas.getBoundingClientRect();
+        return {
+          bufferWidth: canvas.width,
+          bufferHeight: canvas.height,
+          docRect: { x: Math.round(rect.x + window.scrollX), y: Math.round(rect.y + window.scrollY), width: Math.round(rect.width), height: Math.round(rect.height) },
+          position: getComputedStyle(canvas).position,
+        };
+      }),
+  };
+}
+
+/** 8비트, 비인터레이스 RGB/RGBA PNG를 RGBA로 푼다(진단용, 새 의존성 없음) */
+function decodePng(png: Buffer): { width: number; height: number; rgba: Uint8Array } {
+  const width = png.readUInt32BE(16);
+  const height = png.readUInt32BE(20);
+  const bitDepth = png[24];
+  const colorType = png[25];
+  const interlace = png[28];
+  if (bitDepth !== 8 || (colorType !== 2 && colorType !== 6) || interlace !== 0) throw new Error(`unsupported png ${bitDepth}/${colorType}/${interlace}`);
+  const channels = colorType === 6 ? 4 : 3;
+  const chunks: Buffer[] = [];
+  for (let offset = 8; offset < png.length; ) {
+    const length = png.readUInt32BE(offset);
+    const type = png.toString('ascii', offset + 4, offset + 8);
+    if (type === 'IDAT') chunks.push(png.subarray(offset + 8, offset + 8 + length));
+    offset += 12 + length;
+  }
+  const raw = inflateSync(Buffer.concat(chunks));
+  const stride = width * channels;
+  const out = new Uint8Array(width * height * 4);
+  const prev = new Uint8Array(stride);
+  const line = new Uint8Array(stride);
+  for (let y = 0; y < height; y += 1) {
+    const filter = raw[y * (stride + 1)];
+    const src = raw.subarray(y * (stride + 1) + 1, (y + 1) * (stride + 1));
+    for (let i = 0; i < stride; i += 1) {
+      const a = i >= channels ? line[i - channels]! : 0;
+      const b = prev[i]!;
+      const c = i >= channels ? prev[i - channels]! : 0;
+      let value = src[i]!;
+      if (filter === 1) value += a;
+      else if (filter === 2) value += b;
+      else if (filter === 3) value += (a + b) >> 1;
+      else if (filter === 4) {
+        const p = a + b - c;
+        const pa = Math.abs(p - a);
+        const pb = Math.abs(p - b);
+        const pc = Math.abs(p - c);
+        value += pa <= pb && pa <= pc ? a : pb <= pc ? b : c;
+      }
+      line[i] = value & 0xff;
+    }
+    for (let x = 0; x < width; x += 1) {
+      const o = (y * width + x) * 4;
+      out[o] = line[x * channels]!;
+      out[o + 1] = line[x * channels + 1]!;
+      out[o + 2] = line[x * channels + 2]!;
+      out[o + 3] = channels === 4 ? line[x * channels + 3]! : 255;
+    }
+    prev.set(line);
+  }
+  return { width, height, rgba: out };
+}
+
+/** 영역 안을 격자로 표본 추출해 색 분포를 낸다. 가장 많은 색 비율이 1에 가까우면 단색(비어 있음)이다 */
+function regionColors(image: { width: number; height: number; rgba: Uint8Array }, rect: { x: number; y: number; width: number; height: number }) {
+  const x0 = Math.max(0, rect.x);
+  const y0 = Math.max(0, rect.y);
+  const x1 = Math.min(image.width, rect.x + rect.width);
+  const y1 = Math.min(image.height, rect.y + rect.height);
+  if (x1 <= x0 || y1 <= y0) return { sampled: 0, note: 'outside-screenshot' };
+  const counts = new Map<string, number>();
+  const step = Math.max(1, Math.floor(Math.min(x1 - x0, y1 - y0) / 60));
+  let sampled = 0;
+  for (let y = y0; y < y1; y += step) {
+    for (let x = x0; x < x1; x += step) {
+      const o = (y * image.width + x) * 4;
+      // 4단계로 줄여 센다(압축 잡음 무시)
+      const key = `${image.rgba[o]! >> 4},${image.rgba[o + 1]! >> 4},${image.rgba[o + 2]! >> 4}`;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+      sampled += 1;
+    }
+  }
+  const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  return {
+    sampled,
+    clippedRect: { x: x0, y: y0, width: x1 - x0, height: y1 - y0 },
+    distinctColors: counts.size,
+    dominantColor: sorted[0]?.[0] ?? null,
+    dominantRatio: sorted[0] ? Math.round((sorted[0][1] / sampled) * 1000) / 1000 : null,
+  };
+}
+
 interface RenderReport {
   ok: boolean;
   /** 시작한 단계와 그때까지 걸린 시간(ms). 멈춘 단계를 알 수 있다 */
@@ -217,16 +354,48 @@ interface RenderReport {
   collected: Record<string, unknown> | null;
   error: { code: string; message: string; cause: string } | null;
   totalMs: number;
+  freezeRaf: boolean;
+  canvasBefore: unknown;
+  canvasAfter: unknown;
+  canvasPixels: unknown[];
 }
 
 /** 검사와 같은 renderViewport. 검사의 viewport 실패 원인을 응답으로 돌려준다 */
-async function runRender(launched: LaunchedBrowser, viewport: 'desktop' | 'mobile', url: string, checker: ReturnType<typeof createHostChecker>): Promise<RenderReport> {
+async function runRender(
+  launched: LaunchedBrowser,
+  viewport: 'desktop' | 'mobile',
+  url: string,
+  checker: ReturnType<typeof createHostChecker>,
+  freezeRaf: boolean,
+): Promise<RenderReport> {
   const started = Date.now();
-  const report: RenderReport = { ok: false, steps: [], timings: null, screenshot: null, screenshotFailures: [], collected: null, error: null, totalMs: 0 };
+  const report: RenderReport = {
+    ok: false,
+    steps: [],
+    timings: null,
+    screenshot: null,
+    screenshotFailures: [],
+    collected: null,
+    error: null,
+    totalMs: 0,
+    freezeRaf,
+    canvasBefore: null,
+    canvasAfter: null,
+    canvasPixels: [],
+  };
+  let renderedPage: Page | null = null;
+  let before: ReturnType<typeof canvasStateInPage> | null = null;
   try {
     const result = await renderViewport(launched.browser, viewport, url, {
       guard: { checker },
       timeLimitMs: RENDER_TIME_LIMIT_MS,
+      beforeScreenshot: async (page) => {
+        renderedPage = page;
+        await page.evaluate(freezeRaf ? freezeRafInPage : watchResizeInPage);
+        if (freezeRaf) await new Promise((resolve) => setTimeout(resolve, FREEZE_SETTLE_MS));
+        before = await page.evaluate(canvasStateInPage);
+        report.canvasBefore = before;
+      },
       onStep: (step) => report.steps.push({ step, atMs: Date.now() - started }),
       onScreenshotFailed: (failure) =>
         report.screenshotFailures.push({
@@ -240,6 +409,13 @@ async function runRender(launched: LaunchedBrowser, viewport: 'desktop' | 'mobil
     report.ok = true;
     report.timings = result.timings;
     report.screenshot = { ...meta, pngBytes: png.byteLength };
+    try {
+      const image = decodePng(png);
+      const rects = (before as ReturnType<typeof canvasStateInPage> | null)?.canvases.map((c) => c.docRect) ?? [];
+      report.canvasPixels = rects.map((rect) => regionColors(image, rect));
+    } catch (error) {
+      report.canvasPixels = [describeFailure(error)];
+    }
     report.collected = {
       layoutWidth: result.collected.layoutWidth,
       documentHeight: result.collected.documentHeight,
@@ -252,6 +428,12 @@ async function runRender(launched: LaunchedBrowser, viewport: 'desktop' | 'mobil
       message: error instanceof Error ? clip(error.message) : 'unknown',
       cause: describeFailure(error),
     };
+  }
+  const page = renderedPage as Page | null;
+  if (page && !page.isClosed()) {
+    report.canvasAfter = await withHardTimeout(page.evaluate(canvasStateInPage), 5_000, () => new Error('canvas state timeout')).catch((error: unknown) =>
+      describeFailure(error),
+    );
   }
   report.totalMs = Date.now() - started;
   return report;
@@ -268,7 +450,7 @@ export async function POST(request: NextRequest): Promise<Response> {
 
   const parsed = bodySchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: 'INVALID_BODY', issues: parsed.error.issues.map((i) => i.message) }, { status: 400 });
-  const { viewport, fontMode, waitMs, webgl, mode } = parsed.data;
+  const { viewport, fontMode, waitMs, webgl, mode, freezeRaf } = parsed.data;
 
   // 운영과 같은 SSRF 검사(PRD 8.6). 허용 목록 없이 만든다
   const checker = createHostChecker();
@@ -290,10 +472,10 @@ export async function POST(request: NextRequest): Promise<Response> {
 
     if (mode === 'render') {
       return NextResponse.json({
-        target: { host: target.host, viewport, webgl, mode },
+        target: { host: target.host, viewport, webgl, mode, freezeRaf },
         launchMs: launched.launchMs,
         browser: browserInfo,
-        render: await runRender(launched, viewport, target.href, checker),
+        render: await runRender(launched, viewport, target.href, checker, freezeRaf),
       });
     }
 

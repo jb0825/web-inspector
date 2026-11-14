@@ -1,5 +1,5 @@
 import 'server-only';
-import type { Browser } from 'playwright-core';
+import type { Browser, Page } from 'playwright-core';
 import { collectViewport, COLLECT_TIMEOUT_MS } from '@/server/collect/collect';
 import type { CollectedViewport } from '@/server/collect/types';
 import { InspectionError } from '@/server/errors';
@@ -48,6 +48,8 @@ export interface RenderOptions {
   onStep?: (step: string) => void;
   /** 스크린샷 촬영이 실패해 줄여서 다시 찍을 때마다 호출한다(로그용, T14) */
   onScreenshotFailed?: (failure: ScreenshotAttemptFailure) => void;
+  /** TEMP(T14 진단): 수집이 끝나고 스크린샷 직전에 호출한다. 진단 route(api/debug-render)만 쓴다. 측정 시간 예산 안에서 실행된다 */
+  beforeScreenshot?: (page: Page) => Promise<void>;
   /** 단계별 제한. 테스트에서 줄인다 */
   limits?: Partial<RenderLimits>;
 }
@@ -106,6 +108,10 @@ export async function renderViewport(browser: Browser, viewport: Viewport, url: 
     measureLeft() + HARD_TIMEOUT_GRACE_MS,
     measureExceeded,
   );
+  if (options.beforeScreenshot) {
+    const hook = options.beforeScreenshot;
+    await phase('before-screenshot', () => hook(page), measureLeft(), measureExceeded);
+  }
   // 수집 직후 같은 page로 찍는다(T07)
   const screenshot = await phase(
     'screenshot',
