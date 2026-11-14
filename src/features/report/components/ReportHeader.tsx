@@ -9,8 +9,11 @@ import { Button } from '@/components/ui/Button';
 import { CopyButton } from '@/components/ui/CopyButton';
 import { formatDateTime } from '@/lib/format';
 import type { Inspection } from '@/types/inspection';
+import type { ReportVariant } from './ReportView';
 
 // WIREFRAME 5.3
+
+const HEADINGS: Record<ReportVariant, string> = { live: '검사 결과', sample: '샘플 리포트', showcase: '사례 리포트' };
 
 /** 페이지에서 가져온 URL은 http/https일 때만 링크로 만든다(AGENTS.md 8장) */
 export function safeExternalHref(value: string): string | null {
@@ -50,7 +53,7 @@ function LocalDateTime({ iso }: { iso: string }) {
   );
 }
 
-export function ReportHeader({ inspection, variant }: { inspection: Inspection; variant: 'live' | 'sample' }) {
+export function ReportHeader({ inspection, variant }: { inspection: Inspection; variant: ReportVariant }) {
   const router = useRouter();
   const redirected = inspection.finalUrl !== undefined && inspection.finalUrl !== inspection.url;
   const desktop = inspection.viewports.desktop;
@@ -66,7 +69,7 @@ export function ReportHeader({ inspection, variant }: { inspection: Inspection; 
     <header className="flex flex-col gap-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-h1 font-semibold">{variant === 'sample' ? '샘플 리포트' : '검사 결과'}</h1>
+          <h1 className="text-h1 font-semibold">{HEADINGS[variant]}</h1>
           {/* 분석이 끝나 상태가 바뀌면 읽어 준다 */}
           <span aria-live="polite">
             <StatusBadge status={inspection.status} />

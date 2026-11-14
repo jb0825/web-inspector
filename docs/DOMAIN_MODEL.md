@@ -321,6 +321,8 @@ export const inspectionSchema = z.strictObject({ /* … */ }) satisfies z.ZodTyp
 - 단위 테스트에서 `inspectionSchema.parse`와 `assertInspectionInvariants`를 통과해야 한다.
 - 만드는 방법: 배포 환경에서 Fixture 또는 데모 페이지를 검사한 뒤, 결과 JSON과 스크린샷을 내려받아 저장소에 넣는다. 외부 실제 사이트의 결과는 넣지 않는다.
 
+**Before/After 사례 (T14):** `public/showcase/{before|after}/`에 같은 구성(`inspection.json`, 스크린샷 2장, `screenshotUrl`은 `/showcase/{name}/…`)으로 둔다. 공유 리포트는 7일 뒤 만료되므로(PRD 8.1.4) 검토 시점에도 열리도록 보관한다. 대상은 사람이 소유한 사이트라 데모 페이지가 아니어도 되지만, 가져올 때 `--force`로 한 번 더 확인한다. 검증(스키마, `'final'` 불변 조건, PNG 크기)은 샘플과 같고, `/report/showcase/{name}`이 빌드할 때 읽는다. 파일이 없으면 404다.
+
 ---
 
 ## 7. 검증 경계
