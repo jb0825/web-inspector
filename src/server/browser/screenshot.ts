@@ -13,6 +13,26 @@ import { VIEWPORTS } from './devices';
  */
 export const SCREENSHOT_TIMEOUT_MS = 10_000;
 
+/**
+ * 재시도용으로 남겨 두는 시간(뒤에 남은 방식 1개당). PRD에 없는 값이다(T14).
+ * 앞 시도가 SCREENSHOT_TIMEOUT_MS를 다 쓰면 뒤 방식이 "측정과 스크린샷 20s" 안에 들어가지 못한다
+ * (production: full 10s 시간 초과 → reduced가 8.3s 만에 단계 제한으로 끊김).
+ */
+export const SCREENSHOT_RETRY_RESERVE_MS = 4_000;
+/** 시도 시간 제한을 단계 제한(측정과 스크린샷 20s)보다 이만큼 먼저 끝낸다. PRD에 없는 값이다(T14) */
+export const SCREENSHOT_DEADLINE_MARGIN_MS = 500;
+/** 시도 1회의 최소 시간 제한. 남은 시간이 이보다 적어도 이만큼은 준다(단계 제한이 먼저 끊는다) */
+export const SCREENSHOT_MIN_ATTEMPT_MS = 1_000;
+
+/**
+ * 시도 1회의 시간 제한. 순수 함수다.
+ * deadline까지 남은 시간에서 뒤 방식 몫(plansAfter × SCREENSHOT_RETRY_RESERVE_MS)을 빼고, SCREENSHOT_TIMEOUT_MS를 넘지 않게 한다.
+ */
+export function screenshotAttemptTimeout(remainingMs: number, plansAfter: number): number {
+  const share = remainingMs - plansAfter * SCREENSHOT_RETRY_RESERVE_MS;
+  return Math.max(SCREENSHOT_MIN_ATTEMPT_MS, Math.min(SCREENSHOT_TIMEOUT_MS, Math.floor(share)));
+}
+
 export interface ScreenshotMeta {
   /** 저장된 이미지의 실제 크기 (CSS px, PNG 헤더에서 읽음) */
   screenshotWidth: number;
@@ -73,6 +93,8 @@ export interface ScreenshotDiagnostics {
 
 export interface ScreenshotAttemptFailure {
   diagnostics: ScreenshotDiagnostics;
+  /** 이번 시도에 준 시간 제한 */
+  timeoutMs: number;
   durationMs: number;
   error: unknown;
 }
@@ -193,7 +215,11 @@ export async function captureFullPage(
   viewport: Viewport,
   /** 수집 결과의 값. 탐지(rootClip)와 같은 기준으로 자르기 위해 페이지에서 다시 재지 않는다 */
   layout: Pick<CollectedViewport, 'rootOverflowX' | 'layoutWidth'>,
-  options: { onAttemptFailed?: (failure: ScreenshotAttemptFailure) => void } = {},
+  options: {
+    onAttemptFailed?: (failure: ScreenshotAttemptFailure) => void;
+    /** 모든 시도를 끝내야 하는 시각(epoch ms). 없으면 시도마다 SCREENSHOT_TIMEOUT_MS */
+    deadline?: number;
+  } = {},
 ): Promise<CapturedScreenshot> {
   const size = await page.evaluate(() => {
     const root = document.documentElement;
@@ -205,8 +231,11 @@ export async function captureFullPage(
   });
   let lastError: unknown = null;
   let failedAttempts = 0;
-  for (const plan of screenshotPlans(size, viewport, layout)) {
+  const plans = screenshotPlans(size, viewport, layout);
+  for (const [index, plan] of plans.entries()) {
     const startedAt = Date.now();
+    const timeout =
+      options.deadline === undefined ? SCREENSHOT_TIMEOUT_MS : screenshotAttemptTimeout(options.deadline - startedAt, plans.length - index - 1);
     try {
       const png = await page.screenshot({
         type: 'png',
@@ -214,7 +243,7 @@ export async function captureFullPage(
         scale: 'css',
         animations: 'disabled',
         caret: 'hide',
-        timeout: SCREENSHOT_TIMEOUT_MS,
+        timeout,
         ...(plan.clip ? { clip: plan.clip } : {}),
       });
       const { width, height } = readPngSize(png);
@@ -230,7 +259,7 @@ export async function captureFullPage(
     } catch (error) {
       lastError = error;
       failedAttempts += 1;
-      options.onAttemptFailed?.({ diagnostics: screenshotDiagnostics(plan, viewport, size), durationMs: Date.now() - startedAt, error });
+      options.onAttemptFailed?.({ diagnostics: screenshotDiagnostics(plan, viewport, size), timeoutMs: timeout, durationMs: Date.now() - startedAt, error });
       // 페이지나 브라우저가 닫혔으면 다시 찍을 수 없다
       if (page.isClosed()) break;
     }

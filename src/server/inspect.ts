@@ -223,7 +223,7 @@ export async function runInspection(id: string, deps: InspectionDeps): Promise<v
                 viewport,
                 step: failure.diagnostics.mode,
                 durationMs: failure.durationMs,
-                screenshot: { ...failure.diagnostics },
+                screenshot: { ...failure.diagnostics, timeoutMs: failure.timeoutMs },
                 cause: describeFailure(failure.error),
               }),
             onLaunched: (launched) => {

@@ -1,7 +1,18 @@
 import { deflateSync } from 'node:zlib';
 import { describe, expect, it, vi } from 'vitest';
 import type { Page } from 'playwright-core';
-import { captureFullPage, isRootClip, readPngSize, screenshotClip, screenshotPlans, SCREENSHOT_MAX_DEVICE_PX, type ScreenshotAttemptFailure } from '@/server/browser/screenshot';
+import {
+  captureFullPage,
+  isRootClip,
+  readPngSize,
+  screenshotAttemptTimeout,
+  screenshotClip,
+  screenshotPlans,
+  SCREENSHOT_MAX_DEVICE_PX,
+  SCREENSHOT_RETRY_RESERVE_MS,
+  SCREENSHOT_TIMEOUT_MS,
+  type ScreenshotAttemptFailure,
+} from '@/server/browser/screenshot';
 
 // PNG 헤더(IHDR) 파싱. 이미지 크기는 페이지 측정값이 아니라 저장된 PNG에서 읽는다(DETECTION_RULES 3.1.1)
 
@@ -185,5 +196,43 @@ describe('captureFullPage 재시도', () => {
     const { page } = fakePage([png(390, 4925)]);
     const shot = await captureFullPage(page, 'mobile', layout);
     expect(shot).toMatchObject({ mode: 'full', failedAttempts: 0, screenshotTruncated: false });
+  });
+});
+
+describe('screenshotAttemptTimeout (재시도 시간 남기기)', () => {
+  it('뒤 방식 몫을 남기고 SCREENSHOT_TIMEOUT_MS를 넘지 않는다', () => {
+    // production 사례: 수집 후 약 18.3s 남음, 방식 3개 → full 10s, reduced 4.3s, first-screen 4s
+    expect(screenshotAttemptTimeout(18_300, 2)).toBe(SCREENSHOT_TIMEOUT_MS);
+    expect(screenshotAttemptTimeout(14_000, 2)).toBe(14_000 - 2 * SCREENSHOT_RETRY_RESERVE_MS);
+    expect(screenshotAttemptTimeout(4_000, 0)).toBe(4_000);
+    expect(screenshotAttemptTimeout(30_000, 0)).toBe(SCREENSHOT_TIMEOUT_MS);
+  });
+
+  it('남은 시간이 거의 없어도 최소 시간은 준다', () => {
+    expect(screenshotAttemptTimeout(500, 1)).toBe(1_000);
+    expect(screenshotAttemptTimeout(-100, 0)).toBe(1_000);
+  });
+});
+
+describe('captureFullPage 시간 제한', () => {
+  const layout = { rootOverflowX: { html: 'visible', body: 'visible' }, layoutWidth: 390 };
+
+  it('deadline이 있으면 시도마다 남은 시간을 나눠 준다', async () => {
+    const timeouts: number[] = [];
+    const page = {
+      evaluate: vi.fn(async () => ({ width: 390, height: 4925, canvasCount: 1 })),
+      screenshot: vi.fn(async (opts: { timeout: number }) => {
+        timeouts.push(opts.timeout);
+        throw new Error('timeout');
+      }),
+      isClosed: () => false,
+    } as unknown as Page;
+    const failures: ScreenshotAttemptFailure[] = [];
+    await expect(captureFullPage(page, 'mobile', layout, { deadline: Date.now() + 12_000, onAttemptFailed: (f) => failures.push(f) })).rejects.toThrow();
+    expect(timeouts).toHaveLength(3);
+    // full은 뒤 방식 2개 몫(8s)을 남긴다
+    expect(timeouts[0]).toBeLessThanOrEqual(12_000 - 2 * SCREENSHOT_RETRY_RESERVE_MS);
+    expect(timeouts[0]).toBeGreaterThan(3_000);
+    expect(failures.map((f) => f.timeoutMs)).toEqual(timeouts);
   });
 });

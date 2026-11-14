@@ -6,7 +6,7 @@ import { InspectionError } from '@/server/errors';
 import type { RouteGuardOptions } from '@/server/security/routeGuard';
 import type { Viewport } from '@/types/inspection';
 import { createViewportContext } from './devices';
-import { captureFullPage, type CapturedScreenshot, type ScreenshotAttemptFailure } from './screenshot';
+import { captureFullPage, SCREENSHOT_DEADLINE_MARGIN_MS, type CapturedScreenshot, type ScreenshotAttemptFailure } from './screenshot';
 import { DEFAULT_STABILIZE_BUDGET, openAndStabilize, type StabilizeBudget } from './stabilize';
 import { CONTEXT_TIMEOUT_MS, HARD_TIMEOUT_GRACE_MS, withHardTimeout } from './timeouts';
 
@@ -109,7 +109,12 @@ export async function renderViewport(browser: Browser, viewport: Viewport, url: 
   // 수집 직후 같은 page로 찍는다(T07)
   const screenshot = await phase(
     'screenshot',
-    () => captureFullPage(page, viewport, collected, { onAttemptFailed: options.onScreenshotFailed }),
+    () =>
+      captureFullPage(page, viewport, collected, {
+        onAttemptFailed: options.onScreenshotFailed,
+        // 시도마다 Playwright 시간 제한이 단계 제한보다 먼저 끝나게 해서, 뒤 방식으로 넘어갈 시간을 남긴다
+        deadline: measureDeadline - SCREENSHOT_DEADLINE_MARGIN_MS,
+      }),
     measureLeft(),
     measureExceeded,
   );

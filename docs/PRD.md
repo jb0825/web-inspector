@@ -234,7 +234,7 @@ Requirements:
 - `html` 또는 `body`가 `overflow-x: hidden`/`clip`이면 스크린샷 너비를 `layoutWidth`로 자른다. 사용자가 볼 수 없는 영역을 보여주지 않기 위해서다. 그 밖의 경우(예: Mobile 축소로 넓어진 페이지)는 실제 페이지 너비대로 찍는다.
 - 촬영이 실패하면 줄여서 다시 찍는다(T14). 서버리스 Chromium에서 전체 페이지 촬영이 가끔 "Unable to capture screenshot"으로 실패하기 때문이다(production에서 Desktop·Mobile 모두 확인). 측정은 이미 끝났으므로 스크린샷 때문에 viewport 결과를 버리지 않는다.
   1. 전체(위 높이 상한 적용) → 2. 실제 픽셀(CSS px × `deviceScaleFactor`)이 가로·세로 8,192px 이하(Mobile CSS 2,730px) → 3. 첫 화면 높이(Desktop 900px, Mobile 844px). 앞 방식보다 작아지지 않는 방식은 건너뛴다.
-  - 줄여 찍은 결과는 높이 상한으로 자른 것과 같이 `screenshotTruncated`로 표시하고, 스크린샷 밖의 이슈는 `cropRect`가 `null`이다(5.4.1). 시도 시간은 "측정과 스크린샷 20s"(8.1.3) 안에서 쓴다.
+  - 줄여 찍은 결과는 높이 상한으로 자른 것과 같이 `screenshotTruncated`로 표시하고, 스크린샷 밖의 이슈는 `cropRect`가 `null`이다(5.4.1). 시도 시간은 "측정과 스크린샷 20s"(8.1.3) 안에서 쓴다. 한 시도는 최대 10s이고, 뒤에 남은 방식 1개당 4s를 남겨 둔다(앞 시도가 시간을 다 써서 뒤 방식을 못 찍는 것을 막는다).
   - 세 방식이 모두 실패하면 그 viewport는 실패다(`INTERNAL_ERROR`). 실패한 시도마다 크기, 배율, canvas 수, 원인을 로그(`screenshot-retry`)에 남긴다.
 
 ### 5.3 Feature 3. UI Issue Detection
