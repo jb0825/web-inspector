@@ -6,6 +6,9 @@
 //   본문: { "url": "https://…", "viewport": "mobile" | "desktop", "fontMode": "fetch" | "continue", "waitMs": 0~15000 }
 //   - fontMode "fetch": 운영과 같다. 모든 요청을 routeGuard가 route.fetch로 대신 받는다
 //   - fontMode "continue": 폰트 요청만 호스트 검사(SSRF) 후 route.continue로 브라우저가 직접 받는다. 리다이렉트 hop 검사는 하지 않는다(비교용)
+//   - webgl false: 브라우저를 --disable-webgl, --disable-3d-apis로 띄운다(WebGL context 생성 불가, 비교용)
+//   - mode "render": 검사와 같은 renderViewport(안정화 → 수집 → 스크린샷 재시도)를 돌리고 단계별 시간, 스크린샷 시도, 오류를 돌려준다.
+//     fontMode는 무시한다. viewport 실패 원인(viewportErrors는 'Unexpected error'만 남는다)을 응답으로 확인하기 위한 것이다
 //
 // 운영 검사와 같은 경로를 쓴다: launchBrowser(Vercel이면 @sparticuz/chromium) → createViewportContext(routeGuard 연결) → openAndStabilize.
 // 브라우저는 하나, context도 하나다(AGENTS.md 7장). 응답에는 스크린샷을 넣지 않고 진단 값만 넣는다.
@@ -16,6 +19,9 @@ import type { BrowserContext, Page } from 'playwright-core';
 import { z } from 'zod';
 import { createViewportContext } from '@/server/browser/devices';
 import { launchBrowser, type LaunchedBrowser } from '@/server/browser/launch';
+import { renderViewport } from '@/server/browser/render';
+import type { ScreenshotAttemptFailure } from '@/server/browser/screenshot';
+import { InspectionError } from '@/server/errors';
 import { openAndStabilize } from '@/server/browser/stabilize';
 import { CONTEXT_TIMEOUT_MS, withHardTimeout } from '@/server/browser/timeouts';
 import { getInternalEnv } from '@/server/env';
@@ -25,14 +31,19 @@ import { createHostChecker } from '@/server/security/ssrf';
 import { validateInspectionUrl } from '@/server/security/url';
 
 export const runtime = 'nodejs';
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 const bodySchema = z.object({
   url: z.string().trim().min(1).max(2048),
   viewport: z.enum(['desktop', 'mobile']).default('mobile'),
   fontMode: z.enum(['fetch', 'continue']).default('fetch'),
   waitMs: z.number().int().min(0).max(15_000).default(5_000),
+  webgl: z.boolean().default(true),
+  mode: z.enum(['probe', 'render']).default('probe'),
 });
+
+/** render 모드의 viewport 시간 제한. 검사(INSPECTION_TIME_BUDGET_MS 안의 남은 시간)보다 넉넉히 준다 */
+const RENDER_TIME_LIMIT_MS = 100_000;
 
 const MAX_ENTRIES = 60;
 const TEXT_MAX = 300;
@@ -196,6 +207,56 @@ async function systemInfo(launched: LaunchedBrowser): Promise<unknown> {
   }
 }
 
+interface RenderReport {
+  ok: boolean;
+  /** 시작한 단계와 그때까지 걸린 시간(ms). 멈춘 단계를 알 수 있다 */
+  steps: { step: string; atMs: number }[];
+  timings: Record<string, number> | null;
+  screenshot: Record<string, unknown> | null;
+  screenshotFailures: { diagnostics: ScreenshotAttemptFailure['diagnostics']; timeoutMs: number; durationMs: number; cause: string }[];
+  collected: Record<string, unknown> | null;
+  error: { code: string; message: string; cause: string } | null;
+  totalMs: number;
+}
+
+/** 검사와 같은 renderViewport. 검사의 viewport 실패 원인을 응답으로 돌려준다 */
+async function runRender(launched: LaunchedBrowser, viewport: 'desktop' | 'mobile', url: string, checker: ReturnType<typeof createHostChecker>): Promise<RenderReport> {
+  const started = Date.now();
+  const report: RenderReport = { ok: false, steps: [], timings: null, screenshot: null, screenshotFailures: [], collected: null, error: null, totalMs: 0 };
+  try {
+    const result = await renderViewport(launched.browser, viewport, url, {
+      guard: { checker },
+      timeLimitMs: RENDER_TIME_LIMIT_MS,
+      onStep: (step) => report.steps.push({ step, atMs: Date.now() - started }),
+      onScreenshotFailed: (failure) =>
+        report.screenshotFailures.push({
+          diagnostics: failure.diagnostics,
+          timeoutMs: failure.timeoutMs,
+          durationMs: failure.durationMs,
+          cause: describeFailure(failure.error),
+        }),
+    });
+    const { png, ...meta } = result.screenshot;
+    report.ok = true;
+    report.timings = result.timings;
+    report.screenshot = { ...meta, pngBytes: png.byteLength };
+    report.collected = {
+      layoutWidth: result.collected.layoutWidth,
+      documentHeight: result.collected.documentHeight,
+      hasCanvas: result.collected.hasCanvas,
+      finalHost: hostOf(result.finalUrl),
+    };
+  } catch (error) {
+    report.error = {
+      code: error instanceof InspectionError ? error.code : 'UNEXPECTED',
+      message: error instanceof Error ? clip(error.message) : 'unknown',
+      cause: describeFailure(error),
+    };
+  }
+  report.totalMs = Date.now() - started;
+  return report;
+}
+
 export async function POST(request: NextRequest): Promise<Response> {
   let secret: string;
   try {
@@ -207,7 +268,7 @@ export async function POST(request: NextRequest): Promise<Response> {
 
   const parsed = bodySchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: 'INVALID_BODY', issues: parsed.error.issues.map((i) => i.message) }, { status: 400 });
-  const { viewport, fontMode, waitMs } = parsed.data;
+  const { viewport, fontMode, waitMs, webgl, mode } = parsed.data;
 
   // 운영과 같은 SSRF 검사(PRD 8.6). 허용 목록 없이 만든다
   const checker = createHostChecker();
@@ -223,9 +284,18 @@ export async function POST(request: NextRequest): Promise<Response> {
   const started = Date.now();
   let launched: LaunchedBrowser | null = null;
   try {
-    launched = await launchBrowser();
+    launched = await launchBrowser({ webgl });
     timings.launchMs = launched.launchMs;
     const browserInfo = await withHardTimeout(systemInfo(launched), 10_000, () => new Error('SystemInfo timeout'));
+
+    if (mode === 'render') {
+      return NextResponse.json({
+        target: { host: target.host, viewport, webgl, mode },
+        launchMs: launched.launchMs,
+        browser: browserInfo,
+        render: await runRender(launched, viewport, target.href, checker),
+      });
+    }
 
     const context = await withHardTimeout(createViewportContext(launched.browser, viewport, { checker }), CONTEXT_TIMEOUT_MS, () => new Error('context timeout'));
     watch(context, collected);

@@ -417,11 +417,14 @@ function isTimeout(error: unknown): boolean {
 }
 
 /**
- * 202가 아닌 analyze 응답을 로그용으로 요약한다. 응답이 analyze route에서 왔는지(x-matched-path),
- * 리다이렉트였다면 어느 호스트로 가는지만 남긴다(URL 전체와 본문은 남기지 않는다, AGENTS.md 8장).
+ * 202가 아닌 analyze 응답을 로그용으로 요약한다. 호출한 호스트, bypass 헤더를 붙였는지, 응답이 analyze route에서 왔는지(x-matched-path),
+ * 리다이렉트였다면 어느 호스트로 가는지만 남긴다(URL 전체, 본문, 비밀값은 남기지 않는다, AGENTS.md 8장).
  */
-export function describeAnalyzeResponse(response: Pick<Response, 'status' | 'headers'>): string {
-  const parts = [String(response.status)];
+export function describeAnalyzeResponse(
+  response: Pick<Response, 'status' | 'headers' | 'redirected'>,
+  call: { host: string; bypass: boolean },
+): string {
+  const parts = [String(response.status), `host=${call.host}`, `bypass=${call.bypass}`];
   const location = response.headers.get('location');
   if (location) {
     let host = 'invalid';
@@ -432,6 +435,7 @@ export function describeAnalyzeResponse(response: Pick<Response, 'status' | 'hea
     }
     parts.push(`location=${host === 'relative.invalid' ? 'relative' : host}`);
   }
+  parts.push(`redirected=${response.redirected}`);
   parts.push(`matched=${response.headers.get('x-matched-path') ?? 'none'}`);
   const type = response.headers.get('content-type')?.split(';')[0]?.trim();
   if (type) parts.push(`type=${type}`);
@@ -461,7 +465,7 @@ export function createAnalyzeTrigger(requestOrigin: string | undefined): (id: st
       throw error;
     }
     await response.body?.cancel().catch(() => undefined);
-    if (response.status !== 202) throw new InspectionError('INTERNAL_ERROR', `Analyze call returned ${describeAnalyzeResponse(response)}`);
+    if (response.status !== 202) throw new InspectionError('INTERNAL_ERROR', `Analyze call returned ${describeAnalyzeResponse(response, { host: new URL(origin).host, bypass: 'x-vercel-protection-bypass' in headers })}`);
   };
 }
 
