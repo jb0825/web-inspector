@@ -36,7 +36,7 @@ let browserClose: ReturnType<typeof vi.fn<() => Promise<"closed" | "killed">>>;
 function rendered(viewport: Viewport, data: CollectedViewport = site(viewport)): RenderedViewport {
   return {
     collected: data,
-    screenshot: { ...SHOTS[viewport], png: Buffer.from(`png-${viewport}`) },
+    screenshot: { ...SHOTS[viewport], png: Buffer.from(`png-${viewport}`), mode: 'full', failedAttempts: 0 },
     finalUrl: `https://www.example.com/?from=${viewport}`,
     timings: { gotoMs: 100 },
   };

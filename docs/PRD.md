@@ -220,6 +220,7 @@ Requirements:
 - 폰트 파일은 저장소의 `public/fonts/`에 한 벌만 둔다. Vercel과 로컬 Linux에서는 브라우저가 이 파일을 쓰도록 강제한다.
 - 로컬 macOS에서는 Chromium의 폰트 대체 순서를 OS가 정하므로 강제하지 않는다. 대신 모든 Fixture 페이지가 `@font-face`로 같은 폰트 파일을 불러와 텍스트에 직접 적용한다(13.1). 이렇게 하면 OS와 관계없이 Fixture 측정값이 같아진다.
 - 외부 사이트의 검사 결과는 로컬 OS에 따라 달라질 수 있다. 기준은 Vercel 환경의 결과다.
+- 서버리스 Chromium에는 시스템 폰트도 없다(`@sparticuz/chromium`은 Open Sans만 포함). 웹 폰트 없이 Arial, Helvetica, Times New Roman, Georgia, Courier New 같은 시스템 폰트를 쓰는 사이트가 모두 Open Sans로 그려져 글자 폭과 Text Overflow 측정값이 실제와 달라진다(T14, production 확인). 그래서 글자 폭이 같은 Liberation Sans / Serif / Mono를 함께 번들하고, fontconfig 별칭으로 시스템 폰트 이름과 `sans-serif`·`serif`·`monospace`를 이 폰트로 보낸다(Vercel, 로컬 Linux). Georgia는 폭이 같은 대체 폰트가 없어 Liberation Serif로 보낸다. 페이지가 `@font-face`로 불러오는 웹 폰트에는 영향이 없다.
 
 #### 5.2.4 Requirements
 
@@ -231,6 +232,10 @@ Requirements:
 - 같은 페이지의 Desktop / Mobile 결과를 비교한다(5.6 참고).
 - 스크린샷을 볼 수 있게 한다.
 - `html` 또는 `body`가 `overflow-x: hidden`/`clip`이면 스크린샷 너비를 `layoutWidth`로 자른다. 사용자가 볼 수 없는 영역을 보여주지 않기 위해서다. 그 밖의 경우(예: Mobile 축소로 넓어진 페이지)는 실제 페이지 너비대로 찍는다.
+- 촬영이 실패하면 줄여서 다시 찍는다(T14). 서버리스 Chromium에서 전체 페이지 촬영이 가끔 "Unable to capture screenshot"으로 실패하기 때문이다(production에서 Desktop·Mobile 모두 확인). 측정은 이미 끝났으므로 스크린샷 때문에 viewport 결과를 버리지 않는다.
+  1. 전체(위 높이 상한 적용) → 2. 실제 픽셀(CSS px × `deviceScaleFactor`)이 가로·세로 8,192px 이하(Mobile CSS 2,730px) → 3. 첫 화면 높이(Desktop 900px, Mobile 844px). 앞 방식보다 작아지지 않는 방식은 건너뛴다.
+  - 줄여 찍은 결과는 높이 상한으로 자른 것과 같이 `screenshotTruncated`로 표시하고, 스크린샷 밖의 이슈는 `cropRect`가 `null`이다(5.4.1). 시도 시간은 "측정과 스크린샷 20s"(8.1.3) 안에서 쓴다.
+  - 세 방식이 모두 실패하면 그 viewport는 실패다(`INTERNAL_ERROR`). 실패한 시도마다 크기, 배율, canvas 수, 원인을 로그(`screenshot-retry`)에 남긴다.
 
 ### 5.3 Feature 3. UI Issue Detection
 
@@ -1136,7 +1141,8 @@ URL과 네트워크:
 | 스크린샷 길이 | 아주 긴 페이지는 스크린샷이 잘린다. | Desktop 10,000px, Mobile 5,000px에서 자르고 표시한다. 측정은 전체 페이지를 대상으로 한다. |
 | meta viewport 없음 | Mobile에서 layout viewport가 390px이 아니게 된다. | 측정한 `layoutWidth` 기준으로 판정하고 결과에 안내한다. |
 | DNS rebinding | route 검사 뒤 Chromium의 재조회 결과가 바뀌면 막을 수 없다. | MVP에서는 위험을 받아들이고, 정식 서비스에서는 네트워크 수준 격리를 검토한다. |
-| 실행 환경 차이 | 서버리스 Chromium은 실제 기기의 Safari나 Chrome과 렌더링이 다를 수 있다. | Chromium 기준 결과라는 점을 명시한다. |
+| 실행 환경 차이 | 서버리스 Chromium은 실제 기기의 Safari나 Chrome과 렌더링이 다를 수 있다. 시스템 폰트는 글자 폭이 같은 Liberation 폰트로 대체하지만(5.2.3) 모양은 다르고, Georgia처럼 폭이 같은 대체 폰트가 없는 경우 측정값이 실제와 다를 수 있다. | Chromium 기준 결과라는 점을 명시한다. |
+| 스크린샷 촬영 실패 | 서버리스 Chromium에서 전체 페이지 촬영이 가끔 실패한다. WebGL canvas는 빈 화면으로 찍힐 수 있다. | 줄여서 다시 찍고 잘림을 표시한다(5.2.4). |
 | 서버 경유 요청 | 리다이렉트를 hop마다 검사하려고 서버가 대신 요청하므로, TLS·HTTP 특성이 브라우저 직접 요청과 달라 봇 차단 결과가 다를 수 있다. 응답은 함수 메모리에 버퍼링된다. | 동영상·오디오는 불러오지 않는다. 크기를 CSS로 정하지 않은 video는 레이아웃이 실제와 다를 수 있다. |
 
 ---

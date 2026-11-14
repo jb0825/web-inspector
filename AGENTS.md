@@ -68,6 +68,7 @@ src/
     inspections/[id]/page.tsx           # 진행 화면 → features/inspection-progress
     report/[id]/page.tsx                # 결과 화면 (공유 가능, noindex) → features/report
     report/sample/page.tsx              # 샘플 리포트 (public/sample/inspection.json, DOMAIN_MODEL 6.3)
+    report/showcase/[name]/page.tsx     # Before/After 사례 리포트 (public/showcase/{before|after}/, T14). 파일이 없으면 404
     report/ReportContent.tsx            # 결과 화면 본문 조립 (선택 상태 query, 태스크 탭, Issue Detail). 위 두 페이지가 함께 사용
     api/inspections/route.ts            # POST: 검사 생성
     api/inspections/[id]/route.ts       # GET: 상태와 결과 조회
@@ -93,6 +94,7 @@ src/
     inspect.ts                          # 브라우저 검사 오케스트레이션 runInspection (create의 after())
     analyze.ts                          # 분석 단계 runAnalysis (analyze의 after()). 원인 분석 → 태스크 → 프롬프트 (DOMAIN_MODEL 4.3)
     status.ts                           # 상태 판정(PRD 6.2.2)과 멈춘 검사 처리(DOMAIN_MODEL 4.4) 순수 함수
+    showcase.ts                         # 사례 리포트 문서 읽기 (public/showcase/, 빌드할 때 정적 페이지로 만든다)
     log.ts                              # 구조화 로그 (ID, 호스트, 단계, 코드, 소요 시간만)
     http/inspections.ts                 # API 4개의 요청 처리. route 파일은 의존성(저장소, after)만 넣어 호출한다
     browser/
@@ -172,7 +174,8 @@ public/fixtures/                        # 모든 페이지가 /fonts/의 폰트�
   negative/N-01.html ... N-09.html
 public/demo/landing.html                # 샘플 리포트용 검사 대상 데모 페이지. Fixture가 아니다(test:fixtures 판정에 넣지 않음)
 public/sample/                          # 샘플 리포트 정적 데이터 (inspection.json, 스크린샷). pnpm import-sample로만 바꾼다
-scripts/                                # 로컬 도구: collect, detect, fixture-screenshots, ui-shots, import-sample(sample/core.ts)
+public/showcase/{before,after}/         # Before/After 사례 정적 데이터. pnpm import-sample --target showcase/…로만 바꾼다
+scripts/                                # 로컬 도구: collect, detect, fixture-screenshots, ui-shots, import-sample(sample/core.ts), compare-inspections(compare/core.ts)
 tests/
   unit/                                 # src/server 순수 함수 테스트
   fixtures/                             # 로컬 브라우저로 Fixture 검사 결과 검증 (expected.ts, run.ts, server.ts, securityRoutes.ts)
@@ -180,6 +183,8 @@ tests/
 docs/
   PRD.md, DETECTION_RULES.md, DOMAIN_MODEL.md, API_SPEC.md
   USER_FLOW.md, WIREFRAME.md, DESIGN_GUIDE.md
+  AGENT_WORKFLOW.md                     # 에이전트로 만든 방법 (README에서 링크)
+  assets/                               # README 이미지, Before/After 비교 결과 (showcase-compare.md)
   future/                               # MVP에서 쓰지 않는 보관 문서
 ```
 
@@ -224,6 +229,8 @@ pnpm test:security     # 로컬 브라우저로 리다이렉트, 하위 요청, 
 pnpm collect <name>    # (T04 이후) Fixture 1개의 수집 결과를 JSON으로 출력
 pnpm test:fixtures --page demo/landing.html --report-only   # Fixture가 아닌 페이지 1개를 같은 경로로 검사하고 결과만 출력 (판정 없음)
 pnpm import-sample --base <production URL> --id <inspection id>   # production 검사 결과를 public/sample/로 가져온다 (T13)
+pnpm import-sample --base <production URL> --id <id> --target showcase/before --force   # Before/After 사례를 public/showcase/로 (T14)
+pnpm compare-inspections <before.json> <after.json>   # Before/After 비교 Markdown 출력, docs/assets/showcase-compare.md에 저장 (T14)
 ```
 
 작업을 마치기 전에 `pnpm typecheck && pnpm lint && pnpm test`를 실행하고 결과를 보고한다.
@@ -295,10 +302,11 @@ pnpm import-sample --base <production URL> --id <inspection id>   # production �
 
 | 실행 환경 | 방식 |
 |---|---|
-| Vercel (검사 기준 환경) | `@sparticuz/chromium` 153에는 폰트 등록 함수가 없다. `executablePath()`가 `/tmp/fonts`(fonts.conf 포함)를 푼 **다음에** `public/fonts/`의 폰트를 `/tmp/fonts/` 아래로 복사하고 브라우저를 실행한다. 먼저 복사하면 압축 해제가 건너뛰어져 fonts.conf가 생기지 않는다(`src/server/browser/fonts.ts`). |
-| 로컬 Linux (CI 등) | 같은 폰트 디렉터리를 포함한 `fonts.conf`를 만들고, 브라우저 실행 옵션의 `env.FONTCONFIG_FILE`로 넘긴다. |
+| Vercel (검사 기준 환경) | `@sparticuz/chromium` 153에는 폰트 등록 함수가 없다. `executablePath()`가 `/tmp/fonts`(fonts.conf 포함)를 푼 **다음에** `public/fonts/`의 폰트를 `/tmp/fonts/` 아래로 복사한다. 먼저 복사하면 압축 해제가 건너뛰어져 fonts.conf가 생기지 않는다. 그 fonts.conf를 include하고 시스템 폰트 별칭을 더한 fonts.conf를 만들어 `env.FONTCONFIG_FILE`로 넘긴다(`src/server/browser/fonts.ts`). |
+| 로컬 Linux (CI 등) | `/etc/fonts/fonts.conf`를 include하고 번들 폰트 디렉터리와 시스템 폰트 별칭을 더한 `fonts.conf`를 만들어 `env.FONTCONFIG_FILE`로 넘긴다. |
 | 로컬 macOS (현재 개발 환경) | Chromium의 폰트 대체 순서를 OS가 정하므로 강제하지 않는다. **우회 코드를 만들지 않는다.** 경고 로그만 남긴다. |
 
+- 번들 폰트는 Noto Sans KR(한글)과 Liberation Sans / Serif / Mono(Arial·Helvetica / Times New Roman / Courier New와 글자 폭이 같음)다. 서버리스 Chromium에는 시스템 폰트가 없어서, 시스템 폰트를 쓰는 사이트가 Open Sans로 그려지는 것을 막는다(PRD 5.2.3, T14). 별칭 목록은 `fonts.ts`의 `FONT_ALIASES`다.
 - 폰트 파일 원본은 `public/fonts/` 한 곳에만 둔다. 서버 코드는 이 경로의 파일을 읽고, Fixture 페이지는 `/fonts/...` URL로 불러온다. 복사본을 만들지 않는다.
 - **모든 Fixture 페이지는 `@font-face`로 `/fonts/`의 Noto Sans KR을 불러오고, 텍스트에 `font-family: 'Noto Sans KR'`을 명시한다.** 그래서 macOS 로컬과 Vercel에서 Fixture 측정값이 같아야 한다.
 - 로컬과 Vercel의 Fixture 결과가 다르면 폰트 로드 실패를 먼저 의심한다. 실제로 쓰인 폰트는 CDP `CSS.getPlatformFontsForNode`로 확인한다. 해당 텍스트의 `familyName`이 `Noto Sans KR`이어야 한다(T02에서 임시 `api/smoke` route로 확인했고, T13에서 삭제했다).

@@ -85,12 +85,14 @@ async function startVercel(): Promise<Started> {
   ]);
   // executablePath()가 /tmp/fonts(fonts.conf)를 먼저 풀어야 번들 폰트를 등록할 수 있다(fonts.ts 참고).
   const executablePath = await sparticuz.executablePath();
-  await ensureFonts('vercel');
+  const fonts = await ensureFonts('vercel');
   const server = await chromium.launchServer({
     executablePath,
     args: sparticuz.args,
     headless: true,
     timeout: LAUNCH_TIMEOUT_MS,
+    // FONTCONFIG_FILE: 시스템 폰트 별칭을 더한 fonts.conf (fonts.ts). 나머지 환경(FONTCONFIG_PATH 등)은 그대로 물려준다
+    env: getChildProcessEnv(fonts.env),
   });
   return { server, connect: (ws) => chromium.connect(ws, { timeout: LAUNCH_TIMEOUT_MS }) };
 }

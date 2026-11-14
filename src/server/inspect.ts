@@ -215,6 +215,17 @@ export async function runInspection(id: string, deps: InspectionDeps): Promise<v
             guard: guardOptions,
             timeLimitMs: remaining,
             onStep: (s) => log('viewport-step', { id, host, viewport, step: s, durationMs: now() - viewportStart }),
+            // 스크린샷이 실패하면 줄여서 다시 찍는다(browser/screenshot.ts). 실패한 시도마다 크기와 원인을 남긴다
+            onScreenshotFailed: (failure) =>
+              log('screenshot-retry', {
+                id,
+                host,
+                viewport,
+                step: failure.diagnostics.mode,
+                durationMs: failure.durationMs,
+                screenshot: { ...failure.diagnostics },
+                cause: describeFailure(failure.error),
+              }),
             onLaunched: (launched) => {
               current = launched;
               log('launch', { id, host, viewport, durationMs: launched.launchMs });
@@ -228,7 +239,15 @@ export async function runInspection(id: string, deps: InspectionDeps): Promise<v
           }),
           guard.promise,
         ]);
-        log('viewport', { id, host, viewport, durationMs: now() - viewportStart, timings: rendered[viewport]?.timings });
+        const shot = rendered[viewport]?.screenshot;
+        log('viewport', {
+          id,
+          host,
+          viewport,
+          durationMs: now() - viewportStart,
+          timings: rendered[viewport]?.timings,
+          ...(shot ? { screenshot: { mode: shot.mode, failedAttempts: shot.failedAttempts, width: shot.screenshotWidth, height: shot.screenshotHeight } } : {}),
+        });
       } catch (error) {
         errors[viewport] = errorInfo(error);
         log('viewport-failed', { id, host, viewport, code: errors[viewport]?.code, durationMs: now() - viewportStart, cause: describeFailure(error) });

@@ -6,7 +6,7 @@ import { InspectionError } from '@/server/errors';
 import type { RouteGuardOptions } from '@/server/security/routeGuard';
 import type { Viewport } from '@/types/inspection';
 import { createViewportContext } from './devices';
-import { captureFullPage, type CapturedScreenshot } from './screenshot';
+import { captureFullPage, type CapturedScreenshot, type ScreenshotAttemptFailure } from './screenshot';
 import { DEFAULT_STABILIZE_BUDGET, openAndStabilize, type StabilizeBudget } from './stabilize';
 import { CONTEXT_TIMEOUT_MS, HARD_TIMEOUT_GRACE_MS, withHardTimeout } from './timeouts';
 
@@ -46,6 +46,8 @@ export interface RenderOptions {
    * 결과를 기다리지 않고 바로 남기므로, 끝나지 않은 단계도 기록된다.
    */
   onStep?: (step: string) => void;
+  /** 스크린샷 촬영이 실패해 줄여서 다시 찍을 때마다 호출한다(로그용, T14) */
+  onScreenshotFailed?: (failure: ScreenshotAttemptFailure) => void;
   /** 단계별 제한. 테스트에서 줄인다 */
   limits?: Partial<RenderLimits>;
 }
@@ -105,6 +107,11 @@ export async function renderViewport(browser: Browser, viewport: Viewport, url: 
     measureExceeded,
   );
   // 수집 직후 같은 page로 찍는다(T07)
-  const screenshot = await phase('screenshot', () => captureFullPage(page, viewport, collected), measureLeft(), measureExceeded);
+  const screenshot = await phase(
+    'screenshot',
+    () => captureFullPage(page, viewport, collected, { onAttemptFailed: options.onScreenshotFailed }),
+    measureLeft(),
+    measureExceeded,
+  );
   return { collected, screenshot, finalUrl: meta.finalUrl, timings };
 }

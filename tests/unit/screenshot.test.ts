@@ -1,6 +1,7 @@
 import { deflateSync } from 'node:zlib';
-import { describe, expect, it } from 'vitest';
-import { isRootClip, readPngSize, screenshotClip } from '@/server/browser/screenshot';
+import { describe, expect, it, vi } from 'vitest';
+import type { Page } from 'playwright-core';
+import { captureFullPage, isRootClip, readPngSize, screenshotClip, screenshotPlans, SCREENSHOT_MAX_DEVICE_PX, type ScreenshotAttemptFailure } from '@/server/browser/screenshot';
 
 // PNG 헤더(IHDR) 파싱. 이미지 크기는 페이지 측정값이 아니라 저장된 PNG에서 읽는다(DETECTION_RULES 3.1.1)
 
@@ -112,5 +113,77 @@ describe('screenshotClip (PRD 5.2.4)', () => {
     expect(isRootClip({ html: 'visible', body: 'clip' })).toBe(true);
     expect(isRootClip({ html: 'auto', body: 'scroll' })).toBe(false);
     expect(isRootClip(visible)).toBe(false);
+  });
+});
+
+describe('screenshotPlans (T14: 실패하면 줄여서 다시 찍기)', () => {
+  const visible = { rootOverflowX: { html: 'visible', body: 'visible' }, layoutWidth: 390 };
+
+  it('전체 → 실제 픽셀 상한 → 첫 화면 순서다', () => {
+    // Mobile 배율 3: 실제 픽셀 8192 → CSS 2730px
+    expect(screenshotPlans({ width: 390, height: 4925 }, 'mobile', visible)).toEqual([
+      { mode: 'full', clip: null },
+      { mode: 'reduced', clip: { x: 0, y: 0, width: 390, height: Math.floor(SCREENSHOT_MAX_DEVICE_PX / 3) } },
+      { mode: 'first-screen', clip: { x: 0, y: 0, width: 390, height: 844 } },
+    ]);
+  });
+
+  it('높이 상한(PRD 5.2.4)을 적용한 clip에서 시작한다', () => {
+    const plans = screenshotPlans({ width: 1440, height: 12345 }, 'desktop', { ...visible, layoutWidth: 1440 });
+    expect(plans.map((p) => [p.mode, p.clip?.height])).toEqual([
+      ['full', 10000],
+      ['reduced', 8192],
+      ['first-screen', 900],
+    ]);
+  });
+
+  it('이미 작은 페이지는 더 작아지는 방식만 넣는다', () => {
+    expect(screenshotPlans({ width: 390, height: 2000 }, 'mobile', visible).map((p) => p.mode)).toEqual(['full', 'first-screen']);
+    expect(screenshotPlans({ width: 1440, height: 900 }, 'desktop', { ...visible, layoutWidth: 1440 })).toEqual([{ mode: 'full', clip: null }]);
+  });
+
+  it('너비도 실제 픽셀 상한 안으로 줄인다', () => {
+    const plans = screenshotPlans({ width: 3000, height: 1000 }, 'mobile', visible);
+    expect(plans[1]).toEqual({ mode: 'reduced', clip: { x: 0, y: 0, width: 2730, height: 1000 } });
+  });
+});
+
+describe('captureFullPage 재시도', () => {
+  const layout = { rootOverflowX: { html: 'visible', body: 'visible' }, layoutWidth: 390 };
+
+  function fakePage(results: (Buffer | Error)[]) {
+    const screenshot = vi.fn(async () => {
+      const next = results.shift();
+      if (!next || next instanceof Error) throw next ?? new Error('no more');
+      return next;
+    });
+    const page = { evaluate: vi.fn(async () => ({ width: 390, height: 4925, canvasCount: 1 })), screenshot, isClosed: () => false };
+    return { page: page as unknown as Page, screenshot };
+  }
+
+  it('실패하면 줄여서 다시 찍고, 실패한 시도를 진단 값과 함께 알린다', async () => {
+    const { page, screenshot } = fakePage([new Error('Protocol error (Page.captureScreenshot): Unable to capture screenshot'), png(390, 2730)]);
+    const failures: ScreenshotAttemptFailure[] = [];
+    const shot = await captureFullPage(page, 'mobile', layout, { onAttemptFailed: (f) => failures.push(f) });
+    expect(shot.mode).toBe('reduced');
+    expect(shot.failedAttempts).toBe(1);
+    expect(shot.screenshotHeight).toBe(2730);
+    expect(shot.documentHeight).toBe(4925);
+    expect(shot.screenshotTruncated).toBe(true);
+    expect(screenshot).toHaveBeenCalledTimes(2);
+    expect(failures).toHaveLength(1);
+    expect(failures[0]!.diagnostics).toMatchObject({ mode: 'full', cssHeight: 4925, deviceScaleFactor: 3, deviceHeight: 14775, canvasCount: 1 });
+  });
+
+  it('모두 실패하면 마지막 오류를 던진다', async () => {
+    const { page, screenshot } = fakePage([new Error('a'), new Error('b'), new Error('last')]);
+    await expect(captureFullPage(page, 'mobile', layout)).rejects.toThrow('last');
+    expect(screenshot).toHaveBeenCalledTimes(3);
+  });
+
+  it('처음에 성공하면 full이다', async () => {
+    const { page } = fakePage([png(390, 4925)]);
+    const shot = await captureFullPage(page, 'mobile', layout);
+    expect(shot).toMatchObject({ mode: 'full', failedAttempts: 0, screenshotTruncated: false });
   });
 });
