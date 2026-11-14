@@ -46,8 +46,8 @@ function recordingStore(): InspectionStore {
   const inner = createInspectionStore(redis, { now: () => now });
   return {
     ...inner,
-    async save(doc) {
-      const saved = await inner.save(doc);
+    async save(doc, options) {
+      const saved = await inner.save(doc, options);
       saves.push(saved);
       assertInspectionInvariants(saved, saved.status === 'completed' || saved.status === 'partial' ? 'final' : 'browser');
       return saved;
@@ -361,5 +361,47 @@ describe('resolveInternalOrigin (PRD 8.1.2)', () => {
     expect(resolveInternalOrigin('http://localhost:3000', undefined)).toBe('http://localhost:3000');
     expect(resolveInternalOrigin(undefined, 'web-inspector-abc.vercel.app')).toBe('https://web-inspector-abc.vercel.app');
     expect(() => resolveInternalOrigin(undefined, undefined)).toThrow(InspectionError);
+  });
+});
+
+describe('runInspection: 검사 중지 (POST /api/inspections/:id/cancel)', () => {
+  it('시작 전에 중지 요청이 있으면 아무것도 저장하지 않고 브라우저를 띄우지 않는다. 슬롯은 반환한다', async () => {
+    await createInspectionStore(redis, { now: () => now }).requestCancel(ID);
+    const deps = makeDeps();
+    await runInspection(ID, deps);
+    expect(saves).toEqual([]);
+    expect(deps.launchBrowser).not.toHaveBeenCalled();
+    expect(slotHeld()).toBe(false);
+  });
+
+  it('렌더링 중 중지 요청을 보면 브라우저를 닫아 멈추고, 중지 API가 저장한 문서를 덮어쓰지 않는다', async () => {
+    const store = createInspectionStore(redis, { now: () => now });
+    let closed: () => void = () => undefined;
+    const closedPromise = new Promise<void>((resolve) => (closed = resolve));
+    browserClose = vi.fn(async () => closed());
+    const deps = makeDeps({
+      cancelPollMs: 5,
+      // 브라우저가 닫힐 때까지 끝나지 않는 렌더링 (production에서 멈춘 Mobile viewport와 같은 상황)
+      renderViewport: vi.fn(async () => {
+        await closedPromise;
+        throw new Error('Target page, context or browser has been closed');
+      }),
+    });
+    const running = runInspection(ID, deps);
+    // 중지 API와 같은 순서: 표시 → 다시 읽기 → failed(CANCELLED) 저장
+    await vi.waitFor(() => expect(saves.some((d) => d.step === 'rendering_desktop')).toBe(true));
+    await store.requestCancel(ID);
+    const current = await store.read(ID);
+    await store.save({ ...current!, status: 'failed', error: { code: 'CANCELLED', message: 'Cancelled by user' }, completedAt: new Date(now).toISOString() });
+    await running;
+
+    expect(browserClose).toHaveBeenCalled();
+    expect(vi.mocked(deps.renderViewport)).toHaveBeenCalledTimes(1);
+    expect(saves.every((d) => d.status === 'running')).toBe(true);
+    const doc = await store.read(ID);
+    expect(doc?.status).toBe('failed');
+    expect(doc?.error?.code).toBe('CANCELLED');
+    expect(deps.triggerAnalyze).not.toHaveBeenCalled();
+    expect(slotHeld()).toBe(false);
   });
 });

@@ -1,8 +1,10 @@
 'use client';
 
 import Link from 'next/link';
+import { CircleStop } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { cancelInspection } from '@/components/api/inspections';
 import { errorDetail, ERROR_MESSAGES, isInspectionStep, STEP_LABELS } from '@/components/inspection/labels';
 import { stashRetryUrl } from '@/components/inspection/retryUrl';
 import { StatusBadge } from '@/components/inspection/StatusBadge';
@@ -23,7 +25,9 @@ const stopAtReport = (inspection: Inspection) => isReportReady(inspection.status
 export function InspectionProgress({ id }: { id: string }) {
   const router = useRouter();
   const { state, retry } = useInspectionPolling(id, { stopWhen: stopAtReport });
-  const inspection = state.inspection;
+  // 중지 응답의 문서를 바로 보여준다. polling도 곧 같은 문서(failed)를 받고 멈춘다
+  const [cancelledDoc, setCancelledDoc] = useState<Inspection | null>(null);
+  const inspection = cancelledDoc ?? state.inspection;
   const reportReady = inspection !== null && isReportReady(inspection.status);
 
   useEffect(() => {
@@ -58,7 +62,10 @@ export function InspectionProgress({ id }: { id: string }) {
           </Link>
         </p>
       ) : (
-        <p className="text-body-sm text-text-secondary">검사 결과가 저장되면 결과 화면으로 이동합니다.</p>
+        <div className="flex flex-col gap-4">
+          <p className="text-body-sm text-text-secondary">검사 결과가 저장되면 결과 화면으로 이동합니다.</p>
+          <CancelAction id={id} onCancelled={setCancelledDoc} />
+        </div>
       )}
     </div>
   );
@@ -71,7 +78,7 @@ function headline(inspection: Inspection): string {
     case 'running':
       return '웹사이트를 검사하는 중입니다';
     case 'failed':
-      return '검사에 실패했습니다';
+      return inspection.error?.code === 'CANCELLED' ? '검사를 중지했습니다' : '검사에 실패했습니다';
     default:
       return '검사 결과가 준비되었습니다';
   }
@@ -131,10 +138,40 @@ function PollError({ onRetry }: { onRetry: () => void }) {
   );
 }
 
+/** 브라우저 단계(pending, running)에서만 보인다. 결과 정리 단계부터는 서버가 409로 거부한다 */
+function CancelAction({ id, onCancelled }: { id: string; onCancelled: (inspection: Inspection) => void }) {
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function cancel() {
+    setPending(true);
+    setError(null);
+    const result = await cancelInspection(id);
+    setPending(false);
+    if (result.ok) onCancelled(result.inspection);
+    else setError(result.message ?? '검사를 중지하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+  }
+
+  return (
+    <div className="flex flex-col items-start gap-2">
+      <Button variant="secondary" onClick={cancel} loading={pending} className="min-h-11 w-full sm:w-auto">
+        <CircleStop aria-hidden size={16} strokeWidth={1.75} />
+        검사 중지
+      </Button>
+      {error ? (
+        <p role="alert" className="text-body-sm text-error-text">
+          {error}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 function FailedActions({ inspection }: { inspection: Inspection }) {
   const router = useRouter();
   const error = inspection.error;
   const detail = error ? errorDetail(error) : null;
+  const cancelled = error?.code === 'CANCELLED';
 
   // WIREFRAME 4.5: 새 검사를 바로 만들지 않고, URL을 넘겨 Home에서 다시 시작하게 한다
   function retryFromHome() {
@@ -144,15 +181,21 @@ function FailedActions({ inspection }: { inspection: Inspection }) {
 
   return (
     <section className="flex flex-col gap-4" aria-label="실패 안내">
-      <Notice tone="error" title={error ? ERROR_MESSAGES[error.code] : ERROR_MESSAGES.INTERNAL_ERROR}>
-        <div className="flex flex-col gap-1">
-          {detail ? <span className="wrap-anywhere">{detail}</span> : null}
-          {error ? <code className="font-mono text-caption">{error.code}</code> : null}
-        </div>
-      </Notice>
+      {cancelled ? (
+        <Notice tone="info" title={ERROR_MESSAGES.CANCELLED}>
+          같은 주소를 다시 검사하려면 아래 버튼을 눌러 주세요.
+        </Notice>
+      ) : (
+        <Notice tone="error" title={error ? ERROR_MESSAGES[error.code] : ERROR_MESSAGES.INTERNAL_ERROR}>
+          <div className="flex flex-col gap-1">
+            {detail ? <span className="wrap-anywhere">{detail}</span> : null}
+            {error ? <code className="font-mono text-caption">{error.code}</code> : null}
+          </div>
+        </Notice>
+      )}
       <div className="flex flex-col gap-2 sm:flex-row">
         <Button onClick={retryFromHome} className="min-h-11 w-full sm:w-auto">
-          다시 시도
+          {cancelled ? '다시 검사' : '다시 시도'}
         </Button>
         <Link href="/" className={buttonClassName('secondary', 'md', 'min-h-11 w-full sm:w-auto')}>
           홈으로

@@ -61,6 +61,7 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
   STORAGE_FAILED: '검사 결과를 저장하지 못했습니다.',
   AI_FAILED: '원인 분석 단계를 끝내지 못했습니다. 측정 결과는 그대로 볼 수 있습니다.',
   INTERNAL_ERROR: '일시적인 오류가 발생했습니다.',
+  CANCELLED: '검사를 중지했습니다.',
 };
 
 /** 검사 시작 요청(POST /api/inspections) 응답에 쓰는 문구. 검사 결과와 뜻이 다른 코드만 덮어쓴다 (USER_FLOW 3.6, 9.2) */
@@ -80,7 +81,7 @@ export function requestErrorMessage(code: string | undefined): string {
 }
 
 /** 내부 오류 내용을 화면에 보이지 않는 코드 (USER_FLOW 9.11) */
-const HIDE_SERVER_MESSAGE: ReadonlySet<ErrorCode> = new Set(['INTERNAL_ERROR', 'STORAGE_FAILED']);
+const HIDE_SERVER_MESSAGE: ReadonlySet<ErrorCode> = new Set(['INTERNAL_ERROR', 'STORAGE_FAILED', 'CANCELLED']);
 
 /** 서버 message를 보조로 보여줄지 정한다. 코드 문구와 같거나 숨길 코드면 null */
 export function errorDetail(error: { code: ErrorCode; message: string }): string | null {

@@ -24,6 +24,7 @@ v1.0은 서버 메모리 저장소와 In-Memory Job Queue, 사용자가 직접 �
 | `POST` | `/api/inspections` | 브라우저 | 검사 생성 |
 | `GET` | `/api/inspections/:id` | 브라우저 (polling) | 상태와 결과 조회 |
 | `POST` | `/api/inspections/:id/analyze` | 서버 내부 | AI 단계 실행 (공유 비밀로 보호) |
+| `POST` | `/api/inspections/:id/cancel` | 브라우저 (진행 화면) | 검사 중지 (6A장) |
 
 페이지 라우트(API 아님):
 
@@ -349,6 +350,45 @@ x-internal-secret: {INTERNAL_API_SECRET}
 | 비밀 헤더 없음 또는 불일치 | 401 | `UNAUTHORIZED` |
 | 검사가 없음 | 404 | `NOT_FOUND` |
 | 이미 실행 중이거나 상태가 맞지 않음 | 409 | `INVALID_STATE` |
+
+---
+
+## 6A. `POST /api/inspections/:id/cancel`
+
+진행 화면의 "검사 중지" 버튼이 호출한다. 검사 ID를 아는 사람이면 누구나 호출할 수 있다(공유 URL과 같은 권한, 인증 없음 PRD 9장).
+
+### 6A.1 Request
+
+```http
+POST /api/inspections/{id}/cancel
+```
+
+본문은 없다.
+
+### 6A.2 Processing
+
+```text
+1. id 형식 확인                                            실패 → 404
+2. 문서 읽기                                               없음 → 404
+3. status가 pending 또는 running인지 확인                   아니면 409 INVALID_STATE
+4. SET inspection:{id}:cancel 1 EX 300                     (중지 요청 표시)
+5. 문서 다시 읽기 → 아직 pending/running이면                아니면 409 INVALID_STATE
+   failed + error { code: CANCELLED } 로 저장 (측정 결과는 비운다, DOMAIN_MODEL I-5)
+6. ZREM inspections:running {id}                           (슬롯 바로 반환, 실패는 무시)
+7. 200 + 저장한 문서
+```
+
+- 표시를 먼저 남기고 다시 읽는다. 브라우저 단계(`runInspection`)의 저장은 모두 "중지 표시가 없을 때만 SET" 하는 Lua 스크립트로 한다(DOMAIN_MODEL 6.1). 그래서 4번 이후에는 브라우저 단계가 문서를 쓸 수 없고, 5번에서 읽은 상태가 마지막 상태다.
+- 실행 중인 `runInspection`은 2초마다 표시를 확인한다. 표시를 보면 브라우저를 닫아 진행 중인 렌더링을 끊고, 아무것도 저장하지 않고 끝난다. 슬롯은 `finally`에서 한 번 더 반환한다(중복 반환은 무해).
+- `analyzing` 이후(결과 정리, 분석)는 중지할 수 없다. 1초 안팎으로 끝나는 단계이고, 이미 저장된 측정 결과를 지우지 않기 위해서다.
+
+### 6A.3 Errors
+
+| 상황 | Status | code |
+|---|---:|---|
+| 검사가 없음, UUID가 아님 | 404 | `NOT_FOUND` |
+| 이미 끝났거나 `analyzing` 이후 | 409 | `INVALID_STATE` (message: 이미 끝났거나 결과를 정리하는 중이라 검사를 중지할 수 없습니다.) |
+| Redis 오류 | 500 | `INTERNAL_ERROR` |
 
 ---
 

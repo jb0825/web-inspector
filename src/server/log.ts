@@ -21,7 +21,7 @@ export interface LogFields {
 
 export type Logger = (event: string, fields: LogFields) => void;
 
-const CAUSE_MAX = 160;
+const CAUSE_MAX = 240;
 
 /**
  * 예상하지 못한 실패의 원인을 로그 한 줄로 요약한다. 운영에서 STORAGE_FAILED 원인을 찾기 위해 둔다(T13).
@@ -35,12 +35,32 @@ export function describeFailure(error: unknown): string {
   let text = `${error.name}: ${error.message}`;
   const cause = (error as { cause?: unknown }).cause;
   if (cause && typeof cause === 'object' && 'code' in cause && typeof cause.code === 'string') text += ` (${cause.code})`;
+  // InspectionError가 감싼 원래 오류(예: 시간 제한으로 끊긴 Playwright 호출)도 한 단계만 붙인다
+  if (cause instanceof Error) text += ` <- ${cause.name}: ${cause.message}`;
   return text
     .replace(/[a-z][a-z0-9+.-]*:\/\/\S+/gi, '<url>')
     .replace(/[A-Za-z0-9_-]{32,}/g, '<redacted>')
     .slice(0, CAUSE_MAX);
 }
 
+export type LogLevel = 'info' | 'warn' | 'error';
+
+/**
+ * 이벤트 이름으로 로그 레벨을 정한다. Vercel 로그는 console.error/warn을 error/warning 레벨로 표시한다.
+ * - error: 실패(…-failed, …-timeout, unexpected, read-invalid, analyze-config-missing)
+ * - warn: 정상 처리되지만 사용자가 원하는 결과를 받지 못한 경우(동시 실행 초과, 시간 부족으로 viewport 건너뜀)
+ */
+export function logLevelOf(event: string): LogLevel {
+  if (event.endsWith('-failed') || event.endsWith('-timeout') || event === 'unexpected' || event === 'read-invalid' || event === 'analyze-config-missing')
+    return 'error';
+  if (event === 'create-rejected' || event === 'viewport-skipped') return 'warn';
+  return 'info';
+}
+
 export const logEvent: Logger = (event, fields) => {
-  console.log(JSON.stringify({ scope: 'inspection', event, ...fields }));
+  const level = logLevelOf(event);
+  const line = JSON.stringify({ scope: 'inspection', level, event, ...fields });
+  if (level === 'error') console.error(line);
+  else if (level === 'warn') console.warn(line);
+  else console.log(line);
 };

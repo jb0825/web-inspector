@@ -6,11 +6,12 @@ import { isInspectionError } from '@/server/errors';
 import { describeFailure, type Logger } from '@/server/log';
 import { HOST_LOOKUP_FAILED_MESSAGE, validateInspectionUrl } from '@/server/security/url';
 import type { HostChecker } from '@/server/security/ssrf';
+import { isCancellable, toFailedDocument } from '@/server/status';
 import { StoredInspectionInvalidError, type InspectionStore } from '@/server/store/redis';
-import type { AnalyzeResponse, ApiError, ApiErrorCode, CreateInspectionResponse } from '@/types/api';
+import type { AnalyzeResponse, ApiError, ApiErrorCode, CancelInspectionResponse, CreateInspectionResponse } from '@/types/api';
 import type { Inspection } from '@/types/inspection';
 
-// API 3개의 요청 처리 (PRD 8.3, API_SPEC 3·5·6장). route 파일은 이 함수에 의존성을 넣어 호출만 한다(AGENTS.md 3.1).
+// API 요청 처리 (PRD 8.3, API_SPEC 3·5·6장). route 파일은 이 함수에 의존성을 넣어 호출만 한다(AGENTS.md 3.1).
 // after()와 저장소를 주입받아 Next.js 밖(Vitest)에서도 응답 형식을 테스트할 수 있게 한다.
 
 /** API_SPEC 3.1: 요청 본문 4 KB 이하 */
@@ -25,6 +26,7 @@ export const API_MESSAGES = {
   NOT_FOUND: '검사 결과를 찾을 수 없습니다. 결과는 7일 동안 보관됩니다.',
   UNAUTHORIZED: '인증이 필요합니다.',
   INVALID_STATE: '이미 처리 중이거나 처리할 수 없는 상태입니다.',
+  CANCEL_NOT_ALLOWED: '이미 끝났거나 결과를 정리하는 중이라 검사를 중지할 수 없습니다.',
   STORAGE_FAILED: '검사를 시작하지 못했습니다. 잠시 후 다시 시도해 주세요.',
   INTERNAL_ERROR: '일시적인 오류가 발생했습니다.',
 } as const;
@@ -203,4 +205,53 @@ export async function handleAnalyze(request: Request, id: string, deps: AnalyzeD
 
   deps.schedule(() => deps.startAnalysis(id));
   return jsonResponse(202, {} satisfies AnalyzeResponse);
+}
+
+export interface CancelDeps {
+  store: InspectionStore;
+  now(): number;
+  log: Logger;
+}
+
+/**
+ * POST /api/inspections/:id/cancel (API_SPEC 6A장). 브라우저 단계(pending, running)의 검사만 중지할 수 있다.
+ * 1. 중지 요청 표시를 먼저 남긴다. 이후 브라우저 단계의 저장은 모두 거부된다(SAVE_UNLESS_CANCELLED_SCRIPT)
+ * 2. 문서를 다시 읽어 아직 브라우저 단계면 failed(CANCELLED)로 저장한다. 그사이 analyzing이 되었으면 409
+ * 3. 동시 실행 슬롯을 바로 돌려준다. 실행 중인 검사도 중지 요청을 보고 멈춘 뒤 슬롯을 다시 반환한다(중복 반환은 무해)
+ */
+export async function handleCancelInspection(id: string, deps: CancelDeps): Promise<Response> {
+  if (!idSchema.safeParse(id).success) return apiError(404, 'NOT_FOUND', API_MESSAGES.NOT_FOUND);
+  let inspection: Inspection | null;
+  try {
+    inspection = await deps.store.read(id);
+  } catch (error) {
+    deps.log('cancel-failed', { id, code: 'INTERNAL_ERROR', cause: describeFailure(error) });
+    return apiError(500, 'INTERNAL_ERROR', API_MESSAGES.INTERNAL_ERROR);
+  }
+  if (!inspection) return apiError(404, 'NOT_FOUND', API_MESSAGES.NOT_FOUND);
+  if (!isCancellable(inspection.status)) return apiError(409, 'INVALID_STATE', API_MESSAGES.CANCEL_NOT_ALLOWED);
+
+  let saved: Inspection;
+  try {
+    await deps.store.requestCancel(id);
+    // 표시를 남긴 뒤 다시 읽는다. 그 전에 끝난 브라우저 단계 저장이 있으면 그 결과를 기준으로 판단한다
+    const current = await deps.store.read(id);
+    if (!current) return apiError(404, 'NOT_FOUND', API_MESSAGES.NOT_FOUND);
+    if (!isCancellable(current.status)) return apiError(409, 'INVALID_STATE', API_MESSAGES.CANCEL_NOT_ALLOWED);
+    saved = await deps.store.save(toFailedDocument(current, { code: 'CANCELLED', message: 'Cancelled by user' }, deps.now()));
+  } catch (error) {
+    deps.log('cancel-failed', { id, code: 'STORAGE_FAILED', cause: describeFailure(error) });
+    return apiError(500, 'INTERNAL_ERROR', API_MESSAGES.INTERNAL_ERROR);
+  }
+  await deps.store.releaseSlot(id).catch(() => undefined);
+  deps.log('cancelled-by-user', { id, host: hostOf(saved.url) });
+  return jsonResponse(200, saved satisfies CancelInspectionResponse);
+}
+
+function hostOf(url: string): string | undefined {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return undefined;
+  }
 }

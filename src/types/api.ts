@@ -25,5 +25,8 @@ export interface CreateInspectionResponse {
 /** GET /api/inspections/:id 200. 저장된 문서 그대로 (DOMAIN_MODEL 8장) */
 export type GetInspectionResponse = Inspection;
 
+/** POST /api/inspections/:id/cancel 200. 중지 후 문서(status: failed, error.code: CANCELLED) */
+export type CancelInspectionResponse = Inspection;
+
 /** POST /api/inspections/:id/analyze 202 */
 export type AnalyzeResponse = Record<string, never>;

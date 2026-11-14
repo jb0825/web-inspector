@@ -19,7 +19,7 @@
 - **보조 문서** (PRD와 다르면 PRD를 따른다):
   - `docs/DETECTION_RULES.md`: 탐지, Dedup, ID, Evidence, Priority 구현 명세 (`src/server/collect`, `detect`, `evidence`, `priority`)
   - `docs/DOMAIN_MODEL.md`: 불변 조건, 상태 전이, Redis/Blob 저장 방식, 스키마 위치
-  - `docs/API_SPEC.md`: API 3개, 내부 호출, polling 규칙
+  - `docs/API_SPEC.md`: API 4개(검사 중지 포함), 내부 호출, polling 규칙
   - `docs/USER_FLOW.md`, `docs/WIREFRAME.md`, `docs/DESIGN_GUIDE.md`: 화면 흐름, 화면 구조, 시각 스타일
   - `docs/future/`: MVP에서 쓰지 않는 보관 문서. 구현 근거로 쓰지 않는다.
 - 작업과 관련된 보조 문서도 PRD와 함께 읽는다.
@@ -72,6 +72,7 @@ src/
     api/inspections/route.ts            # POST: 검사 생성
     api/inspections/[id]/route.ts       # GET: 상태와 결과 조회
     api/inspections/[id]/analyze/route.ts  # POST: AI 단계 (내부 전용)
+    api/inspections/[id]/cancel/route.ts   # POST: 검사 중지 (브라우저 단계만, API_SPEC 6A장)
 
   components/                           # 여러 feature가 함께 쓰는 UI
     ui/                                 # 도메인을 모르는 UI: Button, Badge, Tabs, Textarea, CopyButton, Notice ...
@@ -93,7 +94,7 @@ src/
     analyze.ts                          # 분석 단계 runAnalysis (analyze의 after()). 원인 분석 → 태스크 → 프롬프트 (DOMAIN_MODEL 4.3)
     status.ts                           # 상태 판정(PRD 6.2.2)과 멈춘 검사 처리(DOMAIN_MODEL 4.4) 순수 함수
     log.ts                              # 구조화 로그 (ID, 호스트, 단계, 코드, 소요 시간만)
-    http/inspections.ts                 # API 3개의 요청 처리. route 파일은 의존성(저장소, after)만 넣어 호출한다
+    http/inspections.ts                 # API 4개의 요청 처리. route 파일은 의존성(저장소, after)만 넣어 호출한다
     browser/
       launch.ts                         # 환경별 Chromium 실행 (Local / Vercel 분기)
       fonts.ts                          # CJK 폰트 로드

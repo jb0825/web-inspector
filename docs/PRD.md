@@ -166,8 +166,8 @@ Website URL → Browser Rendering → Measurement → Rule-based Detection
 | 구분 | 항목 |
 |---|---|
 | **Must** | URL 검사, Desktop/Mobile 렌더링, 탐지 3종, 중복 제거, Evidence와 하이라이트 스크린샷, 규칙 기반 우선순위(Needs Review 분류 포함), 규칙 기반 원인 분석, 태스크 생성, 프롬프트 생성과 복사, 진행 상태 polling, Vercel 배포, 샘플 리포트 |
-| **Should** | AI 원인 분석 보강, 단계별 진행 표시, Category/Priority 필터, Desktop/Mobile 비교 태그, 결과 공유 URL, Needs Review 태스크 표시 토글 |
-| **Won't (MVP)** | 최근 검사 내역, Viewport 사용자 설정 UI, 검사 취소, AI 재분석 요청, 이슈 상태 관리(Open/Ignored/Resolved), 사용자 인증 및 9장의 항목 |
+| **Should** | AI 원인 분석 보강, 단계별 진행 표시, Category/Priority 필터, Desktop/Mobile 비교 태그, 결과 공유 URL, Needs Review 태스크 표시 토글, 검사 중지(브라우저 단계, T13에서 추가) |
+| **Won't (MVP)** | 최근 검사 내역, Viewport 사용자 설정 UI, AI 재분석 요청, 이슈 상태 관리(Open/Ignored/Resolved), 사용자 인증 및 9장의 항목 |
 
 ### 5.1 Feature 1. Website URL Inspection
 
@@ -729,6 +729,7 @@ Viewport별 오류와 AI 분석 상태를 따로 기록하고(8.2), 최상위 `s
 | `STORAGE_FAILED` | 검사 | Redis 또는 Blob 저장 실패 |
 | `AI_FAILED` | AI 단계 | `analysis.error`에만 쓴다. Inspection 자체의 실패 코드가 아니다. 규칙 기반 분석(5.7.1)만 하는 MVP에서도 분석 단계 전체 실패에 이 코드를 쓴다 |
 | `INTERNAL_ERROR` | 공통 | 그 밖의 예상하지 못한 오류 |
+| `CANCELLED` | 검사 | 사용자가 브라우저 단계(`pending`, `running`)에서 검사를 중지함. `status = failed`, 측정 결과는 비운다(DOMAIN_MODEL 4.1) |
 | `NAVIGATION_FAILED` | viewport | `goto`가 네트워크 오류로 실패(DNS 조회 실패, 연결 거부, TLS 오류 등). 메시지에 오류 종류를 포함한다. 요청 단계의 DNS 조회 실패는 `INVALID_URL`이다 |
 
 ---
@@ -894,7 +895,7 @@ type InspectionStatus = 'pending' | 'running' | 'analyzing' | 'completed' | 'par
 type ErrorCode =
   | 'INVALID_URL' | 'BLOCKED_TARGET' | 'TOO_MANY_INSPECTIONS'
   | 'NAVIGATION_TIMEOUT' | 'NAVIGATION_FAILED' | 'HTTP_ERROR' | 'BROWSER_CRASH' | 'DETECTION_FAILED'
-  | 'TIME_BUDGET_EXCEEDED' | 'STORAGE_FAILED' | 'AI_FAILED' | 'INTERNAL_ERROR';
+  | 'TIME_BUDGET_EXCEEDED' | 'STORAGE_FAILED' | 'AI_FAILED' | 'INTERNAL_ERROR' | 'CANCELLED';
 
 interface InspectionErrorInfo { code: ErrorCode; message: string }
 interface Rect { x: number; y: number; width: number; height: number } // 문서 기준 CSS px
@@ -1019,6 +1020,7 @@ interface DevTask {
 | `POST` | `/api/inspections` | 검사 생성 |
 | `GET` | `/api/inspections/:id` | 상태와 결과 조회 |
 | `POST` | `/api/inspections/:id/analyze` | 내부 호출 전용. 공유 비밀 헤더로 보호한다. |
+| `POST` | `/api/inspections/:id/cancel` | 검사 중지. 브라우저 단계(`pending`, `running`)에서만 받는다. `200` 중지된 문서, 그 밖의 상태는 `409 INVALID_STATE` (API_SPEC 6A장) |
 | `GET` | `/report/:id` | 결과 페이지 (공유 가능 URL) |
 | `GET` | `/report/sample` | 샘플 리포트 (정적 데이터) |
 
@@ -1110,7 +1112,6 @@ URL과 네트워크:
 | Authenticated Website Inspection | 인증과 세션 처리의 복잡도 |
 | 다중 페이지 크롤링 | 단일 URL 검사로 시작 |
 | 최근 검사 내역 | 인증이 없는 MVP에서는 공유 URL로 대체 |
-| 검사 취소 | 실행 시간이 짧아 필요성이 낮음 |
 | AI 재분석 요청 | 재검사로 대체 |
 | 이슈 / 태스크 상태 관리 | V2에서 고려 |
 | 사용자가 직접 태스크 구성 | 규칙 기반 자동 그룹화로 대체 |
