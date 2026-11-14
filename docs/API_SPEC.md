@@ -217,6 +217,7 @@ x-vercel-protection-bypass: {VERCEL_AUTOMATION_BYPASS_SECRET}   // 있을 때만
 
 - `{origin}`의 1순위는 검사 요청이 들어온 주소(3.2의 `origin`)다. 알 수 없을 때만 `https://{VERCEL_URL}`을 쓴다. 배포별 생성 주소(`VERCEL_URL`)는 기본 배포 보호에서 production 배포도 보호 대상이라 401로 막힐 수 있기 때문이다(PRD 8.1.2).
 - 응답이 202면 끝낸다. AI 단계가 끝나기를 기다리지 않는다.
+- 리다이렉트를 따라가지 않는다(`redirect: 'manual'`). fetch는 다른 origin으로 리다이렉트해도 `x-internal-secret`을 그대로 보내고, 따라간 끝의 응답(예: 로그인 페이지 200)이 analyze 응답처럼 보이기 때문이다. 3xx도 202가 아닌 응답이라 확실한 실패로 본다. 실패 로그에는 status, 리다이렉트 대상 호스트, `x-matched-path`, content-type만 남긴다.
 - 응답 대기 시간은 10초다.
 - 확실한 실패(202가 아닌 응답, 연결 거부 등)면 1회 다시 시도한다. 두 번 모두 실패하면 문서를 다시 읽어 `analysis.status`가 아직 `pending`일 때만 `partial` + `analysis: { status: 'failed', error: { code: 'AI_FAILED', … } }`로 저장한다(PRD 8.1.2). 태스크는 만들어지지 않는다.
 - 시간 초과면 다시 시도하지 않고 문서도 쓰지 않는다. analyze가 실제로 시작되었다면 정상 완료되고, 그렇지 않다면 300초 뒤 멈춘 검사 처리(DOMAIN_MODEL 4.4)가 `partial`로 보여준다.

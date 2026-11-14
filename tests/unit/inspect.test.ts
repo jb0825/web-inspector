@@ -9,6 +9,7 @@ import {
   AnalyzeCallTimeout,
   INSPECTION_TIME_BUDGET_MS,
   resolveInternalOrigin,
+  describeAnalyzeResponse,
   runInspection,
   type InspectionDeps,
 } from '@/server/inspect';
@@ -422,5 +423,17 @@ describe('runInspection: 검사 중지 (POST /api/inspections/:id/cancel)', () =
     expect(doc?.error?.code).toBe('CANCELLED');
     expect(deps.triggerAnalyze).not.toHaveBeenCalled();
     expect(slotHeld()).toBe(false);
+  });
+});
+
+describe('describeAnalyzeResponse (analyze 호출 실패 로그)', () => {
+  it('route가 아닌 곳에서 온 응답과 리다이렉트 호스트를 구분한다', () => {
+    const redirect = new Response(null, { status: 307, headers: { location: 'https://vercel.com/sso-api?url=secret-path' } });
+    expect(describeAnalyzeResponse(redirect)).toBe('307 location=vercel.com matched=none');
+    const page = new Response('<html>', { status: 200, headers: { 'content-type': 'text/html; charset=utf-8' } });
+    expect(describeAnalyzeResponse(page)).toBe('200 matched=none type=text/html');
+    const route = new Response('{}', { status: 409, headers: { 'content-type': 'application/json', 'x-matched-path': '/api/inspections/[id]/analyze' } });
+    expect(describeAnalyzeResponse(route)).toBe('409 matched=/api/inspections/[id]/analyze type=application/json');
+    expect(describeAnalyzeResponse(new Response(null, { status: 308, headers: { location: '/next' } }))).toBe('308 location=relative matched=none');
   });
 });

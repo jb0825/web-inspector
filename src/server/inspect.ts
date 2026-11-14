@@ -416,6 +416,28 @@ function isTimeout(error: unknown): boolean {
   return error instanceof Error && (error.name === 'TimeoutError' || (error.name === 'AbortError' && /timeout/i.test(String(error.message))));
 }
 
+/**
+ * 202가 아닌 analyze 응답을 로그용으로 요약한다. 응답이 analyze route에서 왔는지(x-matched-path),
+ * 리다이렉트였다면 어느 호스트로 가는지만 남긴다(URL 전체와 본문은 남기지 않는다, AGENTS.md 8장).
+ */
+export function describeAnalyzeResponse(response: Pick<Response, 'status' | 'headers'>): string {
+  const parts = [String(response.status)];
+  const location = response.headers.get('location');
+  if (location) {
+    let host = 'invalid';
+    try {
+      host = new URL(location, 'http://relative.invalid').host;
+    } catch {
+      // host는 invalid로 남긴다
+    }
+    parts.push(`location=${host === 'relative.invalid' ? 'relative' : host}`);
+  }
+  parts.push(`matched=${response.headers.get('x-matched-path') ?? 'none'}`);
+  const type = response.headers.get('content-type')?.split(';')[0]?.trim();
+  if (type) parts.push(`type=${type}`);
+  return parts.join(' ');
+}
+
 export function createAnalyzeTrigger(requestOrigin: string | undefined): (id: string) => Promise<void> {
   return async (id) => {
     const env = getInternalEnv();
@@ -430,13 +452,16 @@ export function createAnalyzeTrigger(requestOrigin: string | undefined): (id: st
         headers,
         signal: AbortSignal.timeout(ANALYZE_CALL_TIMEOUT_MS),
         cache: 'no-store',
+        // 리다이렉트를 따라가지 않는다. fetch는 다른 origin으로 리다이렉트해도 x-internal-secret 헤더를 그대로 보내고,
+        // 따라간 끝의 응답(예: 로그인 페이지 200)이 analyze 응답처럼 보여 원인을 알 수 없게 된다
+        redirect: 'manual',
       });
     } catch (error) {
       if (isTimeout(error)) throw new AnalyzeCallTimeout({ cause: error });
       throw error;
     }
     await response.body?.cancel().catch(() => undefined);
-    if (response.status !== 202) throw new InspectionError('INTERNAL_ERROR', `Analyze call returned ${response.status}`);
+    if (response.status !== 202) throw new InspectionError('INTERNAL_ERROR', `Analyze call returned ${describeAnalyzeResponse(response)}`);
   };
 }
 
