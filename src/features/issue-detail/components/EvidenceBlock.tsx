@@ -1,8 +1,9 @@
 import { VIEWPORT_LABELS } from '@/components/inspection/labels';
 import { CopyButton } from '@/components/ui/CopyButton';
 import { formatPx } from '@/lib/format';
-import type { IssueOccurrence, Priority, ViewportResult } from '@/types/inspection';
+import type { Issue, IssueOccurrence, ViewportResult } from '@/types/inspection';
 import { CropView } from './CropView';
+import { IssueDiagramView } from './IssueDiagramView';
 
 // WIREFRAME 6.4, DESIGN_GUIDE 9.4: Evidence 문장 → 측정값 표(mono, tabular) → Selector → 관련 요소. 측정한 값만 보여준다
 
@@ -38,7 +39,15 @@ function MeasurementTable({ occurrence }: { occurrence: IssueOccurrence }) {
   );
 }
 
-export function EvidenceBlock({ occurrence, screenshot, priority }: { occurrence: IssueOccurrence; screenshot: ViewportResult | null; priority: Priority }) {
+export function EvidenceBlock({
+  issue,
+  occurrence,
+  screenshot,
+}: {
+  issue: Pick<Issue, 'type' | 'subtype' | 'priority'>;
+  occurrence: IssueOccurrence;
+  screenshot: ViewportResult | null;
+}) {
   const label = VIEWPORT_LABELS[occurrence.viewport];
   const size = screenshot ? `${screenshot.width} × ${screenshot.height}` : null;
   const overlapCount = occurrence.measured.overlapTargetCount;
@@ -49,7 +58,12 @@ export function EvidenceBlock({ occurrence, screenshot, priority }: { occurrence
       <h4 className="text-label font-medium tracking-wide text-text-secondary uppercase">
         {label} {size ? <span className="font-mono tabular-nums">{size}</span> : null}
       </h4>
-      <CropView occurrence={occurrence} screenshot={screenshot} priority={priority} label={label} />
+      {/* 스크린샷이 있으면 크롭, 없으면(SCREENSHOT_FAILED) 측정값으로 그린 배치도 (WIREFRAME 6.4) */}
+      {screenshot && screenshot.screenshotUrl === null ? (
+        <IssueDiagramView issue={issue} occurrence={occurrence} layoutWidth={screenshot.layoutWidth} label={label} />
+      ) : (
+        <CropView occurrence={occurrence} screenshot={screenshot} priority={issue.priority} label={label} />
+      )}
       <p className="text-body text-text-primary">{occurrence.evidenceText}</p>
       <MeasurementTable occurrence={occurrence} />
       <dl className="flex flex-col gap-2 text-body-sm">

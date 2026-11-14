@@ -8,7 +8,7 @@ import { Tabs, tabId, tabPanelId } from '@/components/ui/Tabs';
 import { cn } from '@/lib/utils';
 import type { Inspection, Priority, Viewport } from '@/types/inspection';
 import { buildIssueList, EMPTY_FILTER, isViewportFilterAvailable, summarizeIssues, type IssueFilter } from '../logic/issues';
-import { layoutMarkers, type MarkerLayout } from '../logic/markers';
+import { diagramPageSize, layoutMarkers, type MarkerLayout } from '../logic/markers';
 import { buildScopeNotices } from '../logic/scope';
 import type { ReportSelection, ReportTab } from '../logic/selection';
 import { IssueFilters } from './IssueFilters';
@@ -57,11 +57,16 @@ export function ReportView({ inspection, variant, selection, onSelectionChange, 
     const result = {} as Record<Viewport, MarkerLayout | null>;
     for (const v of VIEWPORTS) {
       const vr = inspection.viewports[v];
-      // 스크린샷이 없는 viewport(SCREENSHOT_FAILED)에는 마커를 그리지 않는다
-      result[v] =
-        vr && vr.screenshotWidth !== null && vr.screenshotHeight !== null
-          ? layoutMarkers(list, v, { screenshotWidth: vr.screenshotWidth, screenshotHeight: vr.screenshotHeight }, { includeNeedsReview: needsReviewOpen })
-          : null;
+      if (!vr) {
+        result[v] = null;
+        continue;
+      }
+      // 스크린샷이 없는 viewport(SCREENSHOT_FAILED)는 측정값으로 그린 페이지 도면 위에 같은 방식으로 마커를 그린다(WIREFRAME 5.6)
+      const size =
+        vr.screenshotWidth !== null && vr.screenshotHeight !== null
+          ? { screenshotWidth: vr.screenshotWidth, screenshotHeight: vr.screenshotHeight }
+          : diagramPageSize(vr, list, v);
+      result[v] = layoutMarkers(list, v, size, { includeNeedsReview: needsReviewOpen });
     }
     return result;
   }, [inspection.viewports, list, needsReviewOpen]);

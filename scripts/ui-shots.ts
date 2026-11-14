@@ -66,6 +66,12 @@ const ID = {
   partial: uuid(22),
   empty: uuid(23),
   review: uuid(24),
+  // 스크린샷 없음(SCREENSHOT_FAILED): 결과 화면과 Issue Detail 유형 4종 (T14)
+  noshotP01: uuid(31),
+  noshotP02: uuid(32),
+  noshotP03: uuid(33),
+  noshotP04: uuid(34),
+  noshotP05: uuid(35),
 };
 
 // ── 결과 화면 (T12): Fixture 문서를 읽어 상태별로 바꾼다 ───────────────
@@ -129,6 +135,16 @@ function asMobileFailed(doc: Inspection): Inspection {
   };
 }
 
+/** 스크린샷 없음(SCREENSHOT_FAILED, PRD 5.2.4): 두 viewport의 스크린샷 값과 cropRect를 비운다 */
+function asNoScreenshot(doc: Inspection): Inspection {
+  const viewports = { ...doc.viewports };
+  for (const v of ['desktop', 'mobile'] as const) {
+    const vr = viewports[v];
+    if (vr) viewports[v] = { ...vr, screenshotUrl: null, screenshotWidth: null, screenshotHeight: null, screenshotTruncated: false };
+  }
+  return { ...doc, viewports, issues: doc.issues.map((issue) => ({ ...issue, occurrences: issue.occurrences.map((o) => ({ ...o, cropRect: null })) })) };
+}
+
 /** Needs Review 그룹 확인용: 대표 이슈를 복제해 검토 필요 이슈와 태스크를 하나씩 더한다 */
 function withNeedsReview(doc: Inspection): Inspection {
   const base = doc.issues[0];
@@ -178,6 +194,11 @@ async function buildResponses(): Promise<Record<string, { status: number; body: 
     [ID.partial]: ok(asMobileFailed(await fixtureDoc('P-03', ID.partial))),
     [ID.empty]: ok(await fixtureDoc('N-01', ID.empty)),
     [ID.review]: ok(withNeedsReview(await fixtureDoc('P-03', ID.review))),
+    [ID.noshotP01]: ok(asNoScreenshot(await fixtureDoc('P-01', ID.noshotP01))),
+    [ID.noshotP02]: ok(asNoScreenshot(await fixtureDoc('P-02', ID.noshotP02))),
+    [ID.noshotP03]: ok(asNoScreenshot(await fixtureDoc('P-03', ID.noshotP03))),
+    [ID.noshotP04]: ok(asNoScreenshot(await fixtureDoc('P-04', ID.noshotP04))),
+    [ID.noshotP05]: ok(asNoScreenshot(await fixtureDoc('P-05', ID.noshotP05))),
   };
 }
 
@@ -228,6 +249,12 @@ const SCREENS: Screen[] = [
   { name: 'report-analyzing-tasks', path: `/report/${ID.analyzing}?tab=tasks`, ready: 'text=원인 분석과 태스크 생성 중입니다' },
   { name: 'report-partial', path: `/report/${ID.partial}`, ready: 'text=Mobile 검사에 실패했습니다' },
   { name: 'report-empty', path: `/report/${ID.empty}`, ready: 'text=검사한 항목에서 문제가 발견되지 않았습니다' },
+  // 스크린샷 없음(SCREENSHOT_FAILED): 미리보기 도면과 Issue Detail 이슈 도면 (T14, WIREFRAME 5.6·6.4)
+  { name: 'report-noshot', path: `/report/${ID.noshotP01}`, ready: 'h1:has-text("검사 결과")' },
+  { name: 'report-noshot-viewport-overflow', path: `/report/${ID.noshotP04}?issue=ISS-001`, ready: 'aside figure svg', fullPage: false },
+  { name: 'report-noshot-spill', path: `/report/${ID.noshotP05}?issue=ISS-001`, ready: 'aside figure svg', fullPage: false },
+  { name: 'report-noshot-clipped', path: `/report/${ID.noshotP02}?issue=ISS-001`, ready: 'aside figure svg', fullPage: false },
+  { name: 'report-noshot-overlap', path: `/report/${ID.noshotP03}?issue=ISS-001`, ready: 'aside figure svg', fullPage: false },
   {
     name: 'report-needs-review',
     path: `/report/${ID.review}`,

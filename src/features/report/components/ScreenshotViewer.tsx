@@ -10,6 +10,7 @@ import type { InspectionErrorInfo, Priority, Viewport, ViewportResult } from '@/
 import type { Marker, MarkerLayout } from '../logic/markers';
 
 // WIREFRAME 5.6, DESIGN_GUIDE 9.1~9.2. 스크린샷 위에 SVG를 겹치고 viewBox를 스크린샷 실제 크기로 둔다.
+// 스크린샷이 없는 viewport(SCREENSHOT_FAILED)는 측정값(layoutWidth × documentHeight)으로 그린 페이지 도면 위에 같은 마커를 그린다.
 
 const STROKE: Record<Priority, string> = {
   P0: 'stroke-p0-solid',
@@ -51,7 +52,9 @@ export function ScreenshotViewer({ viewport, size, result, error, layout, select
     result && result.screenshotUrl !== null && result.screenshotWidth !== null && result.screenshotHeight !== null
       ? { url: result.screenshotUrl, width: result.screenshotWidth, height: result.screenshotHeight }
       : null;
-  const scale = image && width > 0 ? width / image.width : 0;
+  // 마커 좌표계의 너비. 스크린샷이면 이미지 너비, 도면이면 layout.viewBox(diagramPageSize)
+  const baseWidth = image ? image.width : (layout?.viewBox.width ?? 0);
+  const scale = baseWidth > 0 && width > 0 ? width / baseWidth : 0;
 
   // hydration 전에 이미 받은(캐시된) 이미지는 load 이벤트가 오지 않는다
   useEffect(() => {
@@ -90,20 +93,6 @@ export function ScreenshotViewer({ viewport, size, result, error, layout, select
     );
   }
 
-  if (!image) {
-    // 스크린샷만 실패한 viewport(SCREENSHOT_FAILED, PRD 5.2.4). 측정과 이슈는 그대로 있다
-    return (
-      <section className={cn('flex min-w-0 flex-col gap-2', className)} aria-label={`${VIEWPORT_LABELS[viewport]} 미리보기`}>
-        {label}
-        <div className="flex h-120 flex-col items-center justify-center gap-1 rounded-lg border border-border bg-background-secondary px-4 text-center lg:h-160">
-          <p className="text-body font-medium text-text-primary">{VIEWPORT_LABELS[viewport]} 스크린샷이 없습니다</p>
-          <p className="text-body-sm text-text-secondary">{ERROR_MESSAGES.SCREENSHOT_FAILED}</p>
-          <code className="font-mono text-caption text-text-tertiary">SCREENSHOT_FAILED</code>
-        </div>
-      </section>
-    );
-  }
-
   const hoveredMarker = layout?.markers.find((m) => m.issueId === hovered) ?? null;
   const pct = (value: number, total: number) => `${(value / total) * 100}%`;
 
@@ -112,28 +101,34 @@ export function ScreenshotViewer({ viewport, size, result, error, layout, select
       {label}
       <div ref={scrollRef} className="relative h-120 overflow-x-hidden overflow-y-auto rounded-lg border border-border bg-background-secondary lg:h-160">
         <div className="relative">
-          {/* 스크린샷은 세로 10,000px까지 커서 next/image 최적화를 쓰지 않는다(Hobby 플랜 사용량, T12 2.3) */}
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            ref={imageRef}
-            src={image.url}
-            width={image.width}
-            height={image.height}
-            loading="lazy"
-            decoding="async"
-            alt={`${VIEWPORT_LABELS[viewport]} 전체 페이지 스크린샷`}
-            onLoad={() => setLoaded(true)}
-            onError={() => setFailedToLoad(true)}
-            className="block h-auto w-full"
-          />
-          {!loaded && !failedToLoad ? (
-            <div className="absolute inset-x-0 top-0 flex justify-center pt-6 text-text-secondary" role="status">
-              <Spinner />
-              <span className="sr-only">스크린샷을 불러오는 중입니다</span>
-            </div>
-          ) : null}
-          {failedToLoad ? (
-            <p className="absolute inset-x-0 top-0 p-6 text-center text-body-sm text-text-secondary">스크린샷을 불러오지 못했습니다.</p>
+          {image ? (
+            <>
+              {/* 스크린샷은 세로 10,000px까지 커서 next/image 최적화를 쓰지 않는다(Hobby 플랜 사용량, T12 2.3) */}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                ref={imageRef}
+                src={image.url}
+                width={image.width}
+                height={image.height}
+                loading="lazy"
+                decoding="async"
+                alt={`${VIEWPORT_LABELS[viewport]} 전체 페이지 스크린샷`}
+                onLoad={() => setLoaded(true)}
+                onError={() => setFailedToLoad(true)}
+                className="block h-auto w-full"
+              />
+              {!loaded && !failedToLoad ? (
+                <div className="absolute inset-x-0 top-0 flex justify-center pt-6 text-text-secondary" role="status">
+                  <Spinner />
+                  <span className="sr-only">스크린샷을 불러오는 중입니다</span>
+                </div>
+              ) : null}
+              {failedToLoad ? (
+                <p className="absolute inset-x-0 top-0 p-6 text-center text-body-sm text-text-secondary">스크린샷을 불러오지 못했습니다.</p>
+              ) : null}
+            </>
+          ) : layout ? (
+            <PageDiagram viewport={viewport} layoutWidth={result.layoutWidth} documentHeight={result.documentHeight} viewBox={layout.viewBox} />
           ) : null}
           {layout ? (
             <>
@@ -197,12 +192,17 @@ export function ScreenshotViewer({ viewport, size, result, error, layout, select
             </>
           ) : null}
         </div>
-        {result.screenshotTruncated ? (
+        {image && result.screenshotTruncated ? (
           <p className="border-t-2 border-dashed border-border-strong px-3 py-2 text-center text-caption text-text-secondary">
             스크린샷 끝 (<span className="font-mono tabular-nums">{formatPx(image.height)}px</span>)
           </p>
         ) : null}
       </div>
+      {!image ? (
+        <p className="text-caption text-text-secondary">
+          스크린샷을 찍지 못해 측정값으로 그린 배치도입니다. <code className="font-mono text-text-tertiary">SCREENSHOT_FAILED</code>
+        </p>
+      ) : null}
       {layout ? (
         <p className="text-caption text-text-secondary">
           이슈 <span className="tabular-nums">{layout.issueCount}</span>
@@ -214,6 +214,38 @@ export function ScreenshotViewer({ viewport, size, result, error, layout, select
         </p>
       ) : null}
     </section>
+  );
+}
+
+/**
+ * 스크린샷 대신 그리는 페이지 도면. 페이지 윤곽(layoutWidth × documentHeight)과 화면 경계선만 그린다.
+ * viewBox가 마커와 같아서 마커가 같은 자리에 겹친다. 실제 화면 모습이 아니라는 것을 아래 안내 문구로 알린다
+ */
+function PageDiagram({
+  viewport,
+  layoutWidth,
+  documentHeight,
+  viewBox,
+}: {
+  viewport: Viewport;
+  layoutWidth: number;
+  documentHeight: number;
+  viewBox: { width: number; height: number };
+}) {
+  return (
+    <svg
+      role="img"
+      aria-label={`${VIEWPORT_LABELS[viewport]} 페이지 배치도: 너비 ${formatPx(layoutWidth)}px, 높이 ${formatPx(documentHeight)}px`}
+      viewBox={`0 0 ${viewBox.width} ${viewBox.height}`}
+      preserveAspectRatio="none"
+      className="block h-auto w-full"
+      style={{ aspectRatio: `${viewBox.width} / ${viewBox.height}` }}
+    >
+      <rect x={0} y={0} width={layoutWidth} height={documentHeight} className="fill-background stroke-border-strong" strokeWidth={1} vectorEffect="non-scaling-stroke" />
+      {viewBox.width > layoutWidth ? (
+        <line x1={layoutWidth} y1={0} x2={layoutWidth} y2={viewBox.height} className="stroke-text-tertiary" strokeWidth={1.5} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />
+      ) : null}
+    </svg>
   );
 }
 
