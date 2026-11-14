@@ -24,6 +24,7 @@ const nextConfig: NextConfig = {
       "./node_modules/playwright-core/browsers.json",
       "./public/fonts/*.ttf",
       "./public/fonts/OFL.txt",
+      "./public/fonts/OFL-Liberation.txt",
     ],
   },
 

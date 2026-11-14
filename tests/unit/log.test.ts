@@ -38,7 +38,7 @@ describe('logLevelOf', () => {
   it('실패는 error, 거절·건너뜀은 warn, 나머지는 info', () => {
     for (const e of ['create-failed', 'read-failed', 'viewport-failed', 'launch-failed', 'analyze-call-timeout', 'unexpected', 'read-invalid', 'analyze-config-missing'])
       expect(logLevelOf(e)).toBe('error');
-    for (const e of ['create-rejected', 'viewport-skipped']) expect(logLevelOf(e)).toBe('warn');
+    for (const e of ['create-rejected', 'viewport-skipped', 'screenshot-retry']) expect(logLevelOf(e)).toBe('warn');
     for (const e of ['created', 'start', 'viewport', 'viewport-step', 'save', 'end']) expect(logLevelOf(e)).toBe('info');
   });
 });

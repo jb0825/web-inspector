@@ -24,17 +24,22 @@ import { ViewportComparison } from './ViewportComparison';
 
 export interface ReportViewProps {
   inspection: Inspection;
-  /** 'sample'은 /report/sample(T13). 링크 복사와 다시 검사를 숨긴다(WIREFRAME 5.13) */
-  variant: 'live' | 'sample';
+  /**
+   * 'sample'은 /report/sample(T13), 'showcase'는 /report/showcase/[name](Before/After 사례, T14).
+   * 둘 다 정적 문서라 링크 복사와 다시 검사를 숨긴다(WIREFRAME 5.13)
+   */
+  variant: ReportVariant;
   selection: ReportSelection;
   onSelectionChange: (patch: Partial<ReportSelection>) => void;
   /** 개발 태스크 탭 내용 */
   tasksPanel: ReactNode;
   /** 열린 Issue Detail 패널. 넓은 화면에서는 오른쪽에 고정되므로 본문 오른쪽을 비운다 */
   detailPanel: ReactNode | null;
-  /** 헤더 위 안내 (샘플 리포트 안내 등) */
+  /** 헤더 위 안내 (샘플 리포트 안내, Before/After 사례 안내) */
   banner?: ReactNode;
 }
+
+export type ReportVariant = 'live' | 'sample' | 'showcase';
 
 const VIEWPORTS: readonly Viewport[] = ['desktop', 'mobile'];
 const NEEDS_REVIEW_ID = 'needs-review-group';

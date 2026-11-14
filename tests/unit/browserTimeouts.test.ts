@@ -226,7 +226,7 @@ describe('runInspection: 멈춘 viewport를 끊고 다음 viewport를 새 브라
 
     const mobileRendered: RenderedViewport = {
       collected: site('mobile'),
-      screenshot: { png: Buffer.from('png'), screenshotWidth: 616, screenshotHeight: 2000, documentHeight: 2000, screenshotTruncated: false },
+      screenshot: { png: Buffer.from('png'), screenshotWidth: 616, screenshotHeight: 2000, documentHeight: 2000, screenshotTruncated: false, mode: 'full', failedAttempts: 0 },
       finalUrl: 'https://example.com/',
       timings: {},
     };

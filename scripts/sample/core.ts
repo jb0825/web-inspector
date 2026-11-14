@@ -1,5 +1,5 @@
-// 샘플 리포트 가져오기(scripts/import-sample.ts)의 순수 함수. 네트워크와 파일을 쓰지 않아 단위 테스트할 수 있다(T13).
-// 샘플 문서의 기준은 DOMAIN_MODEL 6.3이다.
+// 샘플·사례 리포트 가져오기(scripts/import-sample.ts)의 순수 함수. 네트워크와 파일을 쓰지 않아 단위 테스트할 수 있다(T13, T14).
+// 샘플 문서의 기준은 DOMAIN_MODEL 6.3이다. 사례(showcase) 문서도 같은 검증을 거친다.
 
 import { readPngSize } from '@/server/browser/screenshot';
 import { findInspectionViolations } from '@/server/store/invariants';
@@ -8,11 +8,25 @@ import type { Inspection, Viewport } from '@/types/inspection';
 
 export const SAMPLE_VIEWPORTS: readonly Viewport[] = ['desktop', 'mobile'];
 
+/**
+ * 가져온 문서를 둘 곳. public/{target}/ 아래에 inspection.json과 스크린샷 2장을 둔다.
+ * - sample: 샘플 리포트 (/report/sample, DOMAIN_MODEL 6.3)
+ * - showcase/before, showcase/after: Before/After 사례 (/report/showcase/[name], T14). 공유 리포트는 7일 뒤 만료되므로(PRD 8.1.4) 정적 파일로 보관한다
+ */
+export const IMPORT_TARGETS = ['sample', 'showcase/before', 'showcase/after'] as const;
+export type ImportTarget = (typeof IMPORT_TARGETS)[number];
+
+export function isImportTarget(value: string): value is ImportTarget {
+  return (IMPORT_TARGETS as readonly string[]).includes(value);
+}
+
+/** 대상 폴더의 screenshotUrl (public/ 기준 절대 경로) */
+export function screenshotUrlsFor(target: ImportTarget): Record<Viewport, string> {
+  return { desktop: `/${target}/desktop-full.png`, mobile: `/${target}/mobile-full.png` };
+}
+
 /** 샘플 문서의 screenshotUrl (public/sample/ 아래 파일). DOMAIN_MODEL 6.3 */
-export const SAMPLE_SCREENSHOT_URL: Record<Viewport, string> = {
-  desktop: '/sample/desktop-full.png',
-  mobile: '/sample/mobile-full.png',
-};
+export const SAMPLE_SCREENSHOT_URL: Record<Viewport, string> = screenshotUrlsFor('sample');
 
 /** 스크린샷을 내려받아도 되는 호스트: Vercel Blob 공개 스토어 (DOMAIN_MODEL 6.2) */
 const BLOB_HOST_SUFFIX = '.public.blob.vercel-storage.com';
@@ -69,12 +83,13 @@ export function screenshotSources(inspection: Inspection): Record<Viewport, stri
   return out;
 }
 
-/** screenshotUrl만 /sample/ 경로로 바꾼 사본. 그 밖의 값은 바꾸지 않는다(샘플 JSON을 손으로 고치지 않는다) */
-export function toSampleDocument(inspection: Inspection): Inspection {
+/** screenshotUrl만 대상 폴더 경로(/sample/ 등)로 바꾼 사본. 그 밖의 값은 바꾸지 않는다(샘플 JSON을 손으로 고치지 않는다) */
+export function toSampleDocument(inspection: Inspection, target: ImportTarget = 'sample'): Inspection {
+  const urls = screenshotUrlsFor(target);
   const viewports = { ...inspection.viewports };
   for (const v of SAMPLE_VIEWPORTS) {
     const result = viewports[v];
-    if (result) viewports[v] = { ...result, screenshotUrl: SAMPLE_SCREENSHOT_URL[v] };
+    if (result) viewports[v] = { ...result, screenshotUrl: urls[v] };
   }
   return { ...inspection, viewports };
 }
@@ -82,10 +97,11 @@ export function toSampleDocument(inspection: Inspection): Inspection {
 /**
  * 저장 전에 샘플 문서와 PNG를 검사하고 문제 목록을 돌려준다. 비어 있어야 저장한다.
  * - inspectionSchema.parse, assertInspectionInvariants(…, 'final')와 같은 조건 (DOMAIN_MODEL 3장, 6.3)
- * - status completed, screenshotUrl이 /sample/로 시작
+ * - status completed, screenshotUrl이 대상 폴더(/sample/ 등)의 파일
  * - PNG 실제 크기 = screenshotWidth × screenshotHeight
  */
-export function validateSample(document: unknown, pngs?: Partial<Record<Viewport, Uint8Array>>): string[] {
+export function validateSample(document: unknown, pngs?: Partial<Record<Viewport, Uint8Array>>, target: ImportTarget = 'sample'): string[] {
+  const urls = screenshotUrlsFor(target);
   const parsed = inspectionSchema.safeParse(document);
   if (!parsed.success) return parsed.error.issues.map((issue) => `schema ${issue.path.join('.') || '(root)'}: ${issue.message}`);
   const inspection = parsed.data;
@@ -97,7 +113,7 @@ export function validateSample(document: unknown, pngs?: Partial<Record<Viewport
       problems.push(`${v}: viewport result is missing`);
       continue;
     }
-    if (!result.screenshotUrl.startsWith('/sample/')) problems.push(`${v}: screenshotUrl ${result.screenshotUrl} does not start with /sample/`);
+    if (result.screenshotUrl !== urls[v]) problems.push(`${v}: screenshotUrl ${result.screenshotUrl} is not ${urls[v]}`);
     const png = pngs?.[v];
     if (!pngs) continue;
     if (!png) {
