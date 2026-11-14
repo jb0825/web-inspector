@@ -63,7 +63,8 @@ export async function createViewportContext(
     // page를 만들기 전에 연결한다. routeWebSocket은 연결 뒤에 만든 WebSocket에만 적용된다
     await attachRouteGuard(context, guard);
   } catch (error) {
-    await context.close().catch(() => undefined);
+    // 멈춘 브라우저에서는 close도 응답하지 않을 수 있다. 기다리지 않는다
+    void context.close().catch(() => undefined);
     throw error;
   }
   return context;

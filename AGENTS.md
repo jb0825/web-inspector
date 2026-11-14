@@ -96,7 +96,10 @@ src/
     log.ts                              # 구조화 로그 (ID, 호스트, 단계, 코드, 소요 시간만)
     http/inspections.ts                 # API 4개의 요청 처리. route 파일은 의존성(저장소, after)만 넣어 호출한다
     browser/
-      launch.ts                         # 환경별 Chromium 실행 (Local / Vercel 분기)
+      launch.ts                         # 환경별 Chromium 실행 (Local / Vercel 분기), 닫기와 강제 종료
+      session.ts                        # viewport마다 실행 → 검사 → 닫기 (withFreshBrowser, inspectViewportInFreshBrowser)
+      render.ts                         # viewport 1개: context → 안정화 → 수집 → 스크린샷, 단계별 강제 시간 제한
+      timeouts.ts                       # withHardTimeout과 강제 제한 상수 (PRD에 없는 값)
       fonts.ts                          # CJK 폰트 로드
       stabilize.ts                      # PRD 5.2.2 렌더링 안정화 절차
       devices.ts                        # Desktop / Mobile context 설정
@@ -269,9 +272,13 @@ pnpm import-sample --base <production URL> --id <inspection id>   # production �
 
 - **`page.evaluate`에 넘기는 함수는 완전히 독립적이어야 한다.** 바깥 변수, import, 다른 모듈의 헬퍼를 참조하지 않는다. 필요한 값은 인자로 넘긴다. 브라우저 내부 코드는 `src/server/collect/inpage/`에만 둔다.
 - 브라우저 내부에서는 측정만 하고 원시 데이터를 반환한다. 판정(탐지, 점수 계산)은 Node 쪽 순수 함수에서 한다. 그래야 Vitest로 단위 테스트를 할 수 있다.
-- 브라우저는 한 번만 띄우고, Desktop과 Mobile은 별도 `BrowserContext`에서 **순서대로** 실행한다. 병렬로 실행하지 않는다(1 vCPU / 2GB 제한).
-- `browser.close()`는 반드시 `finally`에서 호출한다.
+- **viewport마다 브라우저를 새로 띄우고 순서대로 실행한다. 동시에 떠 있는 브라우저는 하나다.** (Desktop: 실행 → 검사 → 닫기, 그다음 Mobile: 실행 → 검사 → 닫기). 병렬로 실행하지 않는다(1 vCPU / 2GB 제한).
+  - 이유: Vercel의 `@sparticuz/chromium`은 `--single-process`로 실행된다. 이 모드에서는 브라우저 하나에 context를 하나만 쓸 수 있다. 첫 context를 닫으면 브라우저가 죽거나(로컬에서 재현) 멈춘다(Vercel에서 Mobile이 180초 동안 멈춤, T13 확인).
+  - 한 브라우저에 context를 여러 개 만들지 않는다. `src/`, `tests/`, `scripts/` 모두 같다.
+  - 실행 경로는 `src/server/browser/session.ts`의 `inspectViewportInFreshBrowser`(검사)와 `withFreshBrowser`(로컬 도구) 하나다. `runInspection`과 `test:fixtures`가 같은 함수를 쓴다.
+- 브라우저 종료는 `withFreshBrowser`가 `finally`에서 한다. 정상 종료(`BROWSER_CLOSE_TIMEOUT_MS`)가 멈추면 프로세스를 강제 종료한다. 강제 종료할 수 있게 `launch` 대신 `launchServer` + `connect`를 쓴다(`launch.ts`).
 - 모든 대기 동작에는 시간 제한을 둔다(PRD 8.1.3). 제한 없는 `waitForTimeout`, `waitForSelector`를 쓰지 않는다.
+- Playwright의 자체 timeout만 믿지 않는다. 멈춘 브라우저는 응답하지 않으므로 각 단계(실행, context, page 열기, goto, 안정화, 수집, 스크린샷)를 `withHardTimeout`(`browser/timeouts.ts`, Promise.race)으로 감싸 응답을 기다리지 않고 `InspectionError`로 끝낸다(`browser/render.ts`).
 - 좌표는 항상 **문서 기준**(`rect + scrollX/scrollY`)으로 저장한다.
 - 판정에 `innerWidth`/`innerHeight`를 쓰지 않는다. Mobile에서 페이지가 축소되면 값이 바뀐다. 기준 크기는 DETECTION_RULES 3.1.1을 따른다.
 - 텍스트 영역 측정에는 element box가 아니라 `Range.getClientRects()`를 쓴다.

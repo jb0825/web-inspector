@@ -7,9 +7,10 @@
 
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import type { Browser, Page } from 'playwright-core';
+import type { Page } from 'playwright-core';
 import { createViewportContext } from '@/server/browser/devices';
 import { launchBrowser } from '@/server/browser/launch';
+import { withFreshBrowser } from '@/server/browser/session';
 import { openAndStabilize, type StabilizeMeta } from '@/server/browser/stabilize';
 import { collectViewport } from '@/server/collect/collect';
 import type { CollectedViewport } from '@/server/collect/types';
@@ -64,18 +65,17 @@ async function countOutOfScope(page: Page): Promise<RunResult['scope']> {
   });
 }
 
-async function runOnce(browser: Browser, baseUrl: string, fixture: FixtureExpectation, viewport: Viewport): Promise<RunResult> {
-  const context = await createViewportContext(browser, viewport, fixtureGuard(baseUrl));
-  try {
+/** 수집 1회 = 새 브라우저 1개, context 1개 (AGENTS.md 7장). 닫기는 withFreshBrowser가 한다 */
+function runOnce(baseUrl: string, fixture: FixtureExpectation, viewport: Viewport): Promise<RunResult> {
+  return withFreshBrowser(launchBrowser, async ({ browser }) => {
+    const context = await createViewportContext(browser, viewport, fixtureGuard(baseUrl));
     const { page, meta } = await openAndStabilize(context, `${baseUrl}${fixture.path}`);
     const started = Date.now();
     const collected = await collectViewport(page, viewport);
     const collectMs = Date.now() - started;
     const scope = await countOutOfScope(page);
     return { collected, meta, collectMs, scope };
-  } finally {
-    await context.close();
-  }
+  });
 }
 
 function stepMs(meta: StabilizeMeta, step: string): string {
@@ -127,18 +127,16 @@ async function main(): Promise<void> {
   const { all, fixtures, viewports } = parseArgs(process.argv.slice(2));
   await mkdir(OUT_DIR, { recursive: true });
   const server = await start();
-  let browser: Browser | undefined;
   const failures: string[] = [];
   const rows: Record<string, string | number | boolean>[] = [];
 
   try {
-    browser = await launchBrowser();
-    // Desktop과 Mobile은 순서대로 실행한다(AGENTS.md 7장).
+    // Desktop과 Mobile은 순서대로, 수집마다 브라우저를 새로 띄운다(AGENTS.md 7장).
     for (const viewport of viewports) {
       for (const fixture of fixtures) {
         const label = `${fixture.id}/${viewport}`;
         try {
-          const first = await runOnce(browser, server.baseUrl, fixture, viewport);
+          const first = await runOnce(server.baseUrl, fixture, viewport);
           const json = `${JSON.stringify(first.collected, null, 2)}\n`;
           const file = path.join(OUT_DIR, `${fixture.id}-${viewport}.json`);
           await writeFile(file, json);
@@ -148,7 +146,7 @@ async function main(): Promise<void> {
             continue;
           }
 
-          const second = await runOnce(browser, server.baseUrl, fixture, viewport);
+          const second = await runOnce(server.baseUrl, fixture, viewport);
           const same = JSON.stringify(second.collected, null, 2) + '\n' === json;
           if (!same) {
             failures.push(`${label}: JSON differs between two runs`);
@@ -181,7 +179,6 @@ async function main(): Promise<void> {
       }
     }
   } finally {
-    await browser?.close();
     await server.close();
   }
 

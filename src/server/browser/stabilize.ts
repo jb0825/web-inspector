@@ -2,6 +2,7 @@ import 'server-only';
 import { errors, type BrowserContext, type Page } from 'playwright-core';
 import { InspectionError } from '@/server/errors';
 import { getRouteGuard, type RouteGuard } from '@/server/security/routeGuard';
+import { HARD_TIMEOUT_GRACE_MS, PAGE_OPEN_TIMEOUT_MS, withHardTimeout } from './timeouts';
 
 // PRD 5.2.2 렌더링 안정화 절차, 시간 제한은 PRD 8.1.3.
 
@@ -31,11 +32,20 @@ export type StabilizeStep = (typeof STABILIZE_STEPS)[number];
 export interface StabilizeBudget {
   navigationMs: number;
   stabilizeMs: number;
+  /** context.newPage 강제 제한 */
+  pageOpenMs: number;
+  /**
+   * Playwright 자체 제한(goto timeout, 단계별 남은 예산)이 동작하지 않을 때를 대비한 강제 제한의 여유.
+   * goto는 navigationMs + hardGraceMs, 2~6단계는 stabilizeMs + hardGraceMs를 넘기면 응답을 기다리지 않고 끝낸다.
+   */
+  hardGraceMs: number;
 }
 
 export const DEFAULT_STABILIZE_BUDGET: StabilizeBudget = {
   navigationMs: NAVIGATION_TIMEOUT_MS,
   stabilizeMs: STABILIZE_BUDGET_MS,
+  pageOpenMs: PAGE_OPEN_TIMEOUT_MS,
+  hardGraceMs: HARD_TIMEOUT_GRACE_MS,
 };
 
 /**
@@ -167,11 +177,16 @@ export async function openAndStabilize(
   // createViewportContext로 만든 context만 받는다. guard 없이 외부 URL을 열지 않는다(PRD 8.6)
   const guard = getRouteGuard(context);
   if (!guard) throw new InspectionError('INTERNAL_ERROR', 'Route guard is not attached to the browser context');
-  const page = await context.newPage();
+  const page = await withHardTimeout(
+    context.newPage(),
+    budget.pageOpenMs,
+    () => new InspectionError('BROWSER_CRASH', `Page did not open within ${budget.pageOpenMs}ms`),
+  );
   try {
     return { page, meta: await stabilize(guard, page, url, budget) };
   } catch (error) {
-    await page.close().catch(() => undefined);
+    // 멈춘 page는 close도 응답하지 않을 수 있다. 기다리지 않는다(브라우저를 닫을 때 함께 정리된다)
+    void page.close().catch(() => undefined);
     throw error;
   }
 }
@@ -182,7 +197,11 @@ async function stabilize(guard: RouteGuard, page: Page, url: string, budget: Sta
 
   // 1. goto (PRD 5.2.2 1단계)
   const gotoStart = Date.now();
-  const httpStatus = await navigate(guard, page, url, budget.navigationMs);
+  const httpStatus = await withHardTimeout(
+    navigate(guard, page, url, budget.navigationMs),
+    budget.navigationMs + budget.hardGraceMs,
+    () => new InspectionError('NAVIGATION_TIMEOUT', `Navigation did not respond within ${budget.navigationMs + budget.hardGraceMs}ms`),
+  );
   steps.push({ step: 'goto', durationMs: Date.now() - gotoStart, outcome: 'completed' });
   if (httpStatus !== null && isHttpErrorStatus(httpStatus)) {
     throw new InspectionError('HTTP_ERROR', `HTTP ${httpStatus}`);
@@ -231,25 +250,33 @@ async function stabilize(guard: RouteGuard, page: Page, url: string, budget: Sta
     },
   };
 
-  for (const step of STABILIZE_STEPS) {
-    const remainingMs = deadline - Date.now();
-    if (remainingMs <= 0) {
-      steps.push({ step, durationMs: 0, outcome: 'skipped' });
-      skippedSteps.push(step);
-      continue;
-    }
-    const start = Date.now();
-    let outcome: StepOutcome;
-    try {
-      outcome = await runners[step](remainingMs);
-    } catch (error) {
-      if (isPageCrash(error)) {
-        throw new InspectionError('BROWSER_CRASH', `Page crashed during ${step}`, { cause: error });
+  const runSteps = async () => {
+    for (const step of STABILIZE_STEPS) {
+      const remainingMs = deadline - Date.now();
+      if (remainingMs <= 0) {
+        steps.push({ step, durationMs: 0, outcome: 'skipped' });
+        skippedSteps.push(step);
+        continue;
       }
-      throw new InspectionError('INTERNAL_ERROR', `Stabilize step ${step} failed`, { cause: error });
+      const start = Date.now();
+      let outcome: StepOutcome;
+      try {
+        outcome = await runners[step](remainingMs);
+      } catch (error) {
+        if (isPageCrash(error)) {
+          throw new InspectionError('BROWSER_CRASH', `Page crashed during ${step}`, { cause: error });
+        }
+        throw new InspectionError('INTERNAL_ERROR', `Stabilize step ${step} failed`, { cause: error });
+      }
+      steps.push({ step, durationMs: Date.now() - start, outcome });
     }
-    steps.push({ step, durationMs: Date.now() - start, outcome });
-  }
+  };
+  // 단계별 제한은 Playwright 호출이 응답해야 동작한다. 응답이 없으면 예산 + 여유에서 끊는다
+  await withHardTimeout(
+    runSteps(),
+    budget.stabilizeMs + budget.hardGraceMs,
+    () => new InspectionError('TIME_BUDGET_EXCEEDED', `Stabilize did not finish within ${budget.stabilizeMs + budget.hardGraceMs}ms`),
+  );
 
   // 안정화 중 스크립트가 메인 프레임을 금지 대상으로 옮기려 한 경우도 최상위 문서 차단이다(PRD 5.1)
   assertNotBlocked(guard);

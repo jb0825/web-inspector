@@ -1,11 +1,9 @@
 import 'server-only';
-import type { Browser, BrowserContext } from 'playwright-core';
-import { createViewportContext } from '@/server/browser/devices';
-import { launchBrowser } from '@/server/browser/launch';
-import { captureFullPage, type CapturedScreenshot } from '@/server/browser/screenshot';
-import { DEFAULT_STABILIZE_BUDGET, openAndStabilize } from '@/server/browser/stabilize';
-import { collectViewport, COLLECT_TIMEOUT_MS } from '@/server/collect/collect';
-import type { CollectedViewport } from '@/server/collect/types';
+import type { Browser } from 'playwright-core';
+import { launchBrowser, type LaunchedBrowser } from '@/server/browser/launch';
+import { renderViewport, type RenderedViewport, type RenderOptions } from '@/server/browser/render';
+import { inspectViewportInFreshBrowser } from '@/server/browser/session';
+import { BROWSER_CLOSE_TIMEOUT_MS, BROWSER_KILL_TIMEOUT_MS } from '@/server/browser/timeouts';
 import { buildIssues, type BuildIssuesResult } from '@/server/detect/pipeline';
 import { getInternalEnv } from '@/server/env';
 import { InspectionError, isInspectionError } from '@/server/errors';
@@ -23,40 +21,23 @@ import type { Inspection, InspectionErrorInfo, Issue, Viewport, ViewportResult }
 
 /** PRD 8.1.3: 전체 검사 상한 */
 export const INSPECTION_TIME_BUDGET_MS = 180_000;
-/** PRD 8.1.3: viewport당 측정과 스크린샷 */
-export const MEASURE_AND_SCREENSHOT_BUDGET_MS = 20_000;
 /** API_SPEC 4.2: analyze 호출 1회의 응답 대기 */
 export const ANALYZE_CALL_TIMEOUT_MS = 10_000;
 /** API_SPEC 4.2: 실패하면 1회 다시 시도 → 최대 2회 */
 export const ANALYZE_CALL_ATTEMPTS = 2;
-/** renderViewport가 스스로 멈추지 못할 때 오케스트레이터가 더 기다리는 시간 (context 종료 여유) */
-const RENDER_GRACE_MS = 5_000;
+/**
+ * viewport가 스스로 끝나지 못할 때 오케스트레이터가 더 기다리는 시간.
+ * 단계 강제 제한 뒤 브라우저 정상 종료(BROWSER_CLOSE_TIMEOUT_MS)와 강제 종료(BROWSER_KILL_TIMEOUT_MS)를 기다릴 여유다
+ */
+const RENDER_GRACE_MS = BROWSER_CLOSE_TIMEOUT_MS + BROWSER_KILL_TIMEOUT_MS + 1_000;
 
 const VIEWPORT_LIST: readonly Viewport[] = ['desktop', 'mobile'];
-
-export interface RenderedViewport {
-  collected: CollectedViewport;
-  screenshot: CapturedScreenshot;
-  finalUrl: string;
-  /** 로그용 단계별 소요 시간(ms) */
-  timings: Record<string, number>;
-}
-
-export interface RenderOptions {
-  checker: HostChecker;
-  /** 이 viewport에 쓸 수 있는 남은 시간. 넘으면 TIME_BUDGET_EXCEEDED */
-  timeLimitMs: number;
-  /**
-   * 단계를 시작할 때 호출한다(로그용). viewport가 멈췄을 때 어느 단계에서 멈췄는지 운영 로그로 알 수 있게 한다.
-   * 결과를 기다리지 않고 바로 남기므로, 끝나지 않은 단계도 기록된다.
-   */
-  onStep?: (step: string) => void;
-}
 
 export interface InspectionDeps {
   store: InspectionStore;
   screenshots: ScreenshotStorage;
-  launchBrowser(): Promise<Browser>;
+  /** viewport마다 한 번 부른다(AGENTS.md 7장) */
+  launchBrowser(): Promise<LaunchedBrowser>;
   renderViewport(browser: Browser, viewport: Viewport, url: string, options: RenderOptions): Promise<RenderedViewport>;
   /** 검사 1회용 host checker. allowHosts를 넘기지 않는다(PRD 8.6) */
   createChecker(): HostChecker;
@@ -85,77 +66,6 @@ const sleepReject = (ms: number, error: () => Error) => {
   });
   return { promise, cancel: () => clearTimeout(timer) };
 };
-
-// ---------------------------------------------------------------------------
-// viewport 1개: context(guard) → 안정화 → 수집 → 스크린샷 → context 종료
-
-/**
- * 시간 제한을 넘기면 context를 닫아 진행 중인 Playwright 호출을 끊고 TIME_BUDGET_EXCEEDED를 던진다.
- * 제한은 두 개다: 이 viewport에 남은 전체 시간(timeLimitMs), 측정과 스크린샷 합계 20초(PRD 8.1.3).
- */
-export async function renderViewport(
-  browser: Browser,
-  viewport: Viewport,
-  url: string,
-  { checker, timeLimitMs, onStep }: RenderOptions,
-): Promise<RenderedViewport> {
-  const timings: Record<string, number> = {};
-  let context: BrowserContext | null = null;
-  let cutReason: string | null = null;
-  /** 시간 제한으로 시작한 context 종료. 두 번째 close()는 종료가 끝나기 전에 돌아오므로 이 Promise를 기다린다 */
-  let closing: Promise<void> | null = null;
-  const closeContext = (): Promise<void> => {
-    // context가 아직 없으면(생성 중) 기록하지 않는다. 만든 뒤 finally에서 닫는다
-    if (!context) return Promise.resolve();
-    closing ??= context.close().catch(() => undefined);
-    return closing;
-  };
-  const timers: ReturnType<typeof setTimeout>[] = [];
-  const cutAfter = (ms: number, reason: string) => {
-    timers.push(
-      setTimeout(() => {
-        cutReason ??= reason;
-        void closeContext();
-      }, Math.max(0, ms)),
-    );
-  };
-  const t0 = Date.now();
-  cutAfter(timeLimitMs, 'inspection budget');
-  try {
-    onStep?.('context');
-    context = await createViewportContext(browser, viewport, { checker });
-    if (cutReason) throw new Error('cut');
-    timings.contextMs = Date.now() - t0;
-
-    const stabilizeStart = Date.now();
-    onStep?.('open-and-stabilize');
-    const { page, meta } = await openAndStabilize(context, url, {
-      ...DEFAULT_STABILIZE_BUDGET,
-      navigationMs: Math.min(DEFAULT_STABILIZE_BUDGET.navigationMs, Math.max(1, timeLimitMs - timings.contextMs)),
-    });
-    for (const step of meta.steps) timings[`${step.step}Ms`] = step.durationMs;
-    timings.openAndStabilizeMs = Date.now() - stabilizeStart;
-
-    const measureStart = Date.now();
-    onStep?.('collect');
-    cutAfter(MEASURE_AND_SCREENSHOT_BUDGET_MS, 'measure budget');
-    const collected = await collectViewport(page, viewport, { timeoutMs: Math.min(COLLECT_TIMEOUT_MS, MEASURE_AND_SCREENSHOT_BUDGET_MS) });
-    timings.collectMs = Date.now() - measureStart;
-    const shotStart = Date.now();
-    onStep?.('screenshot');
-    // 수집 직후 같은 page로 찍는다(T07)
-    const screenshot = await captureFullPage(page, viewport, collected);
-    timings.screenshotMs = Date.now() - shotStart;
-    return { collected, screenshot, finalUrl: meta.finalUrl, timings };
-  } catch (error) {
-    if (cutReason) throw new InspectionError('TIME_BUDGET_EXCEEDED', `Viewport stopped: ${cutReason} exceeded`, { cause: error });
-    throw error;
-  } finally {
-    for (const timer of timers) clearTimeout(timer);
-    onStep?.('close-context');
-    await closeContext();
-  }
-}
 
 // ---------------------------------------------------------------------------
 // 탐지와 Issue 완성. viewport 하나의 데이터 때문에 실패하면 그 viewport만 DETECTION_FAILED로 빼고 다시 만든다.
@@ -214,7 +124,8 @@ export async function runInspection(id: string, deps: InspectionDeps): Promise<v
   const started = now();
   const deadline = started + INSPECTION_TIME_BUDGET_MS;
   let host: string | undefined;
-  let browser: Browser | null = null;
+  /** 지금 떠 있는 브라우저 (viewport마다 하나). 검사 중지와 finally가 닫는다 */
+  let current: LaunchedBrowser | null = null;
   let doc: Inspection | null = null;
 
   // 검사 중지(POST /api/inspections/:id/cancel): 브라우저 단계의 모든 저장은 중지 요청이 없을 때만 쓴다.
@@ -274,30 +185,20 @@ export async function runInspection(id: string, deps: InspectionDeps): Promise<v
           if (!requested || cancelled) return;
           cancelled = true;
           log('cancel-detected', { id, host, durationMs: now() - started });
-          if (browser) void closeBrowser(browser);
+          if (current) void current.close();
         },
         () => undefined, // 확인 실패는 다음 주기에 다시 본다
       );
     }, deps.cancelPollMs ?? CANCEL_POLL_MS);
     doc = await saveStep({ ...doc, status: 'running', startedAt: iso(now()), step: 'initializing_browser' });
 
-    // 1. 브라우저 실행 (렌더링 전 실패 → failed, PRD 6.2.2)
-    const checker = deps.createChecker();
-    const launchStart = now();
-    try {
-      browser = await deps.launchBrowser();
-    } catch (error) {
-      log('launch-failed', { id, host, durationMs: now() - launchStart, cause: describeFailure(error) });
-      await saveResult(toFailedDocument(doc, { code: 'BROWSER_CRASH', message: 'Browser launch failed' }, now()));
-      return;
-    }
-    log('launch', { id, host, durationMs: now() - launchStart });
-    throwIfCancelled();
-
-    // 2. Desktop → Mobile 순서대로 (AGENTS.md 7장). 하나가 실패해도 다른 viewport는 진행한다
+    // 1~2. Desktop → Mobile 순서대로, viewport마다 브라우저를 새로 띄운다(AGENTS.md 7장, browser/session.ts).
+    // 하나가 실패해도(브라우저 실행 실패 포함) 다른 viewport는 진행한다. 둘 다 실패하면 failed다(PRD 6.2.2)
+    const guardOptions = { checker: deps.createChecker() };
     const rendered: Record<Viewport, RenderedViewport | null> = { desktop: null, mobile: null };
     const errors: Record<Viewport, InspectionErrorInfo | null> = { desktop: null, mobile: null };
     for (const viewport of VIEWPORT_LIST) {
+      throwIfCancelled();
       const remaining = deadline - now();
       if (remaining <= 0) {
         errors[viewport] = { code: 'TIME_BUDGET_EXCEEDED', message: 'Inspection time budget exceeded before rendering' };
@@ -306,13 +207,24 @@ export async function runInspection(id: string, deps: InspectionDeps): Promise<v
       }
       await step(viewport === 'desktop' ? 'rendering_desktop' : 'rendering_mobile');
       const viewportStart = now();
+      // 마지막 안전장치: 단계별 강제 제한(render.ts)과 브라우저 강제 종료(launch.ts)까지 끝났어야 하는 시각
       const guard = sleepReject(remaining + RENDER_GRACE_MS, () => new InspectionError('TIME_BUDGET_EXCEEDED', 'Viewport did not stop in time'));
       try {
         rendered[viewport] = await Promise.race([
-          deps.renderViewport(browser, viewport, doc.url, {
-            checker,
+          inspectViewportInFreshBrowser(deps, viewport, doc.url, {
+            guard: guardOptions,
             timeLimitMs: remaining,
             onStep: (s) => log('viewport-step', { id, host, viewport, step: s, durationMs: now() - viewportStart }),
+            onLaunched: (launched) => {
+              current = launched;
+              log('launch', { id, host, viewport, durationMs: launched.launchMs });
+              // 실행 중에 중지 요청을 받았으면 바로 닫는다
+              if (cancelled) void launched.close();
+            },
+            onClosed: (result, durationMs) => {
+              current = null;
+              log(result === 'killed' ? 'browser-killed' : 'browser-closed', { id, host, viewport, durationMs });
+            },
           }),
           guard.promise,
         ]);
@@ -322,12 +234,16 @@ export async function runInspection(id: string, deps: InspectionDeps): Promise<v
         log('viewport-failed', { id, host, viewport, code: errors[viewport]?.code, durationMs: now() - viewportStart, cause: describeFailure(error) });
       } finally {
         guard.cancel();
+        // 오케스트레이터가 끊은 경우(위 guard) 브라우저가 아직 떠 있다. 다음 viewport를 띄우기 전에 닫는다(강제 종료 포함).
+        // 동시에 떠 있는 브라우저는 하나다. close()는 여러 번 불러도 한 번만 닫는다
+        if (current) {
+          const leftover: LaunchedBrowser = current;
+          current = null;
+          await leftover.close();
+        }
       }
       throwIfCancelled();
     }
-    // 측정이 끝나면 브라우저를 먼저 닫아 메모리를 돌려준다
-    await closeBrowser(browser);
-    browser = null;
 
     // 3. 탐지 → Dedup → Priority → 상한 → ID → Evidence (PRD 8.1.2)
     await step('detecting_issues');
@@ -402,7 +318,7 @@ export async function runInspection(id: string, deps: InspectionDeps): Promise<v
     }
   } finally {
     clearInterval(cancelWatch);
-    if (browser) await closeBrowser(browser);
+    if (current) await current.close();
     try {
       await store.releaseSlot(id);
     } catch (error) {
@@ -413,9 +329,6 @@ export async function runInspection(id: string, deps: InspectionDeps): Promise<v
   }
 }
 
-async function closeBrowser(browser: Browser): Promise<void> {
-  await browser.close().catch(() => undefined);
-}
 
 /** analyze 호출의 응답 대기 시간 초과. analyze가 실제로는 시작되었을 수 있어 확실한 실패와 구분한다 */
 export class AnalyzeCallTimeout extends Error {

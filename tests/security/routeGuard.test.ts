@@ -1,7 +1,7 @@
-import type { Browser, BrowserContext } from 'playwright-core';
+import type { BrowserContext } from 'playwright-core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createViewportContext } from '@/server/browser/devices';
-import { launchBrowser } from '@/server/browser/launch';
+import { launchBrowser, type LaunchedBrowser } from '@/server/browser/launch';
 import { openAndStabilize } from '@/server/browser/stabilize';
 import { InspectionError } from '@/server/errors';
 import { getRouteGuard, type BlockedRequest, type RouteGuard } from '@/server/security/routeGuard';
@@ -21,25 +21,29 @@ const fakeLookup: LookupFn = async (hostname) => {
 };
 
 let server: FixtureServer;
-let browser: Browser;
-let context: BrowserContext | undefined;
+/** 테스트마다 새 브라우저 1개, context 1개 (AGENTS.md 7장: 브라우저 하나에 context를 여러 개 만들지 않는다) */
+let current: LaunchedBrowser | undefined;
 
 beforeAll(async () => {
   server = await start({ securityRoutes: true });
-  browser = await launchBrowser();
 }, 60_000);
 
 afterAll(async () => {
-  await context?.close().catch(() => undefined);
-  await browser?.close();
+  await current?.close();
   await server?.close();
 });
 
+async function freshBrowser(): Promise<LaunchedBrowser> {
+  await current?.close();
+  current = await launchBrowser();
+  return current;
+}
+
 async function newContext(): Promise<{ context: BrowserContext; guard: RouteGuard }> {
-  await context?.close().catch(() => undefined);
+  const { browser } = await freshBrowser();
   server.requests.length = 0;
   const checker = createHostChecker({ lookup: fakeLookup, allowHosts: [new URL(server.baseUrl).hostname] });
-  context = await createViewportContext(browser, 'desktop', { checker });
+  const context = await createViewportContext(browser, 'desktop', { checker });
   const guard = getRouteGuard(context);
   if (!guard) throw new Error('guard not attached');
   return { context, guard };
@@ -228,13 +232,10 @@ describe('media와 네트워크 오류', () => {
 
 describe('연결', () => {
   it('guard가 없는 context는 openAndStabilize가 거부한다', async () => {
+    const { browser } = await freshBrowser();
     const bare = await browser.newContext();
-    try {
-      const error = await openAndStabilize(bare, `${server.baseUrl}/__security/ok`).catch((e: unknown) => e);
-      expect(error).toBeInstanceOf(InspectionError);
-      expect((error as InspectionError).code).toBe('INTERNAL_ERROR');
-    } finally {
-      await bare.close();
-    }
+    const error = await openAndStabilize(bare, `${server.baseUrl}/__security/ok`).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(InspectionError);
+    expect((error as InspectionError).code).toBe('INTERNAL_ERROR');
   });
 });

@@ -6,6 +6,7 @@
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { launchBrowser } from '@/server/browser/launch';
+import { withFreshBrowser } from '@/server/browser/session';
 import { createViewportContext } from '@/server/browser/devices';
 import type { Viewport } from '@/types/inspection';
 import { FIXTURE_EXPECTATIONS } from '../tests/fixtures/expected';
@@ -45,26 +46,26 @@ function measure() {
 async function main(): Promise<void> {
   await mkdir(OUT_DIR, { recursive: true });
   const server = await start();
-  const browser = await launchBrowser();
   const rows: Row[] = [];
   const errors: string[] = [];
 
   try {
     for (const viewport of VIEWPORT_ORDER) {
-      const context = await createViewportContext(browser, viewport, fixtureGuard(server.baseUrl));
-      try {
-        for (const fixture of FIXTURE_EXPECTATIONS) {
-          const page = await context.newPage();
-          let failedRequests = 0;
-          page.on('requestfailed', () => {
-            failedRequests += 1;
-          });
-          page.on('response', (response) => {
-            if (response.status() >= 400) failedRequests += 1;
-          });
-          page.on('pageerror', (error) => errors.push(`${fixture.id}/${viewport}: ${error.message}`));
+      for (const fixture of FIXTURE_EXPECTATIONS) {
+        try {
+          // 페이지마다 브라우저를 새로 띄운다. 브라우저 하나에는 context와 page를 하나만 연다(AGENTS.md 7장)
+          await withFreshBrowser(launchBrowser, async ({ browser }) => {
+            const context = await createViewportContext(browser, viewport, fixtureGuard(server.baseUrl));
+            const page = await context.newPage();
+            let failedRequests = 0;
+            page.on('requestfailed', () => {
+              failedRequests += 1;
+            });
+            page.on('response', (response) => {
+              if (response.status() >= 400) failedRequests += 1;
+            });
+            page.on('pageerror', (error) => errors.push(`${fixture.id}/${viewport}: ${error.message}`));
 
-          try {
             await page.goto(`${server.baseUrl}${fixture.path}`, {
               waitUntil: 'load',
               timeout: NAVIGATION_TIMEOUT_MS,
@@ -95,18 +96,13 @@ async function main(): Promise<void> {
               docHeight: m.docHeight,
               failedRequests,
             });
-          } catch (error) {
-            errors.push(`${fixture.id}/${viewport}: ${error instanceof Error ? error.message : String(error)}`);
-          } finally {
-            await page.close();
-          }
+          });
+        } catch (error) {
+          errors.push(`${fixture.id}/${viewport}: ${error instanceof Error ? error.message : String(error)}`);
         }
-      } finally {
-        await context.close();
       }
     }
   } finally {
-    await browser.close();
     await server.close();
   }
 
