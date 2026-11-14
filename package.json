@@ -13,7 +13,8 @@
     "collect": "node --conditions=react-server --import tsx scripts/collect.ts",
     "detect": "node --conditions=react-server --import tsx scripts/detect.ts",
     "fixtures:shots": "node --conditions=react-server --import tsx scripts/fixture-screenshots.ts",
-    "test:security": "vitest run --config vitest.security.config.mts"
+    "test:security": "vitest run --config vitest.security.config.mts",
+    "ui:shots": "node --import tsx scripts/ui-shots.ts"
   },
   "dependencies": {
     "@sparticuz/chromium": "153.0.0",

@@ -1,26 +1,95 @@
 @import "tailwindcss";
 
+/* DESIGN_GUIDE 14장 토큰. Tailwind 기본 색(red-500 등)과 임의 값은 쓰지 않는다. MVP는 Light Theme만 둔다(13장). */
+@theme {
+  /* Neutral */
+  --color-background: #ffffff;
+  --color-background-secondary: #f5f5f7;
+  --color-background-tertiary: #ebebed;
+  --color-surface: #ffffff;
+  --color-border: #e5e5ea;
+  --color-border-strong: #d1d1d6;
+  --color-text-primary: #1d1d1f;
+  --color-text-secondary: #6e6e73;
+  --color-text-tertiary: #707075;
+  --color-text-disabled: #aeaeb2;
+
+  /* Accent */
+  --color-accent-solid: #0a84ff;
+  --color-accent: #0066cc;
+  --color-accent-hover: #005bb8;
+  --color-accent-tint: #e8f2ff;
+
+  /* Priority */
+  --color-p0-solid: #e5484d;  --color-p0-text: #b4313a;  --color-p0-tint: #fdecec;
+  --color-p1-solid: #d4700f;  --color-p1-text: #9a5207;  --color-p1-tint: #fdf1e3;
+  --color-p2-solid: #ad8200;  --color-p2-text: #806500;  --color-p2-tint: #fbf5dc;
+  --color-p3-solid: #8e8e93;  --color-p3-text: #5f5f64;  --color-p3-tint: #f0f0f2;
+
+  /* Semantic */
+  --color-success-solid: #30a46c;  --color-success-text: #1a7346;  --color-success-tint: #e6f4ec;
+  --color-warning-solid: #d4700f;  --color-warning-text: #9a5207;  --color-warning-tint: #fdf1e3;
+  --color-error-solid: #e5484d;    --color-error-text: #b4313a;    --color-error-tint: #fdecec;
+  --color-info-solid: #0a84ff;     --color-info-text: #0066cc;     --color-info-tint: #e8f2ff;
+  --color-neutral-solid: #8e8e93;  --color-neutral-text: #5f5f64;  --color-neutral-tint: #f0f0f2;
+
+  /* Typography (next/font 변수 연결, 3.2) */
+  --font-sans: var(--font-noto-sans-kr), system-ui, sans-serif;
+  --font-mono: var(--font-google-sans-code), var(--font-noto-sans-kr), ui-monospace, monospace;
+
+  /* Type scale (3.4). weight는 유틸리티(font-medium/font-semibold)로 지정한다 */
+  --text-display: 40px;   --text-display--line-height: 1.2;
+  --text-h1: 28px;        --text-h1--line-height: 1.25;
+  --text-h2: 20px;        --text-h2--line-height: 1.3;
+  --text-h3: 16px;        --text-h3--line-height: 1.4;
+  --text-body-lg: 16px;   --text-body-lg--line-height: 1.6;
+  --text-body: 14px;      --text-body--line-height: 1.55;
+  --text-body-sm: 13px;   --text-body-sm--line-height: 1.5;
+  --text-caption: 12px;   --text-caption--line-height: 1.4;
+  --text-label: 12px;     --text-label--line-height: 1.3;
+  --text-code: 13px;      --text-code--line-height: 1.6;
+
+  /* Layout width (4.3) → max-w-narrow / max-w-wide */
+  --container-narrow: 720px;
+  --container-wide: 1440px;
+
+  /* Radius */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+
+  /* Shadow */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.06), 0 1px 3px rgba(0, 0, 0, 0.04);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.12);
+
+  /* Motion */
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-enter: cubic-bezier(0, 0, 0.2, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+}
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --duration-fast: 120ms;
+  --duration-normal: 180ms;
+  --duration-moderate: 240ms;
+  --duration-slow: 320ms;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-background);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  /* 한글이 단어 중간에서 줄바꿈되지 않게 한다. 긴 URL·selector는 wrap-anywhere로 따로 처리한다(DESIGN_GUIDE 11.2) */
+  word-break: keep-all;
+}
+
+/* DESIGN_GUIDE 8.5: 서비스 UI용. 검사 대상 페이지에 주입하는 CSS(PRD 5.2.2)와는 별개다 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
