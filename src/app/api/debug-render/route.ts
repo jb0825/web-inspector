@@ -22,6 +22,8 @@ import { z } from 'zod';
 import { createViewportContext } from '@/server/browser/devices';
 import { launchBrowser, type LaunchedBrowser } from '@/server/browser/launch';
 import { renderViewport } from '@/server/browser/render';
+import { randomUUID } from 'node:crypto';
+import { readdir, readFile } from 'node:fs/promises';
 import { inflateSync } from 'node:zlib';
 import type { ScreenshotAttemptFailure } from '@/server/browser/screenshot';
 import { InspectionError } from '@/server/errors';
@@ -344,6 +346,54 @@ function regionColors(image: { width: number; height: number; rgba: Uint8Array }
   };
 }
 
+
+/** 함수 인스턴스 식별(Fluid compute에서 같은 인스턴스를 다시 쓰는지 보기 위해) */
+const INSTANCE = { id: randomUUID().slice(0, 8), startedAt: Date.now(), requests: 0 };
+
+/**
+ * 이 인스턴스에서 살아 있는 Chromium 프로세스와 메모리, 부하(/proc, Linux만). 앞 요청의 브라우저가 남아
+ * CPU·메모리를 쓰고 있는지 확인한다. 실행 인자는 넣지 않는다(경로 정도지만 줄인다)
+ */
+async function processSnapshot(): Promise<unknown> {
+  try {
+    const pids = (await readdir('/proc')).filter((name) => /^\d+$/.test(name));
+    const chrome: { pid: number; ppid: number; state: string; cpuTicks: number; rssKb: number | null; kind: string }[] = [];
+    for (const pid of pids) {
+      try {
+        const cmdline = (await readFile(`/proc/${pid}/cmdline`, 'utf8')).split('\0');
+        const exe = cmdline[0] ?? '';
+        if (!/chrom|headless_shell/i.test(exe)) continue;
+        const stat = await readFile(`/proc/${pid}/stat`, 'utf8');
+        const fields = stat.slice(stat.lastIndexOf(')') + 2).split(' ');
+        const status = await readFile(`/proc/${pid}/status`, 'utf8');
+        const rss = /VmRSS:\s+(\d+)/.exec(status);
+        const type = cmdline.find((arg) => arg.startsWith('--type='));
+        chrome.push({
+          pid: Number(pid),
+          ppid: Number(fields[1]),
+          state: fields[0] ?? '?',
+          cpuTicks: Number(fields[11]) + Number(fields[12]),
+          rssKb: rss ? Number(rss[1]) : null,
+          kind: type ? type.slice(7) : 'browser',
+        });
+      } catch {
+        // 그사이 끝난 프로세스
+      }
+    }
+    const meminfo = await readFile('/proc/meminfo', 'utf8').catch(() => '');
+    const available = /MemAvailable:\s+(\d+)/.exec(meminfo);
+    const total = /MemTotal:\s+(\d+)/.exec(meminfo);
+    return {
+      chrome,
+      memAvailableMb: available ? Math.round(Number(available[1]) / 1024) : null,
+      memTotalMb: total ? Math.round(Number(total[1]) / 1024) : null,
+      loadavg: (await readFile('/proc/loadavg', 'utf8').catch(() => '')).trim(),
+    };
+  } catch (error) {
+    return { error: describeFailure(error) };
+  }
+}
+
 interface RenderReport {
   ok: boolean;
   /** 시작한 단계와 그때까지 걸린 시간(ms). 멈춘 단계를 알 수 있다 */
@@ -461,6 +511,9 @@ export async function POST(request: NextRequest): Promise<Response> {
     return NextResponse.json({ error: describeFailure(error) }, { status: 400 });
   }
 
+  INSTANCE.requests += 1;
+  const instance = { id: INSTANCE.id, ageMs: Date.now() - INSTANCE.startedAt, request: INSTANCE.requests };
+  const processesAtStart = await processSnapshot();
   const collected: Collected = { consoleErrors: [], pageErrors: [], failedRequests: [], fontResponses: [], fontRequestsContinued: 0, fontRequestsBlocked: 0 };
   const timings: Record<string, number> = {};
   const started = Date.now();
@@ -473,9 +526,13 @@ export async function POST(request: NextRequest): Promise<Response> {
     if (mode === 'render') {
       return NextResponse.json({
         target: { host: target.host, viewport, webgl, mode, freezeRaf },
+        instance,
+        processesAtStart,
         launchMs: launched.launchMs,
         browser: browserInfo,
         render: await runRender(launched, viewport, target.href, checker, freezeRaf),
+        closeResult: await launched.close(),
+        processesAfterClose: await processSnapshot(),
       });
     }
 
