@@ -3,7 +3,7 @@ import { timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 import { inspectionRequestSchema } from '@/schemas/inspectionRequest';
 import { isInspectionError } from '@/server/errors';
-import type { Logger } from '@/server/log';
+import { describeFailure, type Logger } from '@/server/log';
 import { HOST_LOOKUP_FAILED_MESSAGE, validateInspectionUrl } from '@/server/security/url';
 import type { HostChecker } from '@/server/security/ssrf';
 import { StoredInspectionInvalidError, type InspectionStore } from '@/server/store/redis';
@@ -84,7 +84,7 @@ export async function handleCreateInspection(request: Request, deps: CreateDeps)
     if (isInspectionError(error) && error.code === 'INVALID_URL') {
       return apiError(400, 'INVALID_URL', error.message.startsWith(HOST_LOOKUP_FAILED_MESSAGE) ? API_MESSAGES.HOST_NOT_FOUND : API_MESSAGES.INVALID_URL);
     }
-    deps.log('create-failed', { code: 'INTERNAL_ERROR' });
+    deps.log('create-failed', { code: 'INTERNAL_ERROR', cause: describeFailure(error) });
     return apiError(500, 'INTERNAL_ERROR', API_MESSAGES.INTERNAL_ERROR);
   }
 
@@ -95,8 +95,8 @@ export async function handleCreateInspection(request: Request, deps: CreateDeps)
       deps.log('create-rejected', { id, host: url.hostname, code: 'TOO_MANY_INSPECTIONS' });
       return apiError(429, 'TOO_MANY_INSPECTIONS', API_MESSAGES.TOO_MANY_INSPECTIONS);
     }
-  } catch {
-    deps.log('create-failed', { id, host: url.hostname, code: 'STORAGE_FAILED' });
+  } catch (error) {
+    deps.log('create-failed', { id, host: url.hostname, code: 'STORAGE_FAILED', cause: describeFailure(error) });
     return apiError(500, 'STORAGE_FAILED', API_MESSAGES.STORAGE_FAILED);
   }
 
@@ -118,8 +118,8 @@ export async function handleCreateInspection(request: Request, deps: CreateDeps)
   };
   try {
     await deps.store.create(inspection);
-  } catch {
-    deps.log('create-failed', { id, host: url.hostname, code: 'STORAGE_FAILED' });
+  } catch (error) {
+    deps.log('create-failed', { id, host: url.hostname, code: 'STORAGE_FAILED', cause: describeFailure(error) });
     await deps.store.releaseSlot(id).catch(() => undefined);
     return apiError(500, 'STORAGE_FAILED', API_MESSAGES.STORAGE_FAILED);
   }
@@ -143,7 +143,10 @@ export async function handleGetInspection(id: string, deps: ReadDeps): Promise<R
     inspection = await deps.store.read(id);
   } catch (error) {
     // 로그에는 검사 ID만 남긴다(DOMAIN_MODEL 6.1)
-    deps.log(error instanceof StoredInspectionInvalidError ? 'read-invalid' : 'read-failed', { id });
+    deps.log(error instanceof StoredInspectionInvalidError ? 'read-invalid' : 'read-failed', {
+      id,
+      ...(error instanceof StoredInspectionInvalidError ? {} : { cause: describeFailure(error) }),
+    });
     return apiError(500, 'INTERNAL_ERROR', API_MESSAGES.INTERNAL_ERROR);
   }
   if (!inspection) return apiError(404, 'NOT_FOUND', API_MESSAGES.NOT_FOUND);

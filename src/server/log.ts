@@ -15,9 +15,31 @@ export interface LogFields {
   httpStatus?: number;
   /** 단계별 소요 시간(ms). 예: { gotoMs, stabilizeMs, collectMs, screenshotMs } */
   timings?: Record<string, number>;
+  /** 저장소·설정 실패의 원인 요약. describeFailure로만 만든다 */
+  cause?: string;
 }
 
 export type Logger = (event: string, fields: LogFields) => void;
+
+const CAUSE_MAX = 160;
+
+/**
+ * 예상하지 못한 실패의 원인을 로그 한 줄로 요약한다. 운영에서 STORAGE_FAILED 원인을 찾기 위해 둔다(T13).
+ * - EnvError: 메시지에 변수 이름만 있다(값은 없다, env.ts)
+ * - Upstash 오류: 서버가 돌려준 오류 문구(예: WRONGPASS, max requests limit). 토큰은 들어 있지 않다
+ * - 네트워크 오류: Node fetch의 cause 코드(예: ENOTFOUND)
+ * URL과 토큰 형태의 문자열은 지운 뒤 길이를 자른다(AGENTS.md 8장).
+ */
+export function describeFailure(error: unknown): string {
+  if (!(error instanceof Error)) return typeof error;
+  let text = `${error.name}: ${error.message}`;
+  const cause = (error as { cause?: unknown }).cause;
+  if (cause && typeof cause === 'object' && 'code' in cause && typeof cause.code === 'string') text += ` (${cause.code})`;
+  return text
+    .replace(/[a-z][a-z0-9+.-]*:\/\/\S+/gi, '<url>')
+    .replace(/[A-Za-z0-9_-]{32,}/g, '<redacted>')
+    .slice(0, CAUSE_MAX);
+}
 
 export const logEvent: Logger = (event, fields) => {
   console.log(JSON.stringify({ scope: 'inspection', event, ...fields }));
