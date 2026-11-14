@@ -153,6 +153,18 @@ describe('screenshotPlans (T14: 실패하면 줄여서 다시 찍기)', () => {
     expect(screenshotPlans({ width: 1440, height: 900 }, 'desktop', { ...visible, layoutWidth: 1440 })).toEqual([{ mode: 'full', clip: null }]);
   });
 
+  it('canvas가 있고 실제 픽셀이 상한을 넘으면 전체 촬영을 건너뛰고 reduced부터 찍는다 (T14)', () => {
+    // imogen-rose Mobile: 390×4876 → 1170×14,628
+    expect(screenshotPlans({ width: 390, height: 4876, canvasCount: 1 }, 'mobile', visible)).toEqual([
+      { mode: 'reduced', clip: { x: 0, y: 0, width: 390, height: Math.floor(SCREENSHOT_MAX_DEVICE_PX / 3) } },
+      { mode: 'first-screen', clip: { x: 0, y: 0, width: 390, height: 844 } },
+    ]);
+    // canvas가 없으면 지금처럼 전체부터 (fillout Mobile 1170×15,000은 production에서 성공)
+    expect(screenshotPlans({ width: 390, height: 4876, canvasCount: 0 }, 'mobile', visible)[0]!.mode).toBe('full');
+    // canvas가 있어도 상한 안이면 전체부터 (imogen-rose Desktop 1440×5195)
+    expect(screenshotPlans({ width: 1440, height: 5195, canvasCount: 1 }, 'desktop', { ...visible, layoutWidth: 1440 })[0]!.mode).toBe('full');
+  });
+
   it('너비도 실제 픽셀 상한 안으로 줄인다', () => {
     const plans = screenshotPlans({ width: 3000, height: 1000 }, 'mobile', visible);
     expect(plans[1]).toEqual({ mode: 'reduced', clip: { x: 0, y: 0, width: 2730, height: 1000 } });
@@ -168,7 +180,7 @@ describe('captureFullPage 재시도', () => {
       if (!next || next instanceof Error) throw next ?? new Error('no more');
       return next;
     });
-    const page = { evaluate: vi.fn(async () => ({ width: 390, height: 4925, canvasCount: 1 })), screenshot, isClosed: () => false };
+    const page = { evaluate: vi.fn(async () => ({ width: 390, height: 4925, canvasCount: 0 })), screenshot, isClosed: () => false };
     return { page: page as unknown as Page, screenshot };
   }
 
@@ -183,7 +195,7 @@ describe('captureFullPage 재시도', () => {
     expect(shot.screenshotTruncated).toBe(true);
     expect(screenshot).toHaveBeenCalledTimes(2);
     expect(failures).toHaveLength(1);
-    expect(failures[0]!.diagnostics).toMatchObject({ mode: 'full', cssHeight: 4925, deviceScaleFactor: 3, deviceHeight: 14775, canvasCount: 1 });
+    expect(failures[0]!.diagnostics).toMatchObject({ mode: 'full', cssHeight: 4925, deviceScaleFactor: 3, deviceHeight: 14775, canvasCount: 0 });
   });
 
   it('모두 실패하면 SCREENSHOT_FAILED를 던지고 마지막 오류를 cause에 둔다', async () => {
@@ -230,7 +242,7 @@ describe('captureFullPage 시간 제한', () => {
   it('deadline이 있으면 시도마다 그때 남은 시간을 모두 준다', async () => {
     const timeouts: number[] = [];
     const page = {
-      evaluate: vi.fn(async () => ({ width: 390, height: 4925, canvasCount: 1 })),
+      evaluate: vi.fn(async () => ({ width: 390, height: 4925, canvasCount: 0 })),
       screenshot: vi.fn(async (opts: { timeout: number }) => {
         timeouts.push(opts.timeout);
         throw new Error('Protocol error (Page.captureScreenshot): Unable to capture screenshot');

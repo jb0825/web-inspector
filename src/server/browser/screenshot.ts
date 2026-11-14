@@ -158,27 +158,34 @@ export function screenshotClip(
 
 /**
  * 시도할 촬영 방식 목록 (순서대로). 앞 방식보다 작아지지 않는 방식은 넣지 않는다. 순수 함수다.
+ * canvas가 있고 전체 촬영의 실제 픽셀이 SCREENSHOT_MAX_DEVICE_PX를 넘으면 전체 촬영을 건너뛰고 reduced부터 찍는다(PRD 5.2.4).
+ * WebGL canvas가 있는 페이지의 큰 촬영은 시간 초과로 끝나고, 시간 초과 뒤에는 다시 찍지 않기 때문이다
+ * (T14 production: imogen-rose Mobile 1170×14,628 촬영이 38초 시간 초과, 1170×8,190은 성공. canvas 없는 1170×15,000은 성공).
  */
 export function screenshotPlans(
-  page: { width: number; height: number },
+  page: { width: number; height: number; canvasCount?: number },
   viewport: Viewport,
   layout: Pick<CollectedViewport, 'rootOverflowX' | 'layoutWidth'>,
 ): ScreenshotPlan[] {
   const full = screenshotClip(page, viewport, layout);
   const width = full?.width ?? page.width;
   const height = full?.height ?? page.height;
-  const plans: ScreenshotPlan[] = [{ mode: 'full', clip: full }];
+  const scale = VIEWPORTS[viewport].deviceScaleFactor;
+  const plans: ScreenshotPlan[] = [];
+  const oversized = Math.ceil(width * scale) > SCREENSHOT_MAX_DEVICE_PX || Math.ceil(height * scale) > SCREENSHOT_MAX_DEVICE_PX;
+  if (!((page.canvasCount ?? 0) > 0 && oversized)) plans.push({ mode: 'full', clip: full });
   let lastWidth = width;
   let lastHeight = height;
   const add = (mode: ScreenshotMode, w: number, h: number) => {
     const nextWidth = Math.max(1, Math.min(lastWidth, w));
     const nextHeight = Math.max(1, Math.min(lastHeight, h));
-    if (nextWidth === lastWidth && nextHeight === lastHeight) return;
+    // 전체 촬영을 건너뛴 경우 reduced는 항상 넣는다(크기가 줄어든다)
+    if (plans.length > 0 && nextWidth === lastWidth && nextHeight === lastHeight) return;
     plans.push({ mode, clip: { x: 0, y: 0, width: nextWidth, height: nextHeight } });
     lastWidth = nextWidth;
     lastHeight = nextHeight;
   };
-  const maxCss = Math.floor(SCREENSHOT_MAX_DEVICE_PX / VIEWPORTS[viewport].deviceScaleFactor);
+  const maxCss = Math.floor(SCREENSHOT_MAX_DEVICE_PX / scale);
   add('reduced', maxCss, maxCss);
   add('first-screen', lastWidth, VIEWPORTS[viewport].height);
   return plans;
