@@ -1,10 +1,14 @@
-// production에서 검사한 결과를 정적 파일로 가져온다 (T13, T14, DOMAIN_MODEL 6.3, PRD 8.1.4).
-//   --target sample(기본값)        → public/sample/          샘플 리포트 (/report/sample). 데모 페이지만
-//   --target showcase/before|after → public/showcase/{name}/ Before/After 사례 (/report/showcase/{name}).
+// 검사 결과를 정적 파일로 가져온다 (T13, T14, DOMAIN_MODEL 6.3, PRD 8.1.4, 8.7).
+//   --out public/sample(기본값)                → 샘플 리포트 (/report/sample). 데모 페이지만
+//   --out public/showcase/before|after          → Before/After 사례 (/report/before, /report/after, /showcase)
+//   (--target sample|showcase/before|showcase/after는 예전 이름이며 --out과 같다)
+//   --base는 production 주소뿐 아니라 pnpm dev:local로 띄운 http://127.0.0.1:3000도 받는다.
+//     로컬 파일 저장소의 스크린샷(/api/local-files/…, 상대 경로)은 --base 기준으로 내려받는다.
 //     사례 대상은 사람이 소유한 사이트라 /demo/가 아니다. 그래도 --force 없이는 중단한다(대상을 한 번 더 확인하게 하기 위해서다)
 //
 // 실행 (node --conditions=react-server: server-only를 빈 모듈로 불러온다, AGENTS.md 10장)
-//   pnpm import-sample --base https://<production 도메인> --id <inspection id> [--target <target>] [--force]
+//   pnpm import-sample --base https://<production 도메인> --id <inspection id> [--out public/showcase/before] [--force]
+//   pnpm import-sample --base http://127.0.0.1:3000 --id <inspection id> --out public/showcase/after --force
 //   pnpm import-sample --local .tmp/fixtures-report/demo-landing.inspection.json
 //     1차 작업의 임시 샘플 전용. `pnpm test:fixtures --page demo/landing.html --report-only`가 만든 문서와
 //     같은 폴더의 PNG(screenshotUrl이 파일 이름)를 가져온다. 네트워크를 쓰지 않는다.
@@ -20,6 +24,8 @@ import type { Inspection, Viewport } from '@/types/inspection';
 import {
   IMPORT_TARGETS,
   isAllowedDownloadUrl,
+  outToTarget,
+  resolveScreenshotSource,
   isDemoTarget,
   isImportTarget,
   parseBaseUrl,
@@ -40,7 +46,7 @@ type Args = ({ mode: 'remote'; base: URL; id: string; force: boolean } | { mode:
 
 function usage(message?: string): never {
   if (message) console.error(message);
-  console.error(`Usage: pnpm import-sample --base <production URL> --id <inspection id> [--target ${IMPORT_TARGETS.join('|')}] [--force]`);
+  console.error(`Usage: pnpm import-sample --base <URL> --id <inspection id> [--out ${IMPORT_TARGETS.map((t) => `public/${t}`).join('|')}] [--force]`);
   console.error('       pnpm import-sample --local <path/to/*.inspection.json> [--target <target>]   (로컬 확인용)');
   process.exit(2);
 }
@@ -57,6 +63,11 @@ function parseArgs(argv: string[]): Args {
       const value = argv[(i += 1)] ?? '';
       if (!isImportTarget(value)) usage(`Invalid --target: ${value} (${IMPORT_TARGETS.join(', ')})`);
       target = value;
+    } else if (arg === '--out') {
+      const value = argv[(i += 1)] ?? '';
+      const resolved = outToTarget(value);
+      if (!resolved) usage(`Invalid --out: ${value} (${IMPORT_TARGETS.map((t) => `public/${t}`).join(', ')})`);
+      target = resolved;
     } else if (arg === '--base') base = argv[(i += 1)];
     else if (arg === '--id') id = argv[(i += 1)];
     else if (arg === '--local') local = argv[(i += 1)];
@@ -105,7 +116,9 @@ async function loadRemote(base: URL, id: string, force: boolean): Promise<{ insp
     console.warn(`경고: ${message}. --force로 계속한다`);
   }
 
-  const sources = screenshotSources(inspection);
+  const raw = screenshotSources(inspection);
+  const sources = {} as Record<Viewport, string>;
+  for (const v of SAMPLE_VIEWPORTS) sources[v] = resolveScreenshotSource(raw[v], base);
   for (const v of SAMPLE_VIEWPORTS) {
     if (!isAllowedDownloadUrl(sources[v], base)) throw new Error(`${v} screenshotUrl의 호스트가 허용 목록(--base, Vercel Blob)에 없다`);
   }

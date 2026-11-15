@@ -10,10 +10,12 @@ import { getInternalEnv } from '@/server/env';
 import { InspectionError, isInspectionError } from '@/server/errors';
 import { buildViewportResult, finalizeIssues } from '@/server/evidence/finalize';
 import { describeFailure, logEvent, type Logger } from '@/server/log';
-import { createHostChecker, type HostChecker } from '@/server/security/ssrf';
+import { createServiceHostChecker } from '@/server/security/policy';
+import type { HostChecker } from '@/server/security/ssrf';
 import { browserStageError, browserStageStatus, toFailedDocument, withSkippedReasons } from '@/server/status';
-import { createBlobStorage, type ScreenshotStorage } from '@/server/store/blob';
-import { getInspectionStore, InspectionCancelledError, type InspectionStore } from '@/server/store/redis';
+import type { ScreenshotStorage } from '@/server/store/blob';
+import { InspectionCancelledError, type InspectionStore } from '@/server/store/redis';
+import { getInspectionStore, getScreenshotStorage } from '@/server/store/runtime';
 import type { InspectionStep } from '@/server/store/schemas';
 import type { Inspection, InspectionErrorInfo, Issue, Viewport, ViewportResult } from '@/types/inspection';
 
@@ -57,7 +59,7 @@ export interface InspectionDeps {
   /** viewport마다 한 번 부른다(AGENTS.md 7장) */
   launchBrowser(): Promise<LaunchedBrowser>;
   renderViewport(browser: Browser, viewport: Viewport, url: string, options: RenderOptions): Promise<RenderedViewport>;
-  /** 검사 1회용 host checker. allowHosts를 넘기지 않는다(PRD 8.6) */
+  /** 검사 1회용 host checker. 실행 모드 정책만 붙이고 allowHosts를 넘기지 않는다(PRD 8.6, 8.7) */
   createChecker(): HostChecker;
   /** /analyze 내부 호출. 202가 아니면 던진다(재시도는 runInspection이 한다) */
   triggerAnalyze(id: string): Promise<void>;
@@ -521,10 +523,10 @@ export function createAnalyzeTrigger(requestOrigin: string | undefined): (id: st
 export function createInspectionDeps(requestOrigin: string | undefined): InspectionDeps {
   return {
     store: getInspectionStore(),
-    screenshots: createBlobStorage(),
+    screenshots: getScreenshotStorage(),
     launchBrowser,
     renderViewport,
-    createChecker: () => createHostChecker(),
+    createChecker: () => createServiceHostChecker(),
     triggerAnalyze: createAnalyzeTrigger(requestOrigin),
     resourceSnapshot,
     now: Date.now,

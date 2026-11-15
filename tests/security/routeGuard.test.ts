@@ -239,3 +239,32 @@ describe('연결', () => {
     expect((error as InspectionError).code).toBe('INTERNAL_ERROR');
   });
 });
+
+describe('로컬 모드 정책 (PRD 8.7)', () => {
+  /** allowHosts 없이 local 정책만 붙인 checker. 서비스 코드(createServiceHostChecker)가 local 모드에서 만드는 것과 같다 */
+  async function localContext(): Promise<{ context: BrowserContext; guard: RouteGuard }> {
+    const { browser } = await freshBrowser();
+    server.requests.length = 0;
+    const checker = createHostChecker({ policy: { mode: 'local', allowHosts: [] }, lookup: fakeLookup });
+    const context = await createViewportContext(browser, 'desktop', { checker });
+    const guard = getRouteGuard(context);
+    if (!guard) throw new Error('guard not attached');
+    return { context, guard };
+  }
+
+  it('loopback 페이지는 allowHosts 없이 열리고, 리다이렉트로 메타데이터 주소에 가면 BLOCKED_TARGET이다', async () => {
+    // Fixture 서버는 127.0.0.1에서만 듣는다. 이름(localhost) 허용은 단위 테스트(ssrfLocalMode.test.ts)가 확인한다
+    const first = await localContext();
+    const { page } = await openAndStabilize(first.context, `${server.baseUrl}/fixtures/negative/N-01.html`);
+    expect(page.url()).toContain('/fixtures/negative/N-01.html');
+
+    const second = await localContext();
+    await expectBlockedTarget(openAndStabilize(second.context, `${server.baseUrl}${redirect('http://169.254.169.254/latest/meta-data/')}`));
+    expect(second.guard.topLevelBlock).toMatchObject({ host: '169.254.169.254', reason: 'blocked-ip', viaRedirect: true, topLevel: true });
+
+    // LOCAL_ALLOW_HOSTS에 없는 사설 주소도 리다이렉트 hop에서 막힌다
+    const third = await localContext();
+    await expectBlockedTarget(openAndStabilize(third.context, `${server.baseUrl}${redirect('http://192.168.0.10/')}`));
+    expect(third.guard.topLevelBlock).toMatchObject({ host: '192.168.0.10', reason: 'blocked-ip', viaRedirect: true });
+  }, 60_000);
+});

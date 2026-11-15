@@ -24,7 +24,7 @@ import { ViewportComparison } from './ViewportComparison';
 export interface ReportViewProps {
   inspection: Inspection;
   /**
-   * 'sample'은 /report/sample(T13), 'showcase'는 /report/showcase/[name](Before/After 사례, T14).
+   * 'sample'은 /report/sample(T13), 'showcase'는 /report/before, /report/after(Before/After 사례, T14).
    * 둘 다 정적 문서라 링크 복사와 다시 검사를 숨긴다(WIREFRAME 5.13)
    */
   variant: ReportVariant;

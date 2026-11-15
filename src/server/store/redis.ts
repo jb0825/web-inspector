@@ -208,10 +208,11 @@ function upstashClient(redis: Redis): RedisClient {
 let store: InspectionStore | undefined;
 
 /**
+ * Redis 저장소. 서비스 코드는 이 함수 대신 runtime.ts의 getInspectionStore()를 쓴다(로컬 모드 파일 저장소 선택, PRD 8.7).
  * 운영용 저장소. Upstash 클라이언트는 첫 명령 때 만든다. 환경값 검증(getStoreEnv)이 실패하면
  * 그 명령이 STORAGE_FAILED로 실패하므로, route가 본문 없는 500 대신 정해진 오류 형식으로 응답할 수 있다(AGENTS.md 5장).
  */
-export function getInspectionStore(): InspectionStore {
+export function getRedisInspectionStore(): InspectionStore {
   if (!store) {
     let client: RedisClient | undefined;
     const lazy = (): RedisClient => {

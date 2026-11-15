@@ -52,3 +52,6 @@ data/
 TASKS.md
 # local tool output (fixtures:shots 등)
 .tmp/
+
+# 로컬 모드 파일 저장소 (PRD 8.7)
+.inspector-data/

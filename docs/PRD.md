@@ -13,6 +13,7 @@
 - 동시 실행 기본값 2 → 1, 검사 시간 목표에 production 실측값 추가, Chromium core 덤프 정리 (8.4, 8.5)
 - 페이지 구성 도면 `ViewportResult.layoutMap` 추가. 사진이 없는 부분(스크린샷 없음, 잘린 아래쪽, 스크린샷 밖 이슈)은 항상 도면으로 채운다 (8.2, 5.4.1)
 - `cropRect`는 크롭 기준 박스가 스크린샷 안에 완전히 들어올 때만 만든다. 일부만 걸치면 `null`이고 화면은 배치도로 그린다 (5.4.1)
+- 로컬 모드 추가: 개발자 PC에서 `localhost`를 검사하는 실행 모드. public 모드(배포) 규칙은 바꾸지 않는다 (8.7)
 
 ### Changelog (v1.1 → v1.2)
 
@@ -1141,6 +1142,35 @@ URL과 네트워크:
 - AI 출력은 스키마로 검증하고, 측정값과 ID는 AI 출력에서 가져오지 않는다.
 - `/analyze` 엔드포인트는 내부 공유 비밀로 보호한다.
 - 로그에는 사용자가 입력한 URL 전체가 아니라 호스트만 남긴다.
+
+### 8.7 로컬 모드
+
+**목적:** 이 도구의 주 사용처는 개발자가 자기 PC에서 개발 중인 화면(`localhost`)을 검사하는 것이다. 로컬에는 GPU가 있어 촬영이 빠르고(0.1~0.3초) WebGL도 정상으로 그려진다. 배포본은 체험 데모로 유지하고, 배포본의 보안 규칙(8.6)은 그대로 둔다.
+
+**켜는 법:** `pnpm dev:local` (`INSPECTOR_MODE=local next dev -H 127.0.0.1`). 기본값은 `INSPECTOR_MODE=public`이다.
+- `127.0.0.1`에만 바인딩한다. 로컬 모드는 내부 주소 검사를 허용하므로, 같은 네트워크의 다른 기기가 이 PC를 경유해 내부 주소에 접근하지 못하게 하기 위해서다.
+- 동시 검사 수 기본값은 2다(`MAX_CONCURRENT_INSPECTIONS`로 바꿀 수 있다).
+
+**배포 환경 금지:** `INSPECTOR_MODE=local`이면서 `VERCEL` 환경변수가 있으면 서버 시작 단계(`src/instrumentation.ts`)에서 오류를 던진다. 배포본에서는 로컬 모드가 한 번도 동작하지 않는다.
+
+**추가로 허용하는 주소 (local 모드에서만):**
+- `localhost`, `*.localhost`, `127.0.0.0/8`, `::1` (IPv4-mapped `::ffff:127.0.0.1` 포함)
+- `LOCAL_ALLOW_HOSTS`(쉼표 구분)에 적은 호스트 이름 또는 IP. 정확한 값만 받고 와일드카드(`*`)와 대역(`/24`) 표기, 포트, 경로는 받지 않는다. 형식이 틀린 항목이 있으면 서버 시작에 실패한다. 적은 호스트 이름은 점 없는 이름, `*.local`, `*.internal` 차단을 건너뛰고, 조회한 주소가 사설 대역이어도 허용한다.
+- 그 밖의 주소는 8.6 규칙 그대로 판정한다(예: 목록에 없는 `192.168.x.x`는 차단).
+
+**모드와 관계없이 항상 차단:** `169.254.0.0/16`, `fe80::/10`(클라우드 메타데이터·링크 로컬), `0.0.0.0`, `::`. IPv4를 담는 IPv6 형식은 안의 IPv4로도 판정한다. `LOCAL_ALLOW_HOSTS`에 적어도 허용하지 않고, 메타데이터 이름(`metadata.google.internal`)도 목록에 넣을 수 없다. 호스트 이름의 조회 결과 중 하나라도 이 범위면 차단한다.
+
+**판정 위치:** 처음 URL, 리다이렉트의 각 hop, 하위 리소스 요청(`context.route`) 모두 8.6과 같은 host checker(`src/server/security/ssrf.ts`) 한 곳에서 판정한다. 모드는 checker를 만들 때 정책으로 넘긴다. 8.6의 테스트 예외(`allowHosts`)와는 별개이며, 환경변수로 차단을 끄는 것은 local 모드와 이 절의 범위로만 한정한다.
+
+**파일 저장소:** local 모드이고 Upstash 값(`UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`)이 없으면 검사 문서를, `BLOB_READ_WRITE_TOKEN`이 없으면 스크린샷을 파일에 둔다. 외부 계정 없이 개인 PC에서 돌리기 위해서다.
+- 검사 문서 `.inspector-data/inspections/<id>.json`, 스크린샷 `.inspector-data/files/<id>/<viewport>-full.png` (`.gitignore`에 포함). 7일 TTL은 적용하지 않는다.
+- 스크린샷은 `/api/local-files/<id>/<viewport>-full.png`로 제공한다. public 모드에서는 항상 404다. 경로 조각은 검사 ID(UUID)와 정해진 파일 이름만 받고, 정규화한 경로가 `.inspector-data/files` 밖이면 거부한다.
+- `INTERNAL_API_SECRET`이 없으면 프로세스마다 무작위 값을 만들어 `/analyze` 내부 호출에 쓴다(같은 `next dev` 프로세스 안에서만 유효).
+
+**한계:**
+- 로컬 모드의 화면 안내(홈의 "로컬 모드" 배지)는 `pnpm dev:local`(next dev)에서만 보인다. 홈은 빌드할 때 정적으로 만들어지므로 `next build` 후 `next start`에 `INSPECTOR_MODE=local`을 주면 주소 허용은 바뀌지만 배지는 보이지 않는다.
+- 8.6의 DNS rebinding 위험은 로컬 모드에도 그대로 있다. 로컬 모드는 loopback을 허용하므로, 검사한 외부 페이지가 이 PC의 다른 로컬 서비스에 요청을 보낼 수 있다. 신뢰하는 페이지만 로컬 모드로 검사한다.
+- 로컬 결과는 macOS 폰트 대체를 따르므로 Vercel 결과와 다를 수 있다. 임계값 조정은 여전히 Vercel 결과 기준이다(AGENTS.md 7.1).
 
 ---
 

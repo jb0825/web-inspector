@@ -232,7 +232,7 @@ stateDiagram-v2
 
 | 파일 | 내용 |
 |---|---|
-| `src/server/env.ts` | 환경변수 (AGENTS.md 5장) |
+| `src/server/env.ts` | 환경변수 (AGENTS.md 5장). 실행 모드 `INSPECTOR_MODE`(`public` 기본값 / `local`)와 `LOCAL_ALLOW_HOSTS`(local 모드 전용)를 포함한다(6.4, PRD 8.7) |
 | `src/server/store/schemas.ts` | Redis에서 읽은 Inspection 문서 전체 검증 |
 | `src/server/ai/schemas.ts` | AI 출력 (PRD 5.7.3) |
 | `src/server/collect/schemas.ts` | `page.evaluate` 반환값 검증 (브라우저에서 넘어온 값도 외부 입력이다) |
@@ -323,7 +323,30 @@ export const inspectionSchema = z.strictObject({ /* … */ }) satisfies z.ZodTyp
 - 단위 테스트에서 `inspectionSchema.parse`와 `assertInspectionInvariants`를 통과해야 한다.
 - 만드는 방법: 배포 환경에서 Fixture 또는 데모 페이지를 검사한 뒤, 결과 JSON과 스크린샷을 내려받아 저장소에 넣는다. 외부 실제 사이트의 결과는 넣지 않는다.
 
-**Before/After 사례 (T14):** `public/showcase/{before|after}/`에 같은 구성(`inspection.json`, 스크린샷 2장, `screenshotUrl`은 `/showcase/{name}/…`)으로 둔다. 공유 리포트는 7일 뒤 만료되므로(PRD 8.1.4) 검토 시점에도 열리도록 보관한다. 대상은 사람이 소유한 사이트라 데모 페이지가 아니어도 되지만, 가져올 때 `--force`로 한 번 더 확인한다. 검증(스키마, `'final'` 불변 조건, PNG 크기)은 샘플과 같고, `/report/showcase/{name}`이 빌드할 때 읽는다. 파일이 없으면 404다.
+**Before/After 사례 (T14):** `public/showcase/{before|after}/`에 같은 구성(`inspection.json`, 스크린샷 2장, `screenshotUrl`은 `/showcase/{name}/…`)으로 둔다. 공유 리포트는 7일 뒤 만료되므로(PRD 8.1.4) 검토 시점에도 열리도록 보관한다. 대상은 사람이 소유한 사이트라 데모 페이지가 아니어도 되지만, 가져올 때 `--force`로 한 번 더 확인한다. 검증(스키마, `'final'` 불변 조건, PNG 크기)은 샘플과 같고, `/report/before`, `/report/after`와 비교 화면 `/showcase`가 빌드할 때 읽는다. 리포트 페이지는 파일이 없으면 404이고, `/showcase`는 두 파일 중 하나라도 없으면 "준비 중"을 보여 준다. 가져오기는 `pnpm import-sample --base <URL> --id <id> --out public/showcase/{before|after} --force`이며, `--base`는 로컬 모드 서버(`http://127.0.0.1:3000`)도 된다(로컬 파일 저장소의 상대 `screenshotUrl`은 `--base` 기준으로 내려받는다). 정적 화면은 검사 대상 URL을 문자열로만 보여 주므로 `localhost` 대상도 배포본에서 그대로 표시된다.
+
+### 6.4 로컬 모드 파일 저장소 (PRD 8.7)
+
+환경변수:
+
+| 변수 | 값 | 설명 |
+|---|---|---|
+| `INSPECTOR_MODE` | `public`(기본값) / `local` | `local`이면서 `VERCEL`이 있으면 `getRuntimeEnv()`가 실패하고 서버 시작(`src/instrumentation.ts`)이 실패한다 |
+| `LOCAL_ALLOW_HOSTS` | 쉼표 구분 호스트 이름 또는 IP | local 모드에서만 읽는다. 와일드카드·대역 표기는 받지 않는다 |
+
+저장소 선택(`src/server/store/runtime.ts`, `getStorageBackends()`): local 모드이고 `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`이 모두 없으면 검사 문서를, `BLOB_READ_WRITE_TOKEN`이 없으면 스크린샷을 파일에 둔다. public 모드는 항상 Redis·Blob이다.
+
+| 경로 | 내용 |
+|---|---|
+| `.inspector-data/inspections/{id}.json` | 검사 문서. 6.1의 `inspection:{id}`와 같은 JSON. 7일 TTL은 없다 |
+| `.inspector-data/files/{id}/{viewport}-full.png` | 스크린샷. `screenshotUrl`은 `/api/local-files/{id}/{viewport}-full.png`(상대 경로) |
+| `.inspector-data/state/slots/{id}` | 동시 실행 슬롯. 내용은 만료 시각(ms), 300초 |
+| `.inspector-data/state/locks/{id}` | analyze 잠금. 만료 시각, 300초 |
+| `.inspector-data/state/cancel/{id}` | 검사 중지 요청. 만료 시각, 300초 |
+
+- `src/server/store/file.ts`가 `InspectionStore`와 `ScreenshotStorage`를 구현한다. 읽기 검증(스키마 → 멈춘 검사 처리), 중지 요청이 있을 때 브라우저 단계 저장 거부, 문서가 없을 때 저장 실패는 Redis 저장소(6.1)와 같다.
+- 슬롯 확인·추가처럼 여러 파일을 보는 작업은 같은 프로세스 안에서 한 줄로 처리한다. 여러 프로세스가 같은 폴더를 쓰는 경우는 고려하지 않는다(개인 PC의 `next dev` 하나를 전제로 한다).
+- 파일은 임시 파일에 쓴 뒤 이름을 바꿔, 중간에 실패해도 반쯤 쓴 문서가 남지 않게 한다.
 
 ---
 
@@ -372,6 +395,7 @@ PRD에 없던 결정이다(AGENTS.md 6장).
 16. (T10) 분석 단계의 예외는 규칙 분석 실패도 `AI_FAILED`로 기록한다. `generating_tasks` 단계 저장은 step만 바꾼다(4.3).
 17. (T14) 스크린샷만 실패한 viewport(`SCREENSHOT_FAILED`)는 viewport 실패가 아니다. `viewportErrors`에 기록하지 않고 상태 판정에 영향을 주지 않는다. V-2에 "스크린샷 없음" 조건을 더했다.
 18. (배치도) `ViewportResult.layoutMap`(선택 필드)과 불변 조건 V-4를 추가했다. 예전 문서와의 호환을 위해 필드를 선택으로 두고, 없으면 화면이 최소 도면을 그린다. S-11에 "완전히 들어올 때만" 조건을 덧붙였다.
+19. (로컬 모드) `INSPECTOR_MODE`, `LOCAL_ALLOW_HOSTS` 환경변수와 local 모드 파일 저장소(6.4)를 추가했다. 문서 형식과 불변 조건은 바꾸지 않았다. Before/After 사례 화면을 `/report/before`, `/report/after`, `/showcase`로 정했다(6.3).
 
 ---
 

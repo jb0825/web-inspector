@@ -2,10 +2,14 @@ import Link from 'next/link';
 import { ChevronRight } from 'lucide-react';
 import { Header } from '@/components/layout/Header';
 import { PageContainer } from '@/components/layout/PageContainer';
+import { Badge } from '@/components/ui/Badge';
 import { InspectionForm } from '@/features/inspection-form';
+import { getRuntimeEnv } from '@/server/env';
 
 // PRD 7.1, WIREFRAME 3장
 export default function HomePage() {
+  // PRD 8.7: 로컬 모드(pnpm dev:local)에서만 안내를 보여 준다. public 모드 화면은 그대로다
+  const localMode = getRuntimeEnv().mode === 'local';
   return (
     <>
       <Header showNewInspection={false} />
@@ -21,7 +25,17 @@ export default function HomePage() {
           </p>
         </div>
 
-        <InspectionForm />
+        <div className="flex flex-col gap-2">
+          {localMode ? (
+            <p className="flex flex-wrap items-center gap-2 text-body-sm text-text-secondary">
+              <Badge tone="info">로컬 모드</Badge>
+              <span>
+                localhost 주소도 검사할 수 있습니다 (예: <span className="font-mono">http://localhost:5173</span>)
+              </span>
+            </p>
+          ) : null}
+          <InspectionForm />
+        </div>
 
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-body-sm text-text-secondary">
           <dt className="font-medium text-text-primary">검사 환경</dt>

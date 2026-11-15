@@ -11,13 +11,24 @@ export const SAMPLE_VIEWPORTS: readonly Viewport[] = ['desktop', 'mobile'];
 /**
  * 가져온 문서를 둘 곳. public/{target}/ 아래에 inspection.json과 스크린샷 2장을 둔다.
  * - sample: 샘플 리포트 (/report/sample, DOMAIN_MODEL 6.3)
- * - showcase/before, showcase/after: Before/After 사례 (/report/showcase/[name], T14). 공유 리포트는 7일 뒤 만료되므로(PRD 8.1.4) 정적 파일로 보관한다
+ * - showcase/before, showcase/after: Before/After 사례 (/report/before, /report/after, /showcase, T14). 공유 리포트는 7일 뒤 만료되므로(PRD 8.1.4) 정적 파일로 보관한다
  */
 export const IMPORT_TARGETS = ['sample', 'showcase/before', 'showcase/after'] as const;
 export type ImportTarget = (typeof IMPORT_TARGETS)[number];
 
 export function isImportTarget(value: string): value is ImportTarget {
   return (IMPORT_TARGETS as readonly string[]).includes(value);
+}
+
+/**
+ * --out 경로(public/ 아래 폴더)를 가져오기 대상으로 바꾼다. `./`, 끝의 `/`, Windows 구분자는 정리한다.
+ * 화면(/report/sample, /report/before, /report/after)이 읽는 세 폴더만 받는다. 그 밖의 경로는 null
+ */
+export function outToTarget(out: string): ImportTarget | null {
+  const normalized = out.trim().replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/+$/, '');
+  if (!normalized.startsWith('public/')) return null;
+  const target = normalized.slice('public/'.length);
+  return isImportTarget(target) ? target : null;
 }
 
 /** 대상 폴더의 screenshotUrl (public/ 기준 절대 경로) */
@@ -38,6 +49,14 @@ export function parseBaseUrl(value: string): URL {
   if ((url.pathname !== '/' && url.pathname !== '') || url.search || url.hash || url.username || url.password)
     throw new Error(`--base must be an origin without path, query or credentials: ${value}`);
   return url;
+}
+
+/**
+ * 문서의 screenshotUrl을 내려받을 절대 주소로 바꾼다. 로컬 모드 파일 저장소는 `/api/local-files/…` 상대 경로를 쓰므로
+ * --base 기준으로 푼다(PRD 8.7). 절대 주소는 그대로다. 결과는 isAllowedDownloadUrl로 다시 확인한다
+ */
+export function resolveScreenshotSource(value: string, base: URL): string {
+  return new URL(value, base).href;
 }
 
 /**

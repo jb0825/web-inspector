@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createEnv, EnvError } from '@/server/env';
+import { createEnv, EnvError, LocalModeOnVercelError } from '@/server/env';
 
 const SECRET = 'a'.repeat(32);
 
@@ -20,6 +20,8 @@ describe('env', () => {
     const env = createEnv({});
     expect(env.getRuntimeEnv()).toEqual({
       isVercel: false,
+      mode: 'public',
+      localAllowHosts: [],
       platform: process.platform,
       maxConcurrentInspections: 1,
     });
@@ -79,5 +81,47 @@ describe('env', () => {
     const first = env.getInternalEnv();
     source.INTERNAL_API_SECRET = undefined;
     expect(env.getInternalEnv()).toBe(first);
+  });
+
+  describe('로컬 모드 (PRD 8.7)', () => {
+    it('INSPECTOR_MODE=local이면 mode가 local이고 동시 검사 기본값이 2다', () => {
+      const runtime = createEnv({ INSPECTOR_MODE: 'local' }).getRuntimeEnv();
+      expect(runtime.mode).toBe('local');
+      expect(runtime.maxConcurrentInspections).toBe(2);
+      expect(createEnv({ INSPECTOR_MODE: 'local', MAX_CONCURRENT_INSPECTIONS: '3' }).getRuntimeEnv().maxConcurrentInspections).toBe(3);
+    });
+
+    it('알 수 없는 INSPECTOR_MODE 값은 거부하고, 빈 값은 public이다', () => {
+      expect(() => createEnv({ INSPECTOR_MODE: 'dev' }).getRuntimeEnv()).toThrow(EnvError);
+      expect(createEnv({ INSPECTOR_MODE: '' }).getRuntimeEnv().mode).toBe('public');
+    });
+
+    it('INSPECTOR_MODE=local과 VERCEL이 함께 있으면 즉시 실패한다', () => {
+      expect(() => createEnv({ INSPECTOR_MODE: 'local', VERCEL: '1' }).getRuntimeEnv()).toThrow(LocalModeOnVercelError);
+      expect(createEnv({ INSPECTOR_MODE: 'public', VERCEL: '1' }).getRuntimeEnv().mode).toBe('public');
+    });
+
+    it('LOCAL_ALLOW_HOSTS는 local 모드에서만 읽는다', () => {
+      expect(createEnv({ INSPECTOR_MODE: 'local', LOCAL_ALLOW_HOSTS: ' 192.168.0.10, nas.lan ,,' }).getRuntimeEnv().localAllowHosts).toEqual(['192.168.0.10', 'nas.lan']);
+      expect(createEnv({ LOCAL_ALLOW_HOSTS: '192.168.0.10' }).getRuntimeEnv().localAllowHosts).toEqual([]);
+    });
+
+    it('local 모드이고 Upstash·Blob 값이 없을 때만 파일 저장소를 쓴다', () => {
+      expect(createEnv({ INSPECTOR_MODE: 'local' }).getStorageBackends()).toEqual({ inspections: 'file', screenshots: 'file' });
+      expect(createEnv({}).getStorageBackends()).toEqual({ inspections: 'redis', screenshots: 'blob' });
+      expect(
+        createEnv({ INSPECTOR_MODE: 'local', UPSTASH_REDIS_REST_URL: 'https://x.upstash.io', UPSTASH_REDIS_REST_TOKEN: 't', BLOB_READ_WRITE_TOKEN: 'b' }).getStorageBackends(),
+      ).toEqual({ inspections: 'redis', screenshots: 'blob' });
+      expect(createEnv({ INSPECTOR_MODE: 'local', VERCEL: '1' }).getStorageBackends()).toEqual({ inspections: 'redis', screenshots: 'blob' });
+    });
+
+    it('local 모드에서 INTERNAL_API_SECRET이 없으면 프로세스 안에서 같은 무작위 값을 쓴다. public 모드는 여전히 필수다', () => {
+      const a = createEnv({ INSPECTOR_MODE: 'local' }).getInternalEnv().INTERNAL_API_SECRET;
+      const b = createEnv({ INSPECTOR_MODE: 'local' }).getInternalEnv().INTERNAL_API_SECRET;
+      expect(a.length).toBeGreaterThanOrEqual(16);
+      expect(a).toBe(b);
+      expect(createEnv({ INSPECTOR_MODE: 'local', INTERNAL_API_SECRET: SECRET }).getInternalEnv().INTERNAL_API_SECRET).toBe(SECRET);
+      expect(() => createEnv({}).getInternalEnv()).toThrow(EnvError);
+    });
   });
 });

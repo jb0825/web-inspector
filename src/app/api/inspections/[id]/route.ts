@@ -1,7 +1,7 @@
 import type { NextRequest } from 'next/server';
 import { handleGetInspection } from '@/server/http/inspections';
 import { logEvent } from '@/server/log';
-import { getInspectionStore } from '@/server/store/redis';
+import { getInspectionStore } from '@/server/store/runtime';
 
 // GET /api/inspections/:id (API_SPEC 5장). 응답은 캐시하지 않는다(Cache-Control: no-store)
 export const runtime = 'nodejs';

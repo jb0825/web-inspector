@@ -28,6 +28,11 @@ const nextConfig: NextConfig = {
     ],
   },
 
+  // T14: 사례 리포트 주소를 /report/showcase/{name}에서 /report/{name}으로 옮겼다. 이미 공유된 링크(README 등)를 살린다
+  async redirects() {
+    return [{ source: "/report/showcase/:name(before|after)", destination: "/report/:name", permanent: true }];
+  },
+
   turbopack: {
     rules: {
       "*.css": {

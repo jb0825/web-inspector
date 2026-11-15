@@ -5,7 +5,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { availableShowcases, isShowcaseName, loadShowcase, SHOWCASE_NAMES, showcaseFile } from '@/server/showcase';
 import { assertInspectionInvariants } from '@/server/store/invariants';
 import { inspectionSchema } from '@/server/store/schemas';
-import { isImportTarget, screenshotUrlsFor, toSampleDocument, validateSample } from '../../scripts/sample/core';
+import { isAllowedDownloadUrl, isImportTarget, outToTarget, resolveScreenshotSource, screenshotUrlsFor, toSampleDocument, validateSample } from '../../scripts/sample/core';
 
 // T14: Before/After 사례 리포트(public/showcase/)와 import-sample --target
 
@@ -75,5 +75,26 @@ describe('import 대상(--target)', () => {
     expect(validateSample(sample, undefined, 'showcase/before').some((p) => p.includes('screenshotUrl'))).toBe(true);
     // screenshotUrl 말고는 바꾸지 않는다
     expect({ ...before, viewports: sample.viewports }).toEqual(sample);
+  });
+});
+
+describe('import 대상(--out)과 로컬 서버에서 가져오기 (PRD 8.7)', () => {
+  it('--out은 public/ 아래 세 폴더만 받는다', () => {
+    expect(outToTarget('public/showcase/before')).toBe('showcase/before');
+    expect(outToTarget('./public/showcase/after/')).toBe('showcase/after');
+    expect(outToTarget('public\\sample')).toBe('sample');
+    expect(outToTarget('public/showcase/other')).toBeNull();
+    expect(outToTarget('showcase/before')).toBeNull();
+    expect(outToTarget('public/../showcase/before')).toBeNull();
+  });
+
+  it('로컬 파일 저장소의 상대 screenshotUrl은 --base 기준으로 풀고, 같은 origin이라 내려받을 수 있다', () => {
+    const base = new URL('http://127.0.0.1:3000');
+    const source = resolveScreenshotSource('/api/local-files/9b1f2c4e-6a0d-4c1e-9f8a-2d7e5b3c1a90/desktop-full.png', base);
+    expect(source).toBe('http://127.0.0.1:3000/api/local-files/9b1f2c4e-6a0d-4c1e-9f8a-2d7e5b3c1a90/desktop-full.png');
+    expect(isAllowedDownloadUrl(source, base)).toBe(true);
+    // 다른 호스트를 가리키는 절대 주소는 그대로 두고, 허용 목록 검사에서 막힌다
+    const foreign = resolveScreenshotSource('http://169.254.169.254/x.png', base);
+    expect(isAllowedDownloadUrl(foreign, base)).toBe(false);
   });
 });

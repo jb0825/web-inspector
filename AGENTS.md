@@ -68,12 +68,16 @@ src/
     inspections/[id]/page.tsx           # 진행 화면 → features/inspection-progress
     report/[id]/page.tsx                # 결과 화면 (공유 가능, noindex) → features/report
     report/sample/page.tsx              # 샘플 리포트 (public/sample/inspection.json, DOMAIN_MODEL 6.3)
-    report/showcase/[name]/page.tsx     # Before/After 사례 리포트 (public/showcase/{before|after}/, T14). 파일이 없으면 404
-    report/ReportContent.tsx            # 결과 화면 본문 조립 (선택 상태 query, 태스크 탭, Issue Detail). 위 두 페이지가 함께 사용
+    report/before/page.tsx, report/after/page.tsx  # Before/After 사례 리포트 (public/showcase/{before|after}/, T14). 파일이 없으면 404. 예전 주소 /report/showcase/{name}은 next.config의 redirect
+    report/ShowcaseReport.tsx           # 위 두 사례 페이지의 공용 본문과 배너
+    report/ReportContent.tsx            # 결과 화면 본문 조립 (선택 상태 query, 태스크 탭, Issue Detail). 위 페이지들이 함께 사용
+    showcase/page.tsx                   # Before/After 비교 (해결·남은·새 이슈, T14). 사례 파일이 없으면 준비 중 안내
     api/inspections/route.ts            # POST: 검사 생성
     api/inspections/[id]/route.ts       # GET: 상태와 결과 조회
     api/inspections/[id]/analyze/route.ts  # POST: AI 단계 (내부 전용)
     api/inspections/[id]/cancel/route.ts   # POST: 검사 중지 (브라우저 단계만, API_SPEC 6A장)
+    api/local-files/[...path]/route.ts  # GET: 로컬 모드 파일 저장소의 스크린샷 (PRD 8.7). public 모드에서는 항상 404
+  instrumentation.ts                    # 서버 시작 때 환경 확인 (local 모드 + VERCEL이면 시작 실패, PRD 8.7) → server/startup.ts
 
   components/                           # 여러 feature가 함께 쓰는 UI
     ui/                                 # 도메인을 모르는 UI: Button, Badge, Tabs, Textarea, CopyButton, Notice ...
@@ -90,13 +94,15 @@ src/
     dev-tasks/                          # 태스크 목록, 프롬프트 textarea, 복사
 
   server/                               # 서버 전용 코드. 모든 진입 파일 첫 줄에 import 'server-only'
-    env.ts                              # 환경변수 zod 검증
+    env.ts                              # 환경변수 zod 검증, 실행 모드(INSPECTOR_MODE)와 저장소 선택(getStorageBackends)
+    startup.ts                          # 서버 시작 때 확인하는 환경값 (instrumentation.ts가 부른다)
     inspect.ts                          # 브라우저 검사 오케스트레이션 runInspection (create의 after())
     analyze.ts                          # 분석 단계 runAnalysis (analyze의 after()). 원인 분석 → 태스크 → 프롬프트 (DOMAIN_MODEL 4.3)
     status.ts                           # 상태 판정(PRD 6.2.2)과 멈춘 검사 처리(DOMAIN_MODEL 4.4) 순수 함수
     showcase.ts                         # 사례 리포트 문서 읽기 (public/showcase/, 빌드할 때 정적 페이지로 만든다)
     log.ts                              # 구조화 로그 (ID, 호스트, 단계, 코드, 소요 시간만)
     http/inspections.ts                 # API 4개의 요청 처리. route 파일은 의존성(저장소, after)만 넣어 호출한다
+    http/localFiles.ts                  # /api/local-files 요청 처리 (local 모드 확인, 경로 탈출 방지)
     browser/
       launch.ts                         # 환경별 Chromium 실행 (Local / Vercel 분기), 닫기와 강제 종료
       crashDumps.ts                     # Vercel /tmp의 Chromium core 덤프 삭제 (닫은 뒤, 실행 전. PRD 8.5)
@@ -125,6 +131,7 @@ src/
       pipeline.ts                       # buildIssues: 탐지부터 유형 간 연결까지 (DETECTION_RULES 1.3)
       geometry.ts                       # 보이는 영역 계산 (DETECTION_RULES 3.6)
     compare/match.ts                    # Desktop / Mobile 요소 매칭 (PRD 5.6)
+    compare/beforeAfter.ts              # Before/After 이슈 매칭과 개수 (T14). /showcase와 compare-inspections가 함께 쓴다
     layout/
       constants.ts                      # 페이지 구성 도면 상수 (DETECTION_RULES 16.3)
       buildLayoutMap.ts                 # 수집 데이터 → ViewportResult.layoutMap (순수 함수, DETECTION_RULES 16장)
@@ -153,11 +160,14 @@ src/
       markdown.ts                       # 페이지 문자열을 Markdown에 넣는 도구 (줄바꿈, 백틱 구분자)
     security/
       url.ts                            # 입력 URL 검증
-      ssrf.ts                           # IP 범위 판정, DNS 조회
+      ssrf.ts                           # IP 범위 판정, DNS 조회, 모드별 정책(public / local, PRD 8.7). 판정은 이 파일 한 곳
+      policy.ts                         # 실행 모드 → 정책으로 바꿔 서비스용 checker를 만든다 (createServiceHostChecker)
       routeGuard.ts                     # context.route 하위 요청 검사, WebSocket 차단
     store/
       redis.ts                          # 읽기·쓰기, 동시 실행 슬롯, analyze 잠금, 멈춘 검사 처리 적용
       blob.ts
+      file.ts                           # local 모드 파일 저장소 (.inspector-data/, PRD 8.7). redis.ts와 같은 InspectionStore 규칙
+      runtime.ts                        # 저장소 선택 한 곳: getInspectionStore(), getScreenshotStorage()
       schemas.ts                        # Redis에서 읽은 Inspection 문서 검증
       invariants.ts                     # assertInspectionInvariants(inspection, 'browser' | 'final') (테스트용, DOMAIN_MODEL 3장)
 
@@ -184,7 +194,7 @@ public/demo/landing.html                # 샘플 리포트용 검사 대상 데�
 public/demo/canvas-only.html            # canvas 위주 페이지의 배치도 확인용 데모 (이슈 0개 목표). Fixture가 아니다
 public/demo/split-text.html             # 글자·단어 단위로 쪼갠 텍스트, 투명 래퍼 안 canvas의 배치도 확인용 데모 (이슈 0개 목표). Fixture가 아니다
 public/sample/                          # 샘플 리포트 정적 데이터 (inspection.json, 스크린샷). pnpm import-sample로만 바꾼다
-public/showcase/{before,after}/         # Before/After 사례 정적 데이터. pnpm import-sample --target showcase/…로만 바꾼다
+public/showcase/{before,after}/         # Before/After 사례 정적 데이터. pnpm import-sample --out public/showcase/…로만 바꾼다
 scripts/                                # 로컬 도구: collect, detect, fixture-screenshots, ui-shots, import-sample(sample/core.ts), compare-inspections(compare/core.ts)
 tests/
   unit/                                 # src/server 순수 함수 테스트
@@ -230,6 +240,7 @@ docs/
 ```bash
 pnpm install
 pnpm dev               # 로컬 개발 서버
+pnpm dev:local         # 로컬 모드 (INSPECTOR_MODE=local, 127.0.0.1에만 바인딩). localhost 검사, Upstash·Blob 없으면 파일 저장소 (PRD 8.7)
 pnpm build             # 프로덕션 빌드 (작업 완료 전 반드시 통과)
 pnpm lint
 pnpm typecheck         # tsc --noEmit
@@ -239,7 +250,7 @@ pnpm test:security     # 로컬 브라우저로 리다이렉트, 하위 요청, 
 pnpm collect <name>    # (T04 이후) Fixture 1개의 수집 결과를 JSON으로 출력
 pnpm test:fixtures --page demo/landing.html --report-only   # Fixture가 아닌 페이지 1개를 같은 경로로 검사하고 결과만 출력 (판정 없음)
 pnpm import-sample --base <production URL> --id <inspection id>   # production 검사 결과를 public/sample/로 가져온다 (T13)
-pnpm import-sample --base <production URL> --id <id> --target showcase/before --force   # Before/After 사례를 public/showcase/로 (T14)
+pnpm import-sample --base <URL> --id <id> --out public/showcase/before --force   # Before/After 사례를 public/showcase/로 (T14). --base는 http://127.0.0.1:3000 같은 로컬 모드 서버도 된다
 pnpm compare-inspections <before.json> <after.json>   # Before/After 비교 Markdown 출력, docs/assets/showcase-compare.md에 저장 (T14)
 ```
 
@@ -259,13 +270,15 @@ pnpm compare-inspections <before.json> <after.json>   # Before/After 비교 Mark
 | `AI_API_KEY` | LLM API |
 | `AI_MODEL` | 사용할 모델 ID |
 | `INTERNAL_API_SECRET` | `/analyze` 내부 호출 보호 |
-| `MAX_CONCURRENT_INSPECTIONS` | 기본값 1 (PRD 8.4: Hobby 1 vCPU에서 Chromium 두 개가 CPU를 나눠 쓰지 않게) |
+| `MAX_CONCURRENT_INSPECTIONS` | 기본값 1 (PRD 8.4: Hobby 1 vCPU에서 Chromium 두 개가 CPU를 나눠 쓰지 않게). local 모드 기본값은 2 (PRD 8.7) |
+| `INSPECTOR_MODE` | `public`(기본값) 또는 `local` (PRD 8.7). `local`과 `VERCEL`이 함께 있으면 서버 시작 단계에서 실패한다 |
+| `LOCAL_ALLOW_HOSTS` | 선택. local 모드에서만 읽는다. 쉼표 구분 호스트 이름 또는 IP(와일드카드·대역 표기 불가). 사설망 주소를 명시적으로 허용한다 (PRD 8.7) |
 | `VERCEL_AUTOMATION_BYPASS_SECRET` | 선택. 배포 보호를 켠 경우 내부 `/analyze` 호출에 사용 (API_SPEC 4.3). Vercel의 "Protection Bypass for Automation"을 켜면 제공된다. Preview 확인에 필요하므로 등록해 둔다 |
 | `VERCEL_URL` | Vercel 시스템 환경변수(직접 설정하지 않음). 내부 호출 주소의 2순위 값으로, 요청 host를 알 수 없을 때만 쓴다 (PRD 8.1.2) |
 
 - `.env.example`에는 변수 이름만 두고, 실제 값은 절대 커밋하지 않는다.
 - 서버 전용 값에는 `NEXT_PUBLIC_` 접두어를 붙이지 않는다.
-- `process.env`는 `src/server/env.ts`에서만 읽는다. 실행 환경 판별용 `process.env.VERCEL`도 마찬가지다.
+- `process.env`는 `src/server/env.ts`에서만 읽는다. 실행 환경 판별용 `process.env.VERCEL`도 마찬가지다. 예외: `src/instrumentation.ts`의 `process.env.NEXT_RUNTIME`(Next.js가 빌드 때 정하는 값으로, Edge 번들에서 Node 전용 import를 빼는 데만 쓴다).
 - `env.ts`는 용도별 getter로 나눠서, 호출한 쪽에 필요한 값만 검증한다. 예: `getRuntimeEnv()`(Vercel 여부, `MAX_CONCURRENT_INSPECTIONS`), `getStoreEnv()`(Redis, Blob), `getAiEnv()`, `getInternalEnv()`(`INTERNAL_API_SECRET`, `VERCEL_AUTOMATION_BYPASS_SECRET`, `VERCEL_URL`). 로컬 Fixture 테스트가 AI 키나 저장소 설정 없이도 돌아가게 하기 위해서다.
 - 검증은 import 시점이 아니라 getter를 처음 호출할 때 한다. `next build`가 route 모듈을 불러올 때 실패하지 않게 하기 위해서다.
 
@@ -338,6 +351,17 @@ pnpm compare-inspections <before.json> <after.json>   # Before/After 비교 Mark
 - `/api/inspections/[id]/analyze`는 `INTERNAL_API_SECRET` 헤더가 없으면 `401`을 반환한다.
 - 내부용 엔드포인트(`/analyze`)의 비밀값은 헤더로만 받는다. 쿼리 문자열로 받지 않는다(요청 로그에 남는다).
 - API Key, 토큰, 사용자가 입력한 URL 전체를 로그에 남기지 않는다(호스트만 남긴다).
+
+### 8.1 로컬 모드 예외 (PRD 8.7)
+
+위 규칙은 public 모드(배포)의 규칙이며 그대로 지킨다. `INSPECTOR_MODE=local`에서만 다음을 허용한다.
+
+- 추가 허용 주소: `localhost`, `*.localhost`, `127.0.0.0/8`, `::1`, 그리고 `LOCAL_ALLOW_HOSTS`에 정확히 적은 호스트 이름·IP. 이 예외는 `src/server/security/ssrf.ts`의 local 정책 한 곳에만 둔다. 처음 URL, 리다이렉트 hop, 하위 요청이 같은 checker를 거친다.
+- 모드와 관계없이 `169.254.0.0/16`, `fe80::/10`, `0.0.0.0`, `::`은 항상 차단한다. 이 범위를 허용하는 코드나 설정을 만들지 않는다.
+- 서비스 코드는 `createServiceHostChecker()`(`security/policy.ts`)로만 checker를 만든다. 테스트 하네스용 `allowHosts`는 여전히 서비스 코드에서 넘기지 않는다.
+- 로컬 모드는 배포 환경에서 켜지지 않아야 한다: `env.ts`가 `INSPECTOR_MODE=local` + `VERCEL`이면 실패하고, `instrumentation.ts`가 서버 시작 때 이를 확인한다. `pnpm dev:local`은 `127.0.0.1`에만 바인딩한다.
+- `/api/local-files`는 local 모드 + 파일 저장소일 때만 파일을 읽는다. 검사 ID(UUID)와 정해진 파일 이름만 받고, 정규화한 경로가 `.inspector-data/files` 밖이면 거부한다.
+- 한계: 로컬 모드는 loopback을 허용하므로 검사한 페이지가 이 PC의 다른 로컬 서비스에 요청할 수 있다. DNS rebinding 위험(PRD 8.6)도 그대로다. 신뢰하는 페이지만 로컬 모드로 검사한다.
 
 ---
 

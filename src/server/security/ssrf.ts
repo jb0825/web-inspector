@@ -132,7 +132,8 @@ export function isBlockedHostname(hostname: string): boolean {
 }
 
 export type HostCheckResult =
-  | { allowed: true; reason: 'allow-listed' | 'public' }
+  /** local-loopback, local-allow-listed: 로컬 모드 정책으로만 허용된 대상 (PRD 8.7) */
+  | { allowed: true; reason: 'allow-listed' | 'public' | 'local-loopback' | 'local-allow-listed' }
   /** 금지 대상 (BLOCKED_TARGET) */
   | { allowed: false; reason: 'invalid-host' | 'blocked-hostname' | 'blocked-ip' }
   /** 조회 실패. 금지 대상과 구분한다 (요청 단계는 INVALID_URL, API_SPEC 3.1) */
@@ -154,7 +155,101 @@ export type LookupFn = (hostname: string) => Promise<LookupAddress[]>;
 
 export const systemLookup: LookupFn = (hostname) => dns.lookup(hostname, { all: true, verbatim: true });
 
+// ---------------------------------------------------------------------------
+// PRD 8.7 로컬 모드 정책. public 모드의 판정(위의 함수들)은 바꾸지 않고, local 모드에서만 아래 규칙을 먼저 적용한다.
+
+/** 모드와 관계없이 항상 차단: 링크 로컬(클라우드 메타데이터 169.254.169.254 포함)과 unspecified 주소 (PRD 8.7) */
+export const ALWAYS_BLOCKED_IPV4_RANGES = [
+  ['169.254.0.0', 16],
+  ['0.0.0.0', 32],
+] as const;
+export const ALWAYS_BLOCKED_IPV6_RANGES = [
+  ['fe80::', 10],
+  ['::', 128],
+] as const;
+/** local 모드에서 추가로 허용하는 loopback 범위 */
+const LOOPBACK_IPV4: readonly [string, number] = ['127.0.0.0', 8];
+const LOOPBACK_IPV6: readonly [string, number] = ['::1', 128];
+
+const ALWAYS_BLOCK_LIST = (() => {
+  const list = new BlockList();
+  for (const [network, prefix] of ALWAYS_BLOCKED_IPV4_RANGES) list.addSubnet(network, prefix, 'ipv4');
+  for (const [network, prefix] of ALWAYS_BLOCKED_IPV6_RANGES) list.addSubnet(network, prefix, 'ipv6');
+  return list;
+})();
+const LOOPBACK_LIST = (() => {
+  const list = new BlockList();
+  list.addSubnet(LOOPBACK_IPV4[0], LOOPBACK_IPV4[1], 'ipv4');
+  list.addSubnet(LOOPBACK_IPV6[0], LOOPBACK_IPV6[1], 'ipv6');
+  return list;
+})();
+
+/** IP를 v4/v6로 나누고, IPv4를 담는 IPv6면 안의 IPv4도 함께 돌려준다 */
+function ipForms(ip: string): { address: string; family: 'ipv4' | 'ipv6' }[] {
+  const address = stripZone(stripBrackets(ip));
+  const family = isIP(address);
+  if (family === 4) return [{ address, family: 'ipv4' }];
+  if (family !== 6) return [];
+  const v4 = embeddedIpv4(address);
+  return v4 === null ? [{ address, family: 'ipv6' }] : [{ address, family: 'ipv6' }, { address: v4, family: 'ipv4' }];
+}
+
+/** 모드와 관계없이 항상 차단하는 IP인지 (PRD 8.7). IP가 아니면 true */
+export function isAlwaysBlockedIp(ip: string): boolean {
+  const forms = ipForms(ip);
+  if (forms.length === 0) return true;
+  return forms.some((f) => ALWAYS_BLOCK_LIST.check(f.address, f.family));
+}
+
+/**
+ * loopback(127.0.0.0/8, ::1)인지. IPv4-mapped(`::ffff:127.0.0.1`)만 안의 IPv4로 판정한다.
+ * NAT64·6to4·IPv4-compatible 형식은 실제로 loopback으로 가지 않으므로 loopback으로 보지 않는다.
+ */
+export function isLoopbackIp(ip: string): boolean {
+  const address = stripZone(stripBrackets(ip));
+  const family = isIP(address);
+  if (family === 4) return LOOPBACK_LIST.check(address, 'ipv4');
+  if (family !== 6) return false;
+  if (LOOPBACK_LIST.check(address, 'ipv6')) return true;
+  const bytes = ipv6ToBytes(address);
+  const mapped = startsWith(bytes, [...(Array(10).fill(0) as number[]), 0xff, 0xff]);
+  return mapped && LOOPBACK_LIST.check(bytes.slice(12, 16).join('.'), 'ipv4');
+}
+
+/**
+ * 실행 모드별 주소 정책 (PRD 8.6, 8.7).
+ * - public: PRD 8.6 그대로
+ * - local: loopback 이름(localhost, *.localhost)과 주소(127.0.0.0/8, ::1), LOCAL_ALLOW_HOSTS에 적힌 호스트·IP를 추가로 허용.
+ *   단, 링크 로컬·메타데이터(169.254.0.0/16, fe80::/10)와 0.0.0.0, ::은 항상 차단한다.
+ */
+export type HostPolicy = { mode: 'public' } | { mode: 'local'; allowHosts: readonly string[] };
+
+export const PUBLIC_POLICY: HostPolicy = { mode: 'public' };
+
+/** LOCAL_ALLOW_HOSTS 항목 하나가 정확한 호스트 이름 또는 IP인지. 와일드카드(*), 대역(/), 포트, 경로는 받지 않는다 */
+export function parseLocalAllowHost(entry: string): string | null {
+  if (/[*/\\?#@\s]/.test(entry)) return null;
+  const hostname = normalizeHostname(entry);
+  if (hostname === null) return null;
+  // 항상 차단 대상은 목록에 적어도 허용하지 않는다
+  if (isIP(hostname) !== 0 && isAlwaysBlockedIp(hostname)) return null;
+  // 클라우드 메타데이터 이름은 목록에 적어도 허용하지 않는다
+  if (CLOUD_METADATA_HOSTNAMES.has(hostname)) return null;
+  return hostname;
+}
+
+/** LOCAL_ALLOW_HOSTS를 검증한다. 잘못된 항목이 있으면 그 항목 목록을 돌려준다(값을 조용히 버리지 않는다) */
+export function invalidLocalAllowHosts(entries: readonly string[]): string[] {
+  return entries.filter((entry) => parseLocalAllowHost(entry) === null);
+}
+
+const LOOPBACK_HOSTNAMES = new Set(['localhost']);
+const CLOUD_METADATA_HOSTNAMES = new Set(['metadata.google.internal', 'metadata']);
+const LOOPBACK_SUFFIX = '.localhost';
+
 export interface HostCheckerOptions {
+  /** 실행 모드별 정책 (PRD 8.7). 기본값은 public */
+  policy?: HostPolicy;
   lookup?: LookupFn;
   lookupTimeoutMs?: number;
   /**
@@ -192,10 +287,65 @@ export function createHostChecker(options: HostCheckerOptions = {}): HostChecker
   const lookup = options.lookup ?? systemLookup;
   const timeoutMs = options.lookupTimeoutMs ?? DNS_LOOKUP_TIMEOUT_MS;
   const allowHosts = new Set((options.allowHosts ?? []).map((host) => normalizeHostname(host)).filter((host) => host !== null));
+  const policy = options.policy ?? PUBLIC_POLICY;
+  const localAllow =
+    policy.mode === 'local'
+      ? new Set(
+          policy.allowHosts.map((entry) => {
+            const host = parseLocalAllowHost(entry);
+            // 잘못된 항목을 조용히 버리면 사용자가 허용됐다고 오해한다. checker를 만들 때 실패시킨다
+            if (host === null) throw new Error('LOCAL_ALLOW_HOSTS contains an invalid entry (exact host names or IPs only)');
+            return host;
+          }),
+        )
+      : new Set<string>();
   const cache = new Map<string, Promise<HostCheckResult>>();
+
+  async function resolve(hostname: string): Promise<LookupAddress[] | HostCheckResult> {
+    let addresses: LookupAddress[];
+    try {
+      addresses = await lookupWithTimeout(lookup, hostname, timeoutMs);
+    } catch (error) {
+      return { allowed: false, reason: error instanceof LookupTimeout ? 'dns-timeout' : 'dns-failed' };
+    }
+    if (addresses.length === 0) return { allowed: false, reason: 'dns-failed' };
+    return addresses;
+  }
+
+  /**
+   * PRD 8.7 local 모드 판정. 항상 차단 → loopback·명시 허용 → 나머지는 public 판정과 같다.
+   * 리다이렉트 hop과 하위 요청도 이 checker를 거치므로(routeGuard.ts) 같은 정책이 적용된다.
+   */
+  async function evaluateLocal(hostname: string): Promise<HostCheckResult> {
+    // 주소 하나의 판정: 항상 차단 > loopback 허용 > 명시 허용(IP) > public 규칙
+    const addressResult = (ip: string, namedAllowed: boolean): HostCheckResult => {
+      if (isAlwaysBlockedIp(ip)) return { allowed: false, reason: 'blocked-ip' };
+      if (isLoopbackIp(ip)) return { allowed: true, reason: 'local-loopback' };
+      const normalized = normalizeHostname(ip);
+      if (namedAllowed || (normalized !== null && localAllow.has(normalized))) return { allowed: true, reason: 'local-allow-listed' };
+      return isBlockedIp(ip) ? { allowed: false, reason: 'blocked-ip' } : { allowed: true, reason: 'public' };
+    };
+    // 여러 주소의 판정: 하나라도 막히면 막는다(PRD 8.6과 같다). 허용 사유는 가장 "로컬"인 것을 남긴다
+    const combine = (results: HostCheckResult[]): HostCheckResult => {
+      const blocked = results.find((r) => !r.allowed);
+      if (blocked) return blocked;
+      return results.find((r) => r.reason === 'local-allow-listed') ?? results.find((r) => r.reason === 'local-loopback') ?? results[0]!;
+    };
+
+    if (isIP(hostname) !== 0) return addressResult(hostname, false);
+    // localhost, *.localhost: Chromium이 DNS를 묻지 않고 loopback으로 연결한다(RFC 6761). 그래서 조회 없이 허용한다
+    if (LOOPBACK_HOSTNAMES.has(hostname) || hostname.endsWith(LOOPBACK_SUFFIX)) return { allowed: true, reason: 'local-loopback' };
+    const named = localAllow.has(hostname);
+    // 명시 허용한 이름만 점 없는 이름, *.local, *.internal 차단을 건너뛴다. metadata.google.internal은 목록에 적어도 아래 IP 판정에서 막힌다
+    if (!named && isBlockedHostname(hostname)) return { allowed: false, reason: 'blocked-hostname' };
+    const addresses = await resolve(hostname);
+    if (!Array.isArray(addresses)) return addresses;
+    return combine(addresses.map((entry) => addressResult(entry.address, named)));
+  }
 
   async function evaluate(hostname: string): Promise<HostCheckResult> {
     if (allowHosts.has(hostname)) return { allowed: true, reason: 'allow-listed' };
+    if (policy.mode === 'local') return evaluateLocal(hostname);
     if (isIP(hostname) !== 0) return isBlockedIp(hostname) ? { allowed: false, reason: 'blocked-ip' } : { allowed: true, reason: 'public' };
     if (isBlockedHostname(hostname)) return { allowed: false, reason: 'blocked-hostname' };
     let addresses: LookupAddress[];

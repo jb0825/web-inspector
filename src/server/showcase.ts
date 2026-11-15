@@ -6,8 +6,8 @@ import { inspectionSchema } from '@/server/store/schemas';
 import type { Inspection } from '@/types/inspection';
 
 // Before/After 사례 리포트(T14). public/showcase/{name}/inspection.json을 읽는다.
-// 공유 리포트는 7일 뒤 만료되므로(PRD 8.1.4) 저장소에 정적 파일로 보관한다. 파일은 pnpm import-sample --target showcase/{name}로만 바꾼다.
-// /report/showcase/[name]은 빌드할 때 정적으로 만들어지므로 public/ 파일을 함수 번들에 넣지 않아도 된다.
+// 공유 리포트는 7일 뒤 만료되므로(PRD 8.1.4) 저장소에 정적 파일로 보관한다. 파일은 pnpm import-sample --out public/showcase/{name}로만 바꾼다.
+// /report/before, /report/after, /showcase는 빌드할 때 정적으로 만들어지므로 public/ 파일을 함수 번들에 넣지 않아도 된다.
 
 export const SHOWCASE_NAMES = ['before', 'after'] as const;
 export type ShowcaseName = (typeof SHOWCASE_NAMES)[number];

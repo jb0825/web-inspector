@@ -3,7 +3,7 @@ import { runAnalysis } from '@/server/analyze';
 import { getInternalEnv } from '@/server/env';
 import { handleAnalyze } from '@/server/http/inspections';
 import { logEvent } from '@/server/log';
-import { getInspectionStore } from '@/server/store/redis';
+import { getInspectionStore } from '@/server/store/runtime';
 
 // POST /api/inspections/:id/analyze (API_SPEC 6장, 내부 전용). 공유 비밀 헤더로 보호한다.
 export const runtime = 'nodejs';
