@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { ERROR_MESSAGES, errorDetail, VIEWPORT_LABELS } from '@/components/inspection/labels';
-import { BlueChip, DashedLine, SchematicDefs, SchematicLayer } from '@/components/inspection/SchematicLayer';
+import { BlueChip, DashedLine, SchematicChips, SchematicDefs, SchematicLayer } from '@/components/inspection/SchematicLayer';
 import { Spinner } from '@/components/ui/Spinner';
 import { useElementWidth } from '@/components/ui/useElementWidth';
 import { formatPx } from '@/lib/format';
@@ -297,6 +297,12 @@ function PreviewCanvas({
           );
         })}
       </svg>
+      {/* 구조·heading label 칩은 이슈 박스 위, 맨 위에 그린다 */}
+      {mode !== 'photo' ? (
+        <svg aria-hidden width={width} height={height} className="pointer-events-none absolute top-0 left-0 block">
+          <SchematicChips frame={frame} from={from} to={geometry.height} blocks={geometry.blocks} chipRight={width} />
+        </svg>
+      ) : null}
       {markers.map((marker) => {
         const selected = marker.issueId === selectedIssueId;
         return (

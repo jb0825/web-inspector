@@ -101,6 +101,7 @@ export function collected(
     totalCandidates: elements.length,
     elementsTruncated: false,
     elements,
+    layoutCanvases: [],
     ...overrides,
   };
 }

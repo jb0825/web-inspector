@@ -18,6 +18,7 @@ import {
   UNSTABLE_CLASS_PATTERNS,
 } from '@/server/detect/constants';
 import { InspectionError, isBrowserGone } from '@/server/errors';
+import { LAYOUT_MAX_CANVASES } from '@/server/layout/constants';
 import { collectInPage } from './inpage/collectInPage';
 import { roundMeasure } from './round';
 import { inPageResultSchema } from './schemas';
@@ -39,6 +40,7 @@ export const IN_PAGE_ARGS: InPageArgs = {
   generatedIdPatterns: GENERATED_ID_PATTERNS,
   unstableClassPatterns: UNSTABLE_CLASS_PATTERNS,
   computedStyleProperties: COMPUTED_STYLE_WHITELIST,
+  maxLayoutCanvases: LAYOUT_MAX_CANVASES,
 };
 
 /**
@@ -134,6 +136,7 @@ function normalizeElement(el: CollectedElement, decimals: number): CollectedElem
     if (el.layoutAttrs.alt !== undefined) layoutAttrs.alt = el.layoutAttrs.alt;
     if (el.layoutAttrs.placeholder !== undefined) layoutAttrs.placeholder = el.layoutAttrs.placeholder;
     if (el.layoutAttrs.type !== undefined) layoutAttrs.type = el.layoutAttrs.type;
+    if (el.layoutAttrs.text !== undefined) layoutAttrs.text = el.layoutAttrs.text;
     normalized.layoutAttrs = layoutAttrs;
   }
   return normalized;
@@ -170,6 +173,11 @@ export function normalizeCollected(
     totalCandidates,
     elementsTruncated: totalCandidates > elements.length,
     elements,
+    layoutCanvases: raw.layoutCanvases.slice(0, LAYOUT_MAX_CANVASES).map((c) => ({
+      index: c.index,
+      ancestorIndices: [...c.ancestorIndices],
+      rect: roundRect(c.rect, decimals),
+    })),
   };
 }
 

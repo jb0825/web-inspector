@@ -58,9 +58,22 @@ export interface CollectedElement {
   identity: { id?: string; testId?: string };
   /**
    * 페이지 구성 도면(layoutMap)의 label 원재료 (DETECTION_RULES 16.2). 속성이 하나라도 있을 때만 있다.
-   * type은 input 요소에만 넣는다(소문자).
+   * type은 input 요소에만 넣는다(소문자). text는 h1~h3, role=heading의 innerText(공백 정리, TEXT_SNIPPET_MAX자)다.
    */
-  layoutAttrs?: { alt?: string; placeholder?: string; type?: string };
+  layoutAttrs?: { alt?: string; placeholder?: string; type?: string; text?: string };
+}
+
+/**
+ * 배치도용 canvas (DETECTION_RULES 16.1). 후보 조건(3.2)과 별도로 수집한다.
+ * 조상 opacity, aria-hidden 규칙을 적용하지 않는다(인트로 애니메이션 중인 3D 배경 등).
+ */
+export interface LayoutCanvas {
+  /** 문서 전체 preorder index (CollectedElement.index와 같은 기준) */
+  index: number;
+  /** 모든 조상 요소의 index, 가까운 순 (html 제외). 후보가 아닌 조상도 들어 있다 */
+  ancestorIndices: number[];
+  /** border box, 문서 기준 (측정 시점 scrollY = 0. fixed canvas도 이 위치) */
+  rect: Rect;
 }
 
 export interface CollectedViewport {
@@ -84,6 +97,8 @@ export interface CollectedViewport {
   elementsTruncated: boolean;
   /** 문서 순서, 최대 MAX_CANDIDATES개 */
   elements: CollectedElement[];
+  /** 배치도용 canvas. 문서 순서, 최대 maxLayoutCanvases개. 탐지에는 쓰지 않는다 */
+  layoutCanvases: LayoutCanvas[];
 }
 
 /** page.evaluate가 돌려주는 값. viewport, viewportSize, elementsTruncated는 Node에서 정한다. */
@@ -103,4 +118,5 @@ export interface InPageArgs {
   generatedIdPatterns: readonly string[];
   unstableClassPatterns: readonly string[];
   computedStyleProperties: readonly string[];
+  maxLayoutCanvases: number;
 }

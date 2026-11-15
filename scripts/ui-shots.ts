@@ -8,6 +8,7 @@
 // 실행: pnpm test:fixtures → 데모 2개 (pnpm test:fixtures --page demo/landing.html --report-only,
 //       pnpm test:fixtures --page demo/canvas-only.html --report-only) → pnpm dev → pnpm ui:shots  (주소를 바꾸려면 UI_SHOTS_BASE_URL)
 // 배치도 화면(schematic-*)과 시안 비교(compare-*: 시안과 같은 크기로 찍어 나란히 붙인 이미지)도 만든다. UI_SHOTS_ONLY=compare면 비교만.
+// UI_SHOTS_EXTRA_DOC=<Inspection JSON 경로>를 주면 그 문서를 schematic-extra 화면으로 찍는다(production 문서 확인용. 문서는 커밋하지 않는다).
 // 390px 화면에서 가로 스크롤이 생기거나 P-01 Mobile 마커 위치가 어긋나면 종료 코드 1로 끝난다.
 
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
@@ -79,7 +80,13 @@ const ID = {
   canvas: uuid(42),
   legacy: uuid(43),
   longPage: uuid(44),
+  // 글자·단어 단위로 쪼갠 텍스트와 투명 래퍼 안의 canvas (public/demo/split-text.html)
+  splitText: uuid(45),
+  // UI_SHOTS_EXTRA_DOC로 받은 문서
+  extra: uuid(46),
 };
+
+const EXTRA_DOC = process.env.UI_SHOTS_EXTRA_DOC;
 
 /** 시안 (docs/assets/mock). 같은 크기로 찍어 나란히 비교한다 */
 const MOCK_DIR = path.join(process.cwd(), 'docs', 'assets', 'mock');
@@ -280,6 +287,8 @@ async function buildResponses(): Promise<Record<string, { status: number; body: 
     [ID.canvas]: ok(asNoScreenshot(await fixtureDoc('demo-canvas-only', ID.canvas))),
     [ID.legacy]: ok(asLegacy(asNoScreenshot(await fixtureDoc('P-01', ID.legacy)))),
     [ID.longPage]: ok(asLongPage(await fixtureDoc('demo-landing', ID.longPage))),
+    [ID.splitText]: ok(asNoScreenshot(await fixtureDoc('demo-split-text', ID.splitText))),
+    ...(EXTRA_DOC ? { [ID.extra]: ok(asNoScreenshot({ ...(JSON.parse(await readFile(EXTRA_DOC, 'utf8')) as Inspection), id: ID.extra })) } : {}),
   };
 }
 
@@ -342,6 +351,9 @@ const SCREENS: Screen[] = [
   { name: 'schematic-hybrid-full', path: `/report/${ID.hybrid}`, ready: 'h1:has-text("검사 결과")' },
   // 2. canvas 위주 페이지, 이슈 0개
   { name: 'schematic-canvas', path: `/report/${ID.canvas}`, ready: 'text=검사한 항목에서 문제가 발견되지 않았습니다' },
+  // 2-1. 글자·단어 단위로 쪼갠 텍스트, 투명 래퍼 안의 canvas, 같은 크기 구조 블록
+  { name: 'schematic-split-text', path: `/report/${ID.splitText}`, ready: 'text=검사한 항목에서 문제가 발견되지 않았습니다' },
+  ...(EXTRA_DOC ? [{ name: 'schematic-extra', path: `/report/${ID.extra}`, ready: 'h1:has-text("검사 결과")' }] : []),
   // 3. layoutMap이 없는 예전 문서 → 최소 도면
   { name: 'schematic-legacy', path: `/report/${ID.legacy}`, ready: 'text=표시할 구조 요소를 찾지 못했습니다' },
   // 4. 높이 상한(Desktop 10,000px)에 걸린 긴 페이지: 미리보기를 "배치도 끝" 근처로 스크롤해서 찍는다
@@ -450,6 +462,7 @@ async function cropTop(browser: Browser, src: string, dst: string, height: numbe
 const COMPARES = [
   { name: 'compare-hybrid', mock: 'schematic-v2-hybrid.png', path: () => `/report/${ID.hybrid}?issue=ISS-004`, ready: 'aside figure svg' },
   { name: 'compare-canvas', mock: 'schematic-v2-canvas-only.png', path: () => `/report/${ID.canvas}`, ready: 'text=검사한 항목에서 문제가 발견되지 않았습니다' },
+  { name: 'compare-split-text', mock: 'schematic-v2-canvas-only.png', path: () => `/report/${ID.splitText}`, ready: 'text=검사한 항목에서 문제가 발견되지 않았습니다' },
 ] as const;
 
 async function compareWithMocks(responses: Record<string, { status: number; body: unknown }>) {

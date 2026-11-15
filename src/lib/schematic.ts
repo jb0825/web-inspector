@@ -12,7 +12,7 @@ export const SCHEMATIC_COLORS = {
   struct: '#9aa3af',
   chipStroke: '#d5dae0',
   chipText: '#6b7380',
-  heading: '#e9ecf0',
+  heading: '#f1f3f5',
   headingText: '#3b4350',
   textBar: '#e3e6ea',
   imageFill: '#f1f3f5',
@@ -122,15 +122,20 @@ export function placeChips(chips: readonly ChipPlacement[], maxRight: number): C
   return placed;
 }
 
-/** text 블록의 회색 막대 (화면 좌표). 줄 수 1~4, 마지막 줄은 62% 길이 */
+/** text 막대 최대 줄 수 */
+export const TEXT_BAR_MAX_LINES = 6;
+/** text 막대 한 줄의 최대 두께 (화면 px). 높은 블록에서 막대가 면처럼 보이지 않게 한다 */
+export const TEXT_BAR_MAX_THICKNESS = 8;
+
+/** text 블록의 회색 막대 (화면 좌표). 줄 수는 높이에 따라 1~6, 마지막 줄은 62% 길이 */
 export function textBars(box: Box): Box[] {
-  const n = Math.max(1, Math.min(4, Math.floor(box.height / 9)));
+  const n = Math.max(1, Math.min(TEXT_BAR_MAX_LINES, Math.floor(box.height / 9)));
   const step = box.height / n;
   return Array.from({ length: n }, (_, i) => ({
     x: box.x,
     y: box.y + i * step + 1,
     width: box.width * (i === n - 1 && n > 1 ? 0.62 : 1),
-    height: Math.max(3, step - 4),
+    height: Math.max(3, Math.min(TEXT_BAR_MAX_THICKNESS, step - 4)),
   }));
 }
 

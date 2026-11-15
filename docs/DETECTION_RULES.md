@@ -1,8 +1,14 @@
 # AI Website Inspector — Detection Rules
 
-> Version: 2.3
+> Version: 2.4
 > Status: Draft
 > Related Documents: PRD.md (v1.2), AGENTS.md
+
+### Changelog (v2.3 → v2.4)
+
+- 수정: 배치도 text 블록은 블록 레벨 요소에서만 만들고, 영역은 자신과 inline 자손의 보이는 텍스트 합집합이다. heading·button·input·text의 자손은 중복 블록을 만들지 않는다(16.1). 글자·단어 단위로 쪼갠 애니메이션 텍스트가 막대 수십 개가 되던 문제.
+- 추가: 배치도용 canvas 수집 `layoutCanvases`(3.1, 16.1). 탐지 후보 조건(3.2)과 별도이고 조상 opacity·aria-hidden 규칙을 적용하지 않는다. 탐지 후보 조건은 바꾸지 않았다.
+- 수정: 구조 블록 label에서 heading 텍스트를 뺐다. 사방 8px 이내로 같은 크기인 구조 블록은 하나로 합치고 label을 `main · section`처럼 묶는다(16.1, 16.2). heading label은 aria-label → innerText(`layoutAttrs.text`, 새 수집) → textSnippet, 길이는 heading 24자, button 16자.
 
 ### Changelog (v2.2 → v2.3)
 
@@ -186,6 +192,13 @@ interface CollectedViewport {
   totalCandidates: number;        // 자르기 전 후보 수
   elementsTruncated: boolean;     // totalCandidates > MAX_CANDIDATES
   elements: CollectedElement[];   // 문서 순서, 최대 MAX_CANDIDATES개
+  layoutCanvases: LayoutCanvas[]; // 16.1 배치도용 canvas. 후보 조건(3.2)과 별도. 탐지에 쓰지 않는다
+}
+
+interface LayoutCanvas {
+  index: number;                  // 문서 전체 preorder index (CollectedElement.index와 같은 기준)
+  ancestorIndices: number[];      // 모든 조상 요소 index, 가까운 순 (html 제외, 후보가 아닌 조상 포함)
+  rect: Rect;                     // border box, 문서 기준. 측정 시점(scrollY = 0) 위치. position: fixed도 같다
 }
 
 interface CollectedElement {
@@ -216,7 +229,7 @@ interface CollectedElement {
   selector: string;                        // 3.4
   sourceHints: SourceHints;                // 3.5
   identity: { id?: string; testId?: string };
-  layoutAttrs?: { alt?: string; placeholder?: string; type?: string };  // 16.2 label 원재료. 속성이 있을 때만. type은 input만(소문자)
+  layoutAttrs?: { alt?: string; placeholder?: string; type?: string; text?: string };  // 16.2 label 원재료. 값이 있을 때만. type은 input만(소문자), text는 h1~h3·role=heading의 innerText(공백 정리, TEXT_SNIPPET_MAX자)
 }
 ```
 
@@ -981,6 +994,10 @@ PRD에 없던 구현 결정이다. AGENTS.md 6장에 따라 보고 대상이다.
 43. (v2.3) 페이지 구성 도면 `layoutMap`의 추출 규칙과 상수 전부(16장). 새 폴더 `src/server/layout/`(`buildLayoutMap.ts`, `constants.ts`).
 44. (v2.3) 수집에 `layoutAttrs`(alt, placeholder, input type)를 더했다(3.1). label 외에는 쓰지 않는다.
 45. (v2.3) `cropRect` 완전 포함 조건과 1px 허용치(8.3).
+46. (v2.4) 배치도 text 블록의 블록 레벨 조건, inline 판정(`display`가 `inline`으로 시작하거나 `contents`), 자손 중복 막기(16.1).
+47. (v2.4) 배치도용 canvas 수집 `layoutCanvases`와 상한 `LAYOUT_MAX_CANVASES = 20`(3.1, 16.1).
+48. (v2.4) 구조 블록 합치기 `LAYOUT_STRUCT_MERGE_TOLERANCE_PX = 8`, 이름 최대 `LAYOUT_STRUCT_MERGE_MAX_NAMES = 2`(16.1, 16.2).
+49. (v2.4) heading label 원재료 `layoutAttrs.text`(innerText)와 label 길이 heading 24자, button 16자(16.2).
 
 ---
 
@@ -990,24 +1007,31 @@ PRD에 없던 구현 결정이다. AGENTS.md 6장에 따라 보고 대상이다.
 
 ### 16.1 블록 선택
 
-후보 요소를 문서 순서(index)로 보며 위에서부터 처음 맞는 순위를 쓴다. 영역은 보이는 영역(3.6 `visibleRect`, text는 `visibleTextRects`의 합집합)이고, 보이는 영역이 없으면 넣지 않는다.
+후보 요소를 문서 순서(index)로 보며 위에서부터 처음 맞는 순위를 쓴다. 영역은 보이는 영역(3.6 `visibleRect`)이고, 보이는 영역이 없으면 넣지 않는다. canvas는 후보 요소가 아니라 배치도용 canvas(`layoutCanvases`)로만 만든다.
 
 | 순위 | kind | 조건 |
 |---|---|---|
 | 1 | header, nav, main, section, footer, aside, form | 해당 태그 또는 `role` ∈ {banner, navigation, main, region, contentinfo, complementary, form}. 면적 ≥ `layoutWidth × LAYOUT_STRUCT_MIN_HEIGHT_PX` |
-| 2 | canvas, video, iframe | 태그. 크기 조건 없음 |
+| 2 | canvas | `layoutCanvases`의 항목 전부. 영역은 수집한 rect(보이는 영역으로 자르지 않는다). 후보 목록의 canvas 요소는 쓰지 않는다 |
+| 2 | video, iframe | 태그. 크기 조건 없음 |
 | 3 | heading | `h1`~`h3`, `role=heading` |
 | 4 | button | `button`, `input[type=submit|button|reset|image]`, 또는 자신이 인터랙티브(3.3)이면서 테두리 박스이고 높이 ≤ `LAYOUT_BUTTON_MAX_HEIGHT_PX` (input/select/textarea 제외) |
 | 5 | image | `img`, `svg`, `background-image`에 `url(`이 있는 요소. 면적 ≥ `LAYOUT_IMAGE_MIN_AREA_PX2` |
 | 6 | input | `input`(hidden 제외, 4의 type 제외), `select`, `textarea` |
 | 7 | card | 테두리 박스이고 면적 ≥ `layoutWidth × viewportSize.height × LAYOUT_CARD_MIN_VIEWPORT_RATIO` |
-| 8 | text | 텍스트 요소. 보이는 텍스트 rect 합집합의 높이 ≥ `LAYOUT_TEXT_MIN_HEIGHT_PX` |
+| 8 | text | **블록 레벨 요소만.** 영역 = 자신의 `visibleTextRects` ∪ inline 자손들의 `visibleTextRects`. 높이 ≥ `LAYOUT_TEXT_MIN_HEIGHT_PX` |
+
+**inline 레벨:** `computedStyle.display`가 `inline`으로 시작하거나(`inline`, `inline-block`, `inline-flex`, `inline-grid` …) `contents`인 요소. 값이 없으면 블록 레벨로 본다. inline 레벨 요소는 text 블록을 만들지 않는다. inline 자손은 가장 가까운 후보 조상이 블록 레벨일 때까지 inline만 이어지는 경우에 그 블록 레벨 조상(owner)의 text 영역에 더한다. 글자·단어 단위로 쪼갠 애니메이션 텍스트(`span` 하나에 글자 하나)가 막대 수십 개가 되지 않게 하기 위해서다.
+
+**배치도용 canvas (`layoutCanvases`, 수집 단계):** 문서의 모든 `canvas`를 후보 조건(3.2)과 별도로 수집한다. 자신의 `display`가 `none`이 아니고 크기가 1px보다 크면(조상이 `display: none`이면 크기가 0) 넣는다. 조상 `opacity`, `aria-hidden`, `visibility`, sr-only 규칙은 적용하지 않는다. 인트로 애니메이션 중이거나 장식용으로 숨긴 3D 배경도 화면 구성의 큰 부분이기 때문이다. 좌표는 측정 시점(scrollY = 0)의 문서 좌표이고 `position: fixed`인 canvas도 같다. 문서 순서로 최대 `LAYOUT_MAX_CANVASES`개. 탐지에는 쓰지 않는다(`hasCanvas`는 그대로다).
 
 1. 좌표를 정수로 반올림(Math.round, 네 변 각각)하고 문서 범위 `[0, scrollWidth] × [0, height]`로 자른다. 비면 버린다. `scrollWidth = max(layoutWidth, documentScrollWidth)`, `height = min(documentHeight, LAYOUT_MAX_HEIGHT[viewport])`.
-2. 중복 제거: 가장 가까운 남은 조상 블록과 사방 `LAYOUT_DEDUP_TOLERANCE_PX` 이내로 같으면 하나만 남긴다. 구조(1)·미디어(2) 블록은 항상 남기고, 한쪽만 그렇다면 그쪽을 남긴다. 둘 다 아니면 순위가 높은 쪽, 같으면 바깥쪽을 남긴다.
-3. 블록이 `LAYOUT_MAX_BLOCKS`를 넘으면 순위 → 면적(큰 순) → index로 골라 상한만큼 남기고, 다시 index 순으로 정렬한다.
-4. `depth`는 남은 구조 블록 중 조상의 개수다.
-5. `truncated = documentHeight > LAYOUT_MAX_HEIGHT[viewport] || 블록 수 상한에 걸림`.
+2. 자손 중복 막기: 이미 heading·button·input으로 고른 요소의 자손은 heading·button·input·text 블록을 만들지 않는다. 이미 text로 고른 요소의 자손은 text 블록을 만들지 않는다. (image, card 등 다른 종류는 그대로 만든다.)
+3. 중복 제거: 가장 가까운 남은 조상 블록과 사방 `LAYOUT_DEDUP_TOLERANCE_PX` 이내로 같으면 하나만 남긴다. 구조(1)·미디어(2) 블록은 항상 남기고, 한쪽만 그렇다면 그쪽을 남긴다. 둘 다 아니면 순위가 높은 쪽, 같으면 바깥쪽을 남긴다.
+4. 구조 블록 합치기: 가장 가까운 남은 구조 조상과 사방 `LAYOUT_STRUCT_MERGE_TOLERANCE_PX` 이내로 같은 크기인 구조 블록은 그 조상(바깥쪽)에 합친다. 합친 블록의 kind와 영역은 바깥쪽 것이고, label은 16.2의 묶음 규칙을 따른다.
+5. 블록이 `LAYOUT_MAX_BLOCKS`를 넘으면 순위 → 면적(큰 순) → index로 골라 상한만큼 남기고, 다시 index 순으로 정렬한다.
+6. `depth`는 남은 구조 블록 중 조상의 개수다(canvas는 `layoutCanvases.ancestorIndices` 기준).
+7. `truncated = documentHeight > LAYOUT_MAX_HEIGHT[viewport] || 블록 수 상한에 걸림`.
 
 ### 16.2 label
 
@@ -1015,9 +1039,9 @@ PRD에 없던 구현 결정이다. AGENTS.md 6장에 따라 보고 대상이다.
 
 | kind | label |
 |---|---|
-| 구조 블록 | `{tag}#{id}` → `{tag} "{aria-label}"` → `{tag} "{안의 첫 heading textSnippet 30자}"` → `{tag}` (40자). role로 판정한 블록은 `{tag}` 대신 kind |
-| heading | `textSnippet` 30자 |
-| button | `textSnippet`(없으면 `aria-label`) 20자 |
+| 구조 블록 | 블록마다 이름 `{tag}#{id}` → `{tag} "{aria-label}"` → `{tag}`. role로 판정한 블록은 `{tag}` 대신 kind. heading 텍스트는 쓰지 않는다. 합친 블록은 이름을 바깥쪽부터 ` · `로 최대 `LAYOUT_STRUCT_MERGE_MAX_NAMES`개 잇고, 넘는 수는 ` +{n}`(예: `main · section +1`). 전체 40자 |
+| heading | `aria-label` → `layoutAttrs.text`(innerText) → `textSnippet`, 24자. textSnippet은 `<br>`로 나눈 줄 사이 공백이 사라지고 숨긴 반응형 사본까지 붙기 때문이다 |
+| button | `aria-label` → `textSnippet`, 16자 |
 | text, card | 없음 |
 | image | `alt` 20자, 없으면 "이미지" |
 | canvas, video | "canvas", "video" |
@@ -1036,7 +1060,10 @@ PRD에 없던 구현 결정이다. AGENTS.md 6장에 따라 보고 대상이다.
 | `LAYOUT_BUTTON_MAX_HEIGHT_PX` | 120 |
 | `LAYOUT_TEXT_MIN_HEIGHT_PX` | 12 |
 | `LAYOUT_DEDUP_TOLERANCE_PX` | 4 |
-| label 길이 | 40 / heading 30 / button·image·input 20 |
+| `LAYOUT_STRUCT_MERGE_TOLERANCE_PX` | 8 |
+| `LAYOUT_STRUCT_MERGE_MAX_NAMES` | 2 |
+| `LAYOUT_MAX_CANVASES` | 20 (수집 상한) |
+| label 길이 | 40 / heading 24 / button 16 / image·input 20 |
 
 ### 16.4 크기
 
@@ -1044,9 +1071,9 @@ PRD에 없던 구현 결정이다. AGENTS.md 6장에 따라 보고 대상이다.
 
 ### 16.5 테스트 (`tests/unit/layoutMap.test.ts`)
 
-같은 입력 → 바이트 단위로 같은 출력, 입력 순서를 섞어도 같음, 순위별 선택과 label, 블록 상한, 높이 상한, 중첩 중복 제거, canvas만 있는 입력, label 정리와 길이 제한.
+같은 입력 → 바이트 단위로 같은 출력, 입력 순서를 섞어도 같음, 순위별 선택과 label, 블록 상한, 높이 상한, 중첩 중복 제거, canvas만 있는 입력, label 정리와 길이 제한, inline 자손이 text 블록을 만들지 않음, heading·button 자손 중복 없음, opacity 0·aria-hidden 래퍼 안 canvas 포함, 같은 크기 구조 블록 합치기, 구조·heading label 규칙. 재현 페이지는 `public/demo/split-text.html`(Fixture 아님).
 
 ---
 
-**Document Status:** Draft v2.3
+**Document Status:** Draft v2.4
 **Next Step:** DOMAIN_MODEL을 PRD v1.2 8.2 기준으로 다시 작성한다.

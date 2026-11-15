@@ -24,7 +24,15 @@ export const LAYOUT_TEXT_MIN_HEIGHT_PX = 12;
 /** 부모와 사방 이 값 이내로 같은 크기면 하나만 남긴다 */
 export const LAYOUT_DEDUP_TOLERANCE_PX = 4;
 
+/** 구조 블록끼리 사방 이 값 이내로 같은 크기면 하나로 합친다 (label을 `main · section`처럼 묶는다) */
+export const LAYOUT_STRUCT_MERGE_TOLERANCE_PX = 8;
+/** 합친 구조 블록 label에 이름을 쓰는 최대 개수. 넘는 수는 `+n`으로 쓴다 */
+export const LAYOUT_STRUCT_MERGE_MAX_NAMES = 2;
+/** 배치도용 canvas 수집 상한 (후보 조건과 별도로 수집한다) */
+export const LAYOUT_MAX_CANVASES = 20;
+
 /** label 최대 길이 (UTF-16 길이 기준. 저장 스키마와 같다) */
 export const LAYOUT_LABEL_MAX = 40;
-export const LAYOUT_HEADING_LABEL_MAX = 30;
+export const LAYOUT_HEADING_LABEL_MAX = 24;
+export const LAYOUT_BUTTON_LABEL_MAX = 16;
 export const LAYOUT_SHORT_LABEL_MAX = 20;
