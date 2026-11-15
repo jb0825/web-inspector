@@ -77,15 +77,57 @@ export function DashedLine({ x1, y1, x2, y2, color = C.blue, width = 1.5, dash =
 
 const STRUCT_CHIP_SIZE = 9.5;
 const STRUCT_CHIP_HEIGHT = 15;
+/** heading label 칩. 블록 크기와 관계없이 글자 크기를 고정한다 */
+const HEADING_CHIP_SIZE = 10;
+const HEADING_CHIP_HEIGHT = 16;
 
-/** 구조 블록 label 칩 (모든 블록을 그린 뒤 맨 위에 그린다). 위쪽이 잘려 보이면 "(계속)" */
-function structChip(block: LayoutBlock, frame: SchematicFrame, from: number, to: number): { x: number; y: number; width: number; height: number; text: string } | null {
-  if (!isStructBlock(block.kind) || block.label === undefined) return null;
+interface LabelChip {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  text: string;
+  size: number;
+  color: string;
+  weight: number;
+  stroke?: string;
+  round?: number;
+}
+
+/** 구조 블록과 heading의 label 칩 (이슈 박스보다 위, 맨 위에 그린다). 구조 블록은 위쪽이 잘려 보이면 "(계속)" */
+function labelChip(block: LayoutBlock, frame: SchematicFrame, from: number, to: number): LabelChip | null {
+  if (block.label === undefined) return null;
   const projected = projectBlock(block.rect, frame, from, to);
-  if (!projected || projected.box.width < 30 || projected.box.height < STRUCT_CHIP_HEIGHT) return null;
+  if (!projected) return null;
   const { box: R, continued } = projected;
-  const text = fitLabel(continuedLabel(block.label, continued), Math.max(10, R.width - 16), 10);
-  return { x: R.x + 6, y: R.y + 4, width: chipWidth(text, STRUCT_CHIP_SIZE), height: STRUCT_CHIP_HEIGHT, text };
+  if (isStructBlock(block.kind)) {
+    if (R.width < 30 || R.height < STRUCT_CHIP_HEIGHT) return null;
+    const text = fitLabel(continuedLabel(block.label, continued), Math.max(10, R.width - 16), 10);
+    return { x: R.x + 6, y: R.y + 4, width: chipWidth(text, STRUCT_CHIP_SIZE), height: STRUCT_CHIP_HEIGHT, text, size: STRUCT_CHIP_SIZE, color: C.chipText, weight: 400 };
+  }
+  if (MEDIA_KINDS.has(block.kind)) {
+    // canvas·video·iframe 이름 pill은 블록 가운데. 위에 그린 heading 등에 가리지 않게 칩 층에 둔다
+    const text = block.label ?? block.kind;
+    const width = Math.max(68, chipWidth(text, 10.5) + 12);
+    if (R.width < width || R.height < 22) return null;
+    return { x: R.x + R.width / 2 - width / 2, y: R.y + R.height / 2 - 10, width, height: 20, text, size: 10.5, color: C.blue, weight: 700, stroke: C.blue, round: 10 };
+  }
+  if (block.kind === 'heading') {
+    // 위쪽이 잘린 heading은 이어지는 부분이라 label을 다시 쓰지 않는다
+    if (continued || R.width < 30 || R.height < 6) return null;
+    const text = fitLabel(block.label, Math.max(40, R.width - 8), HEADING_CHIP_SIZE);
+    return { x: R.x + 4, y: R.y + 4, width: chipWidth(text, HEADING_CHIP_SIZE), height: HEADING_CHIP_HEIGHT, text, size: HEADING_CHIP_SIZE, color: C.headingText, weight: 700 };
+  }
+  return null;
+}
+
+/** 그리기 순서 (아래부터): 구조 → canvas·video·iframe → image·card → text → heading·button·input. 이슈 박스와 label 칩은 그 위 */
+function layerOf(kind: LayoutBlockKind): number {
+  if (isStructBlock(kind)) return 0;
+  if (MEDIA_KINDS.has(kind)) return 1;
+  if (kind === 'image' || kind === 'card') return 2;
+  if (kind === 'text') return 3;
+  return 4;
 }
 
 function renderBlock(block: LayoutBlock, key: number, frame: SchematicFrame, from: number, to: number, ids: ReturnType<typeof patternIds>): ReactNode {
@@ -100,38 +142,14 @@ function renderBlock(block: LayoutBlock, key: number, frame: SchematicFrame, fro
   }
 
   if (MEDIA_KINDS.has(block.kind)) {
-    const text = label ?? block.kind;
-    const chip = Math.max(68, chipWidth(text, 10.5) + 12);
-    const cy = R.y + R.height / 2;
-    return (
-      <g key={key}>
-        <rect x={R.x} y={R.y} width={R.width} height={R.height} fill={`url(#${ids.media})`} stroke={C.blue} strokeWidth={1.2} strokeDasharray="6 4" />
-        {R.width >= chip && R.height >= 22 ? (
-          <g>
-            <rect x={R.x + R.width / 2 - chip / 2} y={cy - 10} width={chip} height={20} rx={10} fill="#fff" stroke={C.blue} />
-            <SvgText x={R.x + R.width / 2} y={cy + 4} size={10.5} fill={C.blue} weight={700} anchor="middle">
-              {text}
-            </SvgText>
-          </g>
-        ) : null}
-      </g>
-    );
+    // 이름 pill은 SchematicChips가 맨 위에 그린다
+    return <rect key={key} x={R.x} y={R.y} width={R.width} height={R.height} fill={`url(#${ids.media})`} stroke={C.blue} strokeWidth={1.2} strokeDasharray="6 4" />;
   }
 
   switch (block.kind) {
-    case 'heading': {
-      const size = Math.min(12, Math.max(9, R.height * 0.5));
-      return (
-        <g key={key}>
-          <rect x={R.x} y={R.y} width={R.width} height={R.height} rx={2} fill={C.heading} />
-          {showLabel && R.height >= 13 ? (
-            <SvgText x={R.x + 6} y={R.y + Math.min(R.height / 2 + 4, 16)} size={size} fill={C.headingText} weight={700}>
-              {fitLabel(label, R.width - 12, size)}
-            </SvgText>
-          ) : null}
-        </g>
-      );
-    }
+    case 'heading':
+      // label은 SchematicChips가 흰 칩으로 맨 위에 그린다
+      return <rect key={key} x={R.x} y={R.y} width={R.width} height={R.height} rx={2} fill={C.heading} />;
     case 'text':
       return (
         <g key={key}>
@@ -203,7 +221,7 @@ export interface SchematicLayerProps {
   showScreenWidthLabel?: boolean;
 }
 
-/** 격자, 페이지 윤곽, 블록, 구조 label, 경계선. 이슈 박스는 호출한 쪽이 위에 그린다 */
+/** 격자, 페이지 윤곽, 블록, 경계선. 이슈 박스와 label 칩(SchematicChips)은 호출한 쪽이 이 순서로 위에 그린다 */
 export function SchematicLayer({ idPrefix, frame, pageWidth, layoutWidth, from, to, blocks, firstScreen, layoutEnd, chipRight, showScreenWidthLabel = true }: SchematicLayerProps) {
   const ids = patternIds(idPrefix);
   const X = (x: number) => toScreenX(frame, x);
@@ -213,12 +231,11 @@ export function SchematicLayer({ idPrefix, frame, pageWidth, layoutWidth, from, 
   const bottom = Y(to);
   const outside = pageWidth > layoutWidth;
 
-  const drawn = blocks.map((block, i) => renderBlock(block, i, frame, from, to, ids));
-  const rawChips = blocks.flatMap((block) => {
-    const chip = structChip(block, frame, from, to);
-    return chip ? [chip] : [];
-  });
-  const chips = placeChips(rawChips, chipRight);
+  // 같은 층 안에서는 문서 순서를 지킨다 (Array.prototype.sort는 안정 정렬)
+  const drawn = blocks
+    .map((block, i) => ({ block, i }))
+    .sort((a, b) => layerOf(a.block.kind) - layerOf(b.block.kind))
+    .map(({ block, i }) => renderBlock(block, i, frame, from, to, ids));
 
   return (
     <g>
@@ -232,9 +249,6 @@ export function SchematicLayer({ idPrefix, frame, pageWidth, layoutWidth, from, 
       <line x1={X(0) + 1} y1={top} x2={X(0) + 1} y2={bottom} stroke={C.pageEdge} strokeWidth={2} />
       <line x1={X(pageWidth) - 1} y1={top} x2={X(pageWidth) - 1} y2={bottom} stroke={C.pageEdge} strokeWidth={2} />
       {drawn}
-      {chips.map((chip, i) => (
-        <Chip key={`chip-${i}`} x={chip.x} y={chip.y} text={rawChips[i].text} size={STRUCT_CHIP_SIZE} height={chip.height} />
-      ))}
       {outside ? (
         <g>
           <DashedLine x1={X(layoutWidth)} y1={top} x2={X(layoutWidth)} y2={bottom} />
@@ -264,6 +278,31 @@ export function SchematicLayer({ idPrefix, frame, pageWidth, layoutWidth, from, 
           <BlueChip right={Math.min(chipRight, X(pageWidth)) - 8} cy={Math.min(Y(layoutEnd), bottom - 10)} text={`배치도 끝 (${formatPx(layoutEnd)}px)`} />
         </g>
       ) : null}
+    </g>
+  );
+}
+
+export interface SchematicChipsProps {
+  frame: SchematicFrame;
+  from: number;
+  to: number;
+  blocks: readonly LayoutBlock[];
+  /** 칩이 넘지 않을 오른쪽 끝 (화면 x) */
+  chipRight: number;
+}
+
+/** 구조 블록과 heading의 label 칩. 이슈 박스 위, 맨 위에 그린다. 칩끼리 겹치면 비켜 놓는다 */
+export function SchematicChips({ frame, from, to, blocks, chipRight }: SchematicChipsProps) {
+  const raw = blocks.flatMap((block) => {
+    const chip = labelChip(block, frame, from, to);
+    return chip ? [chip] : [];
+  });
+  const placed = placeChips(raw, chipRight);
+  return (
+    <g>
+      {placed.map((p, i) => (
+        <Chip key={i} x={p.x} y={p.y} text={raw[i].text} size={raw[i].size} height={p.height} color={raw[i].color} weight={raw[i].weight} stroke={raw[i].stroke} round={raw[i].round} />
+      ))}
     </g>
   );
 }

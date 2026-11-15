@@ -52,13 +52,14 @@ describe('buildLayoutMap', () => {
     expect(map.blocks.map((b) => [b.kind, b.label ?? null, b.depth])).toEqual([
       ['header', 'header', 0],
       ['image', '회사 로고', 1],
-      ['button', '무료로 시작하기 버튼입니다 아주 긴…', 1],
+      ['button', '무료로 시작하기 버튼입니다…', 1],
       ['section', 'section#hero', 0],
       ['heading', '모든 팀을 위한 폼 빌더', 1],
       ['text', null, 1],
       ['input', '이메일', 1],
       ['button', null, 1],
-      ['section', 'section "주요 기능"', 0],
+      // 구조 블록 label에 heading 텍스트를 쓰지 않는다
+      ['section', 'section', 0],
       ['heading', '주요 기능', 1],
       ['card', null, 1],
       ['footer', 'footer "사이트 정보"', 0],
@@ -111,24 +112,24 @@ describe('buildLayoutMap', () => {
         // 같은 순위면 바깥쪽
         node({ index: 5, ancestors: [2, 1], tag: 'div', rect: r(600, 100, 400, 300), style: bordered }),
         node({ index: 6, ancestors: [5, 2, 1], tag: 'div', rect: r(603, 103, 394, 294), style: bordered }),
-        // 구조 블록끼리는 둘 다 남긴다
+        // 같은 크기 구조 블록끼리는 하나로 합친다 (아래 별도 테스트)
         node({ index: 7, ancestors: [2, 1], tag: 'nav', rect: r(0, 400, 1440, 100) }),
         node({ index: 8, ancestors: [7, 2, 1], tag: 'form', rect: r(0, 400, 1440, 100) }),
       ]),
     );
-    expect(map.blocks.map((b) => [b.kind, b.rect.x, b.depth])).toEqual([
-      ['section', 0, 0],
-      ['image', 101, 1],
-      ['card', 600, 1],
-      ['nav', 0, 1],
-      ['form', 0, 2],
+    expect(map.blocks.map((b) => [b.kind, b.rect.x, b.depth, b.label ?? null])).toEqual([
+      ['section', 0, 0, 'section'],
+      ['image', 101, 1, '이미지'],
+      ['card', 600, 1, null],
+      ['nav', 0, 1, 'nav · form'],
     ]);
   });
 
-  it('canvas만 있는 페이지도 canvas 블록이 나온다', () => {
+  it('canvas만 있는 페이지도 canvas 블록이 나온다 (canvas는 layoutCanvases로만 만든다)', () => {
     const map = buildLayoutMap(
       collected('desktop', [node({ index: 1, tag: 'canvas', rect: r(0, 0, 1440, 900) }), node({ index: 2, tag: 'iframe', rect: r(0, 900, 300, 200) })], {
         hasCanvas: true,
+        layoutCanvases: [{ index: 1, ancestorIndices: [], rect: r(0, 0, 1440, 900) }],
       }),
     );
     expect(map.blocks.map((b) => [b.kind, b.label])).toEqual([
@@ -169,6 +170,130 @@ describe('buildLayoutMap', () => {
     expect(map.height).toBe(LAYOUT_MAX_HEIGHT.desktop);
     expect(map.truncated).toBe(true);
     expect(map.blocks.map((b) => b.rect)).toEqual([r(0, 9_950, 100, 50)]);
+  });
+});
+
+describe('buildLayoutMap: 쪼갠 텍스트, canvas, 구조 블록 합치기', () => {
+  const inline = { display: 'inline-block' };
+  const withDisplay = (spec: ElementSpec & Extra, display: string): CollectedElement => ({ ...node(spec), computedStyle: { display } });
+
+  it('inline 요소는 text 블록을 만들지 않고, 블록 레벨 부모가 inline 자손의 텍스트를 합쳐 하나를 만든다', () => {
+    // 단어마다 span으로 쪼갠 문단 (p는 직접 텍스트가 없다)
+    const words = Array.from({ length: 6 }, (_, i) =>
+      withDisplay({ index: 11 + i, ancestors: [10], tag: 'span', rect: r(100 + i * 60, 200, 50, 20), textRects: [r(100 + i * 60, 200, 50, 20)] }, inline.display),
+    );
+    const map = buildLayoutMap(collected('desktop', [withDisplay({ index: 10, tag: 'p', rect: r(100, 200, 600, 20) }, 'block'), ...words]));
+    expect(map.blocks).toEqual([{ kind: 'text', rect: r(100, 200, 350, 20), depth: 0 }]);
+  });
+
+  it('inline 사슬이 블록 레벨에서 끊기면 그 블록이 owner다 (display: contents도 inline으로 본다)', () => {
+    const map = buildLayoutMap(
+      collected('desktop', [
+        withDisplay({ index: 1, tag: 'div', rect: r(0, 0, 800, 100) }, 'block'),
+        withDisplay({ index: 2, ancestors: [1], tag: 'span', rect: r(0, 0, 400, 20) }, 'contents'),
+        withDisplay({ index: 3, ancestors: [2, 1], tag: 'em', rect: r(0, 0, 200, 20), textRects: [r(0, 0, 200, 20)] }, 'inline'),
+        withDisplay({ index: 4, ancestors: [1], tag: 'p', rect: r(0, 50, 300, 20), textRects: [r(0, 50, 300, 20)] }, 'block'),
+      ]),
+    );
+    expect(map.blocks.map((b) => [b.kind, b.rect])).toEqual([
+      ['text', r(0, 0, 200, 20)],
+      // div가 text로 골라졌으므로 그 자손 p는 text를 만들지 않는다
+    ]);
+  });
+
+  it('글자 단위로 쪼갠 heading은 heading 하나만 남고 자손 text·heading·button을 만들지 않는다', () => {
+    const chars = Array.from({ length: 8 }, (_, i) =>
+      withDisplay({ index: 3 + i, ancestors: [2, 1], tag: 'span', rect: r(300 + i * 40, 300, 36, 80), textRects: [r(300 + i * 40, 300, 36, 80)] }, inline.display),
+    );
+    const map = buildLayoutMap(
+      collected('desktop', [
+        withDisplay({ index: 1, tag: 'h1', rect: r(300, 300, 800, 200), flags: { heading: true }, attrs: { 'aria-label': 'Create beyond imagination.' }, text: 'Create beyondimagination.' }, 'block'),
+        withDisplay({ index: 2, ancestors: [1], tag: 'span', rect: r(300, 300, 800, 80) }, 'block'),
+        ...chars,
+        withDisplay({ index: 20, ancestors: [1], tag: 'h2', rect: r(300, 400, 500, 60), flags: { heading: true }, text: '부제' }, 'block'),
+        withDisplay({ index: 21, ancestors: [1], tag: 'button', rect: r(300, 460, 100, 30), text: '버튼' }, 'inline-block'),
+      ]),
+    );
+    expect(map.blocks.map((b) => [b.kind, b.label ?? null])).toEqual([['heading', 'Create beyond imaginati…']]);
+  });
+
+  it('버튼 안의 단어 span은 text 블록을 만들지 않는다', () => {
+    const map = buildLayoutMap(
+      collected('desktop', [
+        withDisplay({ index: 1, tag: 'a', rect: r(50, 700, 150, 50), flags: { interactive: true }, style: bordered, text: 'Start creating ↗' }, 'inline-flex'),
+        withDisplay({ index: 2, ancestors: [1], tag: 'span', rect: r(60, 712, 100, 24), textRects: [r(60, 712, 100, 24)] }, 'block'),
+        withDisplay({ index: 3, ancestors: [1], tag: 'span', rect: r(170, 712, 20, 24), textRects: [r(170, 712, 20, 24)] }, 'block'),
+      ]),
+    );
+    expect(map.blocks.map((b) => [b.kind, b.label ?? null])).toEqual([['button', 'Start creating ↗']]);
+  });
+
+  it('canvas는 opacity 0 또는 aria-hidden 래퍼 안에 있어도(후보가 아니어도) 포함하고 구조 블록 depth를 센다', () => {
+    const map = buildLayoutMap(
+      collected('desktop', [node({ index: 3, tag: 'main', rect: r(0, 0, 1440, 2000) }), node({ index: 4, ancestors: [3], tag: 'section', rect: r(0, 0, 1440, 900) })], {
+        hasCanvas: true,
+        // 9, 8은 후보가 아닌 래퍼(opacity 0, aria-hidden)
+        layoutCanvases: [{ index: 10, ancestorIndices: [9, 8, 4, 3, 2], rect: r(39.6, 35.8, 1360.7, 850.4) }],
+      }),
+    );
+    expect(map.blocks.map((b) => [b.kind, b.rect, b.depth, b.label])).toEqual([
+      ['main', r(0, 0, 1440, 2000), 0, 'main'],
+      ['section', r(0, 0, 1440, 900), 1, 'section'],
+      ['canvas', r(40, 36, 1360, 850), 2, 'canvas'],
+    ]);
+  });
+
+  it('사방 8px 이내로 같은 크기인 구조 블록은 바깥쪽 하나로 합치고 이름을 최대 2개까지 묶는다', () => {
+    const map = buildLayoutMap(
+      collected('desktop', [
+        node({ index: 1, tag: 'main', rect: r(0, 0, 1440, 900) }),
+        node({ index: 2, ancestors: [1], tag: 'section', id: 'hero', rect: r(0, 6, 1440, 890) }),
+        node({ index: 3, ancestors: [2, 1], tag: 'div', attrs: { role: 'region', 'aria-label': '소개' }, rect: r(4, 8, 1432, 888) }),
+        node({ index: 4, ancestors: [3, 2, 1], tag: 'h2', rect: r(100, 100, 400, 40), flags: { heading: true }, text: '제목' }),
+        // 크기가 다르면 합치지 않는다
+        node({ index: 5, tag: 'footer', rect: r(0, 900, 1440, 200) }),
+        node({ index: 6, ancestors: [5], tag: 'nav', rect: r(0, 900, 1440, 100) }),
+      ]),
+    );
+    expect(map.blocks.map((b) => [b.kind, b.rect, b.depth, b.label ?? null])).toEqual([
+      ['main', r(0, 0, 1440, 900), 0, 'main · section#hero +1'],
+      ['heading', r(100, 100, 400, 40), 1, '제목'],
+      ['footer', r(0, 900, 1440, 200), 0, 'footer'],
+      ['nav', r(0, 900, 1440, 100), 1, 'nav'],
+    ]);
+  });
+
+  it('구조 label은 태그#id → 태그 "aria-label" → 태그 순서이고 heading 텍스트를 쓰지 않는다', () => {
+    const map = buildLayoutMap(
+      collected('desktop', [
+        node({ index: 1, tag: 'section', id: 'a', attrs: { 'aria-label': '무시' }, rect: r(0, 0, 1440, 300) }),
+        node({ index: 2, tag: 'section', attrs: { 'aria-label': '  소개\n영역 ' }, rect: r(0, 300, 1440, 300) }),
+        node({ index: 3, tag: 'section', rect: r(0, 600, 1440, 300) }),
+        node({ index: 4, ancestors: [3], tag: 'h2', rect: r(0, 620, 400, 40), flags: { heading: true }, text: '첫 제목' }),
+        node({ index: 5, tag: 'div', attrs: { role: 'contentinfo' }, rect: r(0, 900, 1440, 100) }),
+      ]),
+    );
+    expect(map.blocks.filter((b) => b.kind !== 'heading').map((b) => b.label)).toEqual(['section#a', 'section "소개 영역"', 'section', 'footer']);
+  });
+
+  it('heading label은 aria-label → innerText(layoutAttrs.text) → textSnippet 순서다', () => {
+    const map = buildLayoutMap(
+      collected('desktop', [
+        node({ index: 1, tag: 'h2', rect: r(0, 0, 800, 40), flags: { heading: true }, text: 'Ideas needa place.', layoutAttrs: { text: 'Ideas need a place.' } }),
+        node({ index: 2, tag: 'h2', rect: r(0, 100, 800, 40), flags: { heading: true }, text: '스니펫' }),
+      ]),
+    );
+    expect(map.blocks.map((b) => b.label)).toEqual(['Ideas need a place.', '스니펫']);
+  });
+
+  it('heading label은 24자, button label은 16자로 자른다', () => {
+    const map = buildLayoutMap(
+      collected('desktop', [
+        node({ index: 1, tag: 'h2', rect: r(0, 0, 800, 40), flags: { heading: true }, text: '가'.repeat(30) }),
+        node({ index: 2, tag: 'button', rect: r(0, 100, 200, 40), text: 'abcdefghijklmnopqrstuvwxyz' }),
+      ]),
+    );
+    expect(map.blocks.map((b) => b.label)).toEqual([`${'가'.repeat(23)}…`, 'abcdefghijklmno…']);
   });
 });
 

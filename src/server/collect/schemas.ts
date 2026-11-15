@@ -1,7 +1,7 @@
 import 'server-only';
 import { z } from 'zod';
 import type { Rect, SourceHints } from '@/types/inspection';
-import type { CollectedElement, InPageResult } from './types';
+import type { CollectedElement, InPageResult, LayoutCanvas } from './types';
 
 // page.evaluate 반환값 검증(DOMAIN_MODEL 5.1, 7장). 브라우저에서 넘어온 값도 외부 입력이다.
 // 타입은 types.ts가 기준이고, 스키마는 satisfies로 맞춘다(DOMAIN_MODEL 5.3).
@@ -68,9 +68,16 @@ const elementSchema = z.strictObject({
       alt: z.string().min(1).optional(),
       placeholder: z.string().min(1).optional(),
       type: z.string().optional(),
+      text: z.string().min(1).optional(),
     })
     .optional(),
 }) satisfies z.ZodType<CollectedElement>;
+
+const layoutCanvasSchema = z.strictObject({
+  index,
+  ancestorIndices: z.array(index),
+  rect: rectSchema,
+}) satisfies z.ZodType<LayoutCanvas>;
 
 export const inPageResultSchema = z
   .strictObject({
@@ -84,6 +91,7 @@ export const inPageResultSchema = z
     hasCanvas: z.boolean(),
     totalCandidates: z.number().int().nonnegative(),
     elements: z.array(elementSchema),
+    layoutCanvases: z.array(layoutCanvasSchema),
   })
   .refine((value) => value.elements.length <= value.totalCandidates, {
     message: 'elements.length must not exceed totalCandidates',

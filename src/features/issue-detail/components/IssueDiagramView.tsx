@@ -1,7 +1,7 @@
 'use client';
 
 import { useId, useRef } from 'react';
-import { DashedLine, patternIds, SchematicDefs, SchematicLayer } from '@/components/inspection/SchematicLayer';
+import { DashedLine, patternIds, SchematicChips, SchematicDefs, SchematicLayer } from '@/components/inspection/SchematicLayer';
 import { useElementWidth } from '@/components/ui/useElementWidth';
 import { intersectBox } from '@/lib/rect';
 import { fitLabel, SCHEMATIC_COLORS as C, toScreenBox, type SchematicFrame } from '@/lib/schematic';
@@ -72,6 +72,7 @@ export function IssueDiagramView({
           />
           {isViewportOverflow && region.x < 0 ? <DashedLine x1={-region.x * scale} y1={0} x2={-region.x * scale} y2={svgHeight} /> : null}
           <IssueShapes issue={issue} occurrence={occurrence} shapes={diagram.shapes} frame={frame} idPrefix={idPrefix} />
+          <SchematicChips frame={frame} from={region.y} to={region.y + region.height + markSpace / scale} blocks={blocks} chipRight={svgWidth} />
         </svg>
       ) : (
         <div className="h-40 rounded-md bg-background-secondary" />

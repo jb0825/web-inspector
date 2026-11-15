@@ -338,6 +338,11 @@ export function collectInPage(args: InPageArgs): InPageResult {
         const placeholder = el.getAttribute('placeholder');
         if (placeholder) layoutAttrs.placeholder = placeholder.slice(0, args.textSnippetMax);
         if (tag === 'input') layoutAttrs.type = (el.getAttribute('type') || 'text').toLowerCase().slice(0, 20);
+        // heading label용 (DETECTION_RULES 16.2). innerText는 <br>과 줄 나눔을 공백으로 살리고 숨긴 텍스트를 뺀다(textSnippet은 텍스트 노드를 붙여 쓴다)
+        if (/^h[1-3]$/.test(tag) || role === 'heading') {
+          const inner = normalizeSpace((el as HTMLElement).innerText || '').slice(0, args.textSnippetMax);
+          if (inner) layoutAttrs.text = inner;
+        }
 
         const item: CollectedElement = {
           index: myIndex,
@@ -381,7 +386,7 @@ export function collectInPage(args: InPageArgs): InPageResult {
           sourceHints: sourceHintsOf(el),
           identity,
         };
-        if (layoutAttrs.alt !== undefined || layoutAttrs.placeholder !== undefined || layoutAttrs.type !== undefined) {
+        if (layoutAttrs.alt !== undefined || layoutAttrs.placeholder !== undefined || layoutAttrs.type !== undefined || layoutAttrs.text !== undefined) {
           item.layoutAttrs = layoutAttrs;
         }
         elements.push(item);
@@ -406,6 +411,32 @@ export function collectInPage(args: InPageArgs): InPageResult {
     }
   }
 
+  // ── 배치도용 canvas (DETECTION_RULES 16.1) ──
+  // 후보 조건(3.2)과 별도다. 조상 opacity, aria-hidden 규칙을 적용하지 않는다(인트로 애니메이션 중일 수 있다).
+  // index는 위 순회와 같은 문서 preorder다(getElementsByTagName('*')는 html부터 preorder 순서).
+  const layoutCanvases: InPageResult['layoutCanvases'] = [];
+  const canvases = document.getElementsByTagName('canvas');
+  if (canvases.length > 0) {
+    const indexOf = new Map<Element, number>();
+    for (let i = 0; i < all.length; i += 1) indexOf.set(all[i], i);
+    for (let i = 0; i < canvases.length && layoutCanvases.length < args.maxLayoutCanvases; i += 1) {
+      const canvas = canvases[i];
+      if (getComputedStyle(canvas).display === 'none') continue;
+      // 조상이 display: none이면 크기가 0이 되어 여기서 빠진다
+      const box = canvas.getBoundingClientRect();
+      if (!(box.width > 1 && box.height > 1)) continue;
+      const ancestorIndices: number[] = [];
+      for (let a = canvas.parentElement; a && a !== root; a = a.parentElement) {
+        const ai = indexOf.get(a);
+        if (ai !== undefined) ancestorIndices.push(ai);
+      }
+      const ci = indexOf.get(canvas);
+      if (ci === undefined) continue;
+      // fixed canvas도 측정 시점(scrollY = 0)의 위치로 문서 좌표를 만든다
+      layoutCanvases.push({ index: ci, ancestorIndices, rect: { x: box.left + scrollX, y: box.top + scrollY, width: box.width, height: box.height } });
+    }
+  }
+
   const bodyStyle = body ? getComputedStyle(body) : null;
   return {
     innerWidth: window.innerWidth,
@@ -418,5 +449,6 @@ export function collectInPage(args: InPageArgs): InPageResult {
     hasCanvas: document.querySelector('canvas') !== null,
     totalCandidates,
     elements,
+    layoutCanvases,
   };
 }

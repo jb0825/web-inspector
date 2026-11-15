@@ -165,11 +165,15 @@ describe('좌표 변환과 label', () => {
     expect(chipWidth('header', 10)).toBeLessThan(chipWidth('헤더헤더헤더', 10));
   });
 
-  it('text 막대: 1~4줄, 마지막 줄은 62%', () => {
+  it('text 막대: 높이에 따라 1~6줄, 마지막 줄은 62%, 두께는 8px 이하', () => {
     const bars = textBars({ x: 0, y: 0, width: 100, height: 36 });
     expect(bars).toHaveLength(4);
     expect(bars[3].width).toBeCloseTo(62);
     expect(textBars({ x: 0, y: 0, width: 100, height: 5 })).toEqual([{ x: 0, y: 1, width: 100, height: 3 }]);
+    expect(textBars({ x: 0, y: 0, width: 100, height: 54 })).toHaveLength(6);
+    const tall = textBars({ x: 0, y: 0, width: 100, height: 300 });
+    expect(tall).toHaveLength(6);
+    expect(tall.every((bar) => bar.height === 8)).toBe(true);
   });
 
   it('격자: 문서 기준 40px', () => {

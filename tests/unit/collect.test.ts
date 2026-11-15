@@ -58,6 +58,7 @@ function raw(elements: CollectedElement[], totalCandidates = elements.length): I
     hasCanvas: false,
     totalCandidates,
     elements,
+    layoutCanvases: [],
   };
 }
 
