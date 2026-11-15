@@ -1,0 +1,1175 @@
+{
+  "id": "a8b35abd-c393-434b-9d3b-f641d82a03be",
+  "url": "http://127.0.0.1:3000/demo/landing-fixed.html",
+  "finalUrl": "http://127.0.0.1:3000/demo/landing-fixed.html",
+  "status": "completed",
+  "step": "analyzing_issues",
+  "createdAt": "2026-11-15T05:19:29.255Z",
+  "startedAt": "2026-11-15T05:19:29.256Z",
+  "completedAt": "2026-11-15T05:19:32.583Z",
+  "updatedAt": "2026-11-15T05:19:32.583Z",
+  "viewports": {
+    "desktop": {
+      "width": 1440,
+      "height": 900,
+      "innerWidth": 1440,
+      "layoutWidth": 1440,
+      "hasMetaViewport": true,
+      "documentHeight": 1987,
+      "screenshotUrl": "/showcase/after/desktop-full.png",
+      "screenshotWidth": 1440,
+      "screenshotHeight": 1987,
+      "screenshotTruncated": false,
+      "elementsInspected": 75,
+      "elementsTruncated": false,
+      "hasCanvas": false,
+      "overlaysDetected": [],
+      "layoutMap": {
+        "width": 1440,
+        "scrollWidth": 1440,
+        "height": 1987,
+        "truncated": false,
+        "blocks": [
+          {
+            "kind": "header",
+            "rect": {
+              "x": 0,
+              "y": 0,
+              "width": 1440,
+              "height": 64
+            },
+            "label": "header",
+            "depth": 0
+          },
+          {
+            "kind": "text",
+            "rect": {
+              "x": 160,
+              "y": 17,
+              "width": 92,
+              "height": 29
+            },
+            "depth": 1
+          },
+          {
+            "kind": "text",
+            "rect": {
+              "x": 909,
+              "y": 21,
+              "width": 28,
+              "height": 21
+            },
+            "depth": 1
+          },
+          {
+            "kind": "text",
+            "rect": {
+              "x": 961,
+              "y": 21,
+              "width": 41,
+              "height": 21
+            },
+            "depth": 1
+          },
+          {
+            "kind": "text",
+            "rect": {
+              "x": 1026,
+              "y": 21,
+              "width": 59,
+              "height": 21
+            },
+            "depth": 1
+          },
+          {
+            "kind": "button",
+            "rect": {
+              "x": 1109,
+              "y": 15,
+              "width": 66,
+              "height": 34
+            },
+            "label": "로그인",
+            "depth": 1
+          },
+          {
+            "kind": "button",
+            "rect": {
+              "x": 1183,
+              "y": 15,
+              "width": 97,
+              "height": 34
+            },
+            "label": "무료로 시작",
+            "depth": 1
+          },
+          {
+            "kind": "main",
+            "rect": {
+              "x": 0,
+              "y": 112,
+              "width": 1440,
+              "height": 1499
+            },
+            "label": "main",
+            "depth": 0
+          },
+          {
+            "kind": "section",
+            "rect": {
+              "x": 160,
+              "y": 112,
+              "width": 1120,
+              "height": 420
+            },
+            "label": "section#hero",
+            "depth": 1
+          },
+          {
+            "kind": "text",
+            "rect": {
+              "x": 160,
+              "y": 130,
+              "width": 102,
+              "height": 20
+            },
+            "depth": 2
+          },
+          {
+            "kind": "heading",
+            "rect": {
+              "x": 160,
+              "y": 167,
+              "width": 552,
+              "height": 110
+            },
+            "label": "흩어진 업무를 한 보드에서 정리하세요",
+            "depth": 2
+          },
+          {
+            "kind": "text",
+            "rect": {
+              "x": 160,
+              "y": 294,
+              "width": 541,
+              "height": 55
+            },
+            "depth": 2
+          },
+          {
+            "kind": "text",
+            "rect": {
+              "x": 160,
+              "y": 368,
+              "width": 224,
+              "height": 21
+            },
+            "depth": 2
+          },
+          {
+            "kind": "text",
+            "rect": {
+              "x": 160,
+              "y": 396,
+              "width": 220,
+              "height": 21
+            },
+            "depth": 2
+          },
+          {
+            "kind": "text",
+            "rect": {
+              "x": 160,
+              "y": 424,
+              "width": 119,
+              "height": 21
+            },
+            "depth": 2
+          },
+          {
+            "kind": "card",
+            "rect": {
+              "x": 160,
+              "y": 463,
+              "width": 552,
+              "height": 52
+            },
+            "depth": 2
+          },
+          {
+            "kind": "button",
+            "rect": {
+              "x": 160,
+              "y": 471,
+              "width": 260,
+              "height": 44
+            },
+            "label": "14일 무료 체험 시작하기",
+            "depth": 2
+          },
+          {
+            "kind": "button",
+            "rect": {
+              "x": 428,
+              "y": 471,
+              "width": 95,
+              "height": 44
+            },
+            "label": "기능 보기",
+            "depth": 2
+          },
+          {
+            "kind": "image",
+            "rect": {
+              "x": 760,
+              "y": 112,
+              "width": 520,
+              "height": 420
+            },
+            "label": "플로우보드 보드 화면",
+            "depth": 2
+          },
+          {
+            "kind": "section",
+            "rect": {
+              "x": 160,
+              "y": 628,
+              "width": 1120,
+              "height": 428
+            },
+            "label": "section#features",
+            "depth": 1
+          },
+          {
+            "kind": "heading",
+            "rect": {
+              "x": 160,
+              "y": 628,
+              "width": 1120,
+              "height": 39
+            },
+            "label": "일하는 방식에 맞춰 쓰는 보드",
+            "depth": 2
+          },
+          {
+            "kind": "text",
+            "rect": {
+              "x": 160,
+              "y": 675,
+              "width": 490,
+              "height": 24
+            },
+            "depth": 2
+          },
+          {
+            "kind": "card",
+            "rect": {
+              "x": 160,
+              "y": 733,
+              "width": 357,
+              "height": 323
+            },
+            "depth": 2
+          },
+          {
+            "kind": "image",
+            "rect": {
+              "x": 177,
+              "y": 750,
+              "width": 323,
+              "height": 160
+            },
+            "label": "이미지",
+            "depth": 2
+          },
+          {
+            "kind": "heading",
+            "rect": {
+              "x": 177,
+              "y": 962,
+              "width": 323,
+              "height": 25
+            },
+            "label": "자동 요약",
+            "depth": 2
+          },
+          {
+            "kind": "text",
+            "rect": {
+              "x": 177,
+              "y": 992,
+              "width": 305,
+              "height": 45
+            },
+            "depth": 2
+          },
+          {
+            "kind": "card",
+            "rect": {
+              "x": 541,
+              "y": 733,
+              "width": 358,
+              "height": 323
+            },
+            "depth": 2
+          },
+          {
+            "kind": "image",
+            "rect": {
+              "x": 558,
+              "y": 750,
+              "width": 324,
+              "height": 160
+            },
+            "label": "이미지",
+            "depth": 2
+          },
+          {
+            "kind": "heading",
+            "rect": {
+              "x": 558,
+              "y": 926,
+              "width": 324,
+              "height": 25
+            },
+            "label": "일정 보기",
+            "depth": 2
+          },
+          {
+            "kind": "text",
+            "rect": {
+              "x": 558,
+              "y": 956,
+              "width": 270,
+              "height": 45
+            },
+            "depth": 2
+          },
+          {
+            "kind": "card",
+            "rect": {
+              "x": 923,
+              "y": 733,
+              "width": 357,
+              "height": 323
+            },
+            "depth": 2
+          },
+          {
+            "kind": "image",
+            "rect": {
+              "x": 940,
+              "y": 750,
+              "width": 323,
+              "height": 160
+            },
+            "label": "이미지",
+            "depth": 2
+          },
+          {
+            "kind": "heading",
+            "rect": {
+              "x": 940,
+              "y": 926,
+              "width": 323,
+              "height": 25
+            },
+            "label": "권한 관리",
+            "depth": 2
+          },
+          {
+            "kind": "text",
+            "rect": {
+              "x": 940,
+              "y": 956,
+              "width": 287,
+              "height": 45
+            },
+            "depth": 2
+          },
+          {
+            "kind": "section",
+            "rect": {
+              "x": 160,
+              "y": 1152,
+              "width": 1120,
+              "height": 459
+            },
+            "label": "section#pricing",
+            "depth": 1
+          },
+          {
+            "kind": "heading",
+            "rect": {
+              "x": 160,
+              "y": 1152,
+              "width": 1120,
+              "height": 39
+            },
+            "label": "팀 규모에 맞는 요금제",
+            "depth": 2
+          },
+          {
+            "kind": "text",
+            "rect": {
+              "x": 160,
+              "y": 1199,
+              "width": 338,
+              "height": 24
+            },
+            "depth": 2
+          },
+          {
+            "kind": "card",
+            "rect": {
+              "x": 160,
+              "y": 1256,
+              "width": 357,
+              "height": 355
+            },
+            "depth": 2
+          },
+          {
+            "kind": "heading",
+            "rect": {
+              "x": 184,
+              "y": 1280,
+              "width": 309,
+              "height": 26
+            },
+            "label": "무료",
+            "depth": 2
+          },
+          {
+            "kind": "text",
+            "rect": {
+              "x": 184,
+              "y": 1314,
+              "width": 74,
+              "height": 40
+            },
+            "depth": 2
+          },
+          {
+            "kind": "button",
+            "rect": {
+              "x": 184,
+              "y": 1363,
+              "width": 91,
+              "height": 44
+            },
+            "label": "시작하기",
+            "depth": 2
+          },
+          {
+            "kind": "text",
+            "rect": {
+              "x": 184,
+              "y": 1420,
+              "width": 272,
+              "height": 21
+            },
+            "depth": 2
+          },
+          {
+            "kind": "card",
+            "rect": {
+              "x": 541,
+              "y": 1256,
+              "width": 358,
+              "height": 355
+            },
+            "depth": 2
+          },
+          {
+            "kind": "heading",
+            "rect": {
+              "x": 565,
+              "y": 1280,
+              "width": 310,
+              "height": 26
+            },
+            "label": "프로",
+            "depth": 2
+          },
+          {
+            "kind": "text",
+            "rect": {
+              "x": 565,
+              "y": 1314,
+              "width": 190,
+              "height": 40
+            },
+            "depth": 2
+          },
+          {
+            "kind": "button",
+            "rect": {
+              "x": 565,
+              "y": 1363,
+              "width": 96,
+              "height": 44
+            },
+            "label": "무료 체험",
+            "depth": 2
+          },
+          {
+            "kind": "text",
+            "rect": {
+              "x": 565,
+              "y": 1420,
+              "width": 296,
+              "height": 45
+            },
+            "depth": 2
+          },
+          {
+            "kind": "card",
+            "rect": {
+              "x": 923,
+              "y": 1256,
+              "width": 357,
+              "height": 355
+            },
+            "depth": 2
+          },
+          {
+            "kind": "heading",
+            "rect": {
+              "x": 947,
+              "y": 1280,
+              "width": 309,
+              "height": 26
+            },
+            "label": "엔터프라이즈",
+            "depth": 2
+          },
+          {
+            "kind": "text",
+            "rect": {
+              "x": 947,
+              "y": 1314,
+              "width": 111,
+              "height": 40
+            },
+            "depth": 2
+          },
+          {
+            "kind": "button",
+            "rect": {
+              "x": 947,
+              "y": 1363,
+              "width": 95,
+              "height": 44
+            },
+            "label": "상담 신청",
+            "depth": 2
+          },
+          {
+            "kind": "text",
+            "rect": {
+              "x": 947,
+              "y": 1420,
+              "width": 308,
+              "height": 165
+            },
+            "depth": 2
+          },
+          {
+            "kind": "footer",
+            "rect": {
+              "x": 0,
+              "y": 1811,
+              "width": 1440,
+              "height": 176
+            },
+            "label": "footer#footer",
+            "depth": 0
+          },
+          {
+            "kind": "text",
+            "rect": {
+              "x": 160,
+              "y": 1845,
+              "width": 64,
+              "height": 20
+            },
+            "depth": 1
+          }
+        ]
+      }
+    },
+    "mobile": {
+      "width": 390,
+      "height": 844,
+      "innerWidth": 390,
+      "layoutWidth": 390,
+      "hasMetaViewport": true,
+      "documentHeight": 3448,
+      "screenshotUrl": "/showcase/after/mobile-full.png",
+      "screenshotWidth": 390,
+      "screenshotHeight": 3448,
+      "screenshotTruncated": false,
+      "elementsInspected": 71,
+      "elementsTruncated": false,
+      "hasCanvas": false,
+      "overlaysDetected": [],
+      "layoutMap": {
+        "width": 390,
+        "scrollWidth": 390,
+        "height": 3448,
+        "truncated": false,
+        "blocks": [
+          {
+            "kind": "header",
+            "rect": {
+              "x": 0,
+              "y": 0,
+              "width": 390,
+              "height": 64
+            },
+            "label": "header",
+            "depth": 0
+          },
+          {
+            "kind": "text",
+            "rect": {
+              "x": 16,
+              "y": 17,
+              "width": 92,
+              "height": 29
+            },
+            "depth": 1
+          },
+          {
+            "kind": "button",
+            "rect": {
+              "x": 203,
+              "y": 15,
+              "width": 66,
+              "height": 34
+            },
+            "label": "로그인",
+            "depth": 1
+          },
+          {
+            "kind": "button",
+            "rect": {
+              "x": 277,
+              "y": 15,
+              "width": 97,
+              "height": 34
+            },
+            "label": "무료로 시작",
+            "depth": 1
+          },
+          {
+            "kind": "main",
+            "rect": {
+              "x": 0,
+              "y": 88,
+              "width": 390,
+              "height": 2962
+            },
+            "label": "main",
+            "depth": 0
+          },
+          {
+            "kind": "section",
+            "rect": {
+              "x": 16,
+              "y": 88,
+              "width": 358,
+              "height": 724
+            },
+            "label": "section#hero",
+            "depth": 1
+          },
+          {
+            "kind": "text",
+            "rect": {
+              "x": 16,
+              "y": 410,
+              "width": 102,
+              "height": 20
+            },
+            "depth": 2
+          },
+          {
+            "kind": "heading",
+            "rect": {
+              "x": 16,
+              "y": 448,
+              "width": 358,
+              "height": 83
+            },
+            "label": "흩어진 업무를 한 보드에서 정리하세요",
+            "depth": 2
+          },
+          {
+            "kind": "text",
+            "rect": {
+              "x": 16,
+              "y": 547,
+              "width": 345,
+              "height": 75
+            },
+            "depth": 2
+          },
+          {
+            "kind": "text",
+            "rect": {
+              "x": 16,
+              "y": 641,
+              "width": 224,
+              "height": 21
+            },
+            "depth": 2
+          },
+          {
+            "kind": "text",
+            "rect": {
+              "x": 16,
+              "y": 669,
+              "width": 220,
+              "height": 21
+            },
+            "depth": 2
+          },
+          {
+            "kind": "text",
+            "rect": {
+              "x": 16,
+              "y": 697,
+              "width": 119,
+              "height": 21
+            },
+            "depth": 2
+          },
+          {
+            "kind": "card",
+            "rect": {
+              "x": 16,
+              "y": 736,
+              "width": 358,
+              "height": 76
+            },
+            "depth": 2
+          },
+          {
+            "kind": "button",
+            "rect": {
+              "x": 16,
+              "y": 744,
+              "width": 168,
+              "height": 68
+            },
+            "label": "14일 무료 체험 시작하기",
+            "depth": 2
+          },
+          {
+            "kind": "button",
+            "rect": {
+              "x": 192,
+              "y": 744,
+              "width": 95,
+              "height": 68
+            },
+            "label": "기능 보기",
+            "depth": 2
+          },
+          {
+            "kind": "image",
+            "rect": {
+              "x": 16,
+              "y": 88,
+              "width": 358,
+              "height": 289
+            },
+            "label": "플로우보드 보드 화면",
+            "depth": 2
+          },
+          {
+            "kind": "section",
+            "rect": {
+              "x": 16,
+              "y": 876,
+              "width": 358,
+              "height": 1098
+            },
+            "label": "section#features",
+            "depth": 1
+          },
+          {
+            "kind": "heading",
+            "rect": {
+              "x": 16,
+              "y": 876,
+              "width": 358,
+              "height": 78
+            },
+            "label": "일하는 방식에 맞춰 쓰는 보드",
+            "depth": 2
+          },
+          {
+            "kind": "text",
+            "rect": {
+              "x": 16,
+              "y": 962,
+              "width": 320,
+              "height": 49
+            },
+            "depth": 2
+          },
+          {
+            "kind": "card",
+            "rect": {
+              "x": 16,
+              "y": 1045,
+              "width": 358,
+              "height": 323
+            },
+            "depth": 2
+          },
+          {
+            "kind": "image",
+            "rect": {
+              "x": 33,
+              "y": 1062,
+              "width": 324,
+              "height": 160
+            },
+            "label": "이미지",
+            "depth": 2
+          },
+          {
+            "kind": "heading",
+            "rect": {
+              "x": 33,
+              "y": 1274,
+              "width": 324,
+              "height": 25
+            },
+            "label": "자동 요약",
+            "depth": 2
+          },
+          {
+            "kind": "text",
+            "rect": {
+              "x": 33,
+              "y": 1304,
+              "width": 305,
+              "height": 45
+            },
+            "depth": 2
+          },
+          {
+            "kind": "card",
+            "rect": {
+              "x": 16,
+              "y": 1384,
+              "width": 358,
+              "height": 287
+            },
+            "depth": 2
+          },
+          {
+            "kind": "image",
+            "rect": {
+              "x": 33,
+              "y": 1401,
+              "width": 324,
+              "height": 160
+            },
+            "label": "이미지",
+            "depth": 2
+          },
+          {
+            "kind": "heading",
+            "rect": {
+              "x": 33,
+              "y": 1577,
+              "width": 324,
+              "height": 25
+            },
+            "label": "일정 보기",
+            "depth": 2
+          },
+          {
+            "kind": "text",
+            "rect": {
+              "x": 33,
+              "y": 1607,
+              "width": 269,
+              "height": 45
+            },
+            "depth": 2
+          },
+          {
+            "kind": "card",
+            "rect": {
+              "x": 16,
+              "y": 1687,
+              "width": 358,
+              "height": 287
+            },
+            "depth": 2
+          },
+          {
+            "kind": "image",
+            "rect": {
+              "x": 33,
+              "y": 1704,
+              "width": 324,
+              "height": 160
+            },
+            "label": "이미지",
+            "depth": 2
+          },
+          {
+            "kind": "heading",
+            "rect": {
+              "x": 33,
+              "y": 1880,
+              "width": 324,
+              "height": 25
+            },
+            "label": "권한 관리",
+            "depth": 2
+          },
+          {
+            "kind": "text",
+            "rect": {
+              "x": 33,
+              "y": 1910,
+              "width": 287,
+              "height": 45
+            },
+            "depth": 2
+          },
+          {
+            "kind": "section",
+            "rect": {
+              "x": 16,
+              "y": 2038,
+              "width": 358,
+              "height": 1012
+            },
+            "label": "section#pricing",
+            "depth": 1
+          },
+          {
+            "kind": "heading",
+            "rect": {
+              "x": 16,
+              "y": 2038,
+              "width": 358,
+              "height": 39
+            },
+            "label": "팀 규모에 맞는 요금제",
+            "depth": 2
+          },
+          {
+            "kind": "text",
+            "rect": {
+              "x": 16,
+              "y": 2085,
+              "width": 338,
+              "height": 24
+            },
+            "depth": 2
+          },
+          {
+            "kind": "card",
+            "rect": {
+              "x": 16,
+              "y": 2143,
+              "width": 358,
+              "height": 260
+            },
+            "depth": 2
+          },
+          {
+            "kind": "heading",
+            "rect": {
+              "x": 40,
+              "y": 2167,
+              "width": 310,
+              "height": 25
+            },
+            "label": "무료",
+            "depth": 2
+          },
+          {
+            "kind": "text",
+            "rect": {
+              "x": 40,
+              "y": 2200,
+              "width": 74,
+              "height": 40
+            },
+            "depth": 2
+          },
+          {
+            "kind": "button",
+            "rect": {
+              "x": 40,
+              "y": 2250,
+              "width": 91,
+              "height": 44
+            },
+            "label": "시작하기",
+            "depth": 2
+          },
+          {
+            "kind": "text",
+            "rect": {
+              "x": 40,
+              "y": 2307,
+              "width": 272,
+              "height": 21
+            },
+            "depth": 2
+          },
+          {
+            "kind": "card",
+            "rect": {
+              "x": 16,
+              "y": 2419,
+              "width": 358,
+              "height": 260
+            },
+            "depth": 2
+          },
+          {
+            "kind": "heading",
+            "rect": {
+              "x": 40,
+              "y": 2443,
+              "width": 310,
+              "height": 25
+            },
+            "label": "프로",
+            "depth": 2
+          },
+          {
+            "kind": "text",
+            "rect": {
+              "x": 40,
+              "y": 2476,
+              "width": 190,
+              "height": 40
+            },
+            "depth": 2
+          },
+          {
+            "kind": "button",
+            "rect": {
+              "x": 40,
+              "y": 2526,
+              "width": 95,
+              "height": 44
+            },
+            "label": "무료 체험",
+            "depth": 2
+          },
+          {
+            "kind": "text",
+            "rect": {
+              "x": 40,
+              "y": 2583,
+              "width": 296,
+              "height": 45
+            },
+            "depth": 2
+          },
+          {
+            "kind": "card",
+            "rect": {
+              "x": 16,
+              "y": 2695,
+              "width": 358,
+              "height": 355
+            },
+            "depth": 2
+          },
+          {
+            "kind": "heading",
+            "rect": {
+              "x": 40,
+              "y": 2719,
+              "width": 310,
+              "height": 25
+            },
+            "label": "엔터프라이즈",
+            "depth": 2
+          },
+          {
+            "kind": "text",
+            "rect": {
+              "x": 40,
+              "y": 2752,
+              "width": 111,
+              "height": 40
+            },
+            "depth": 2
+          },
+          {
+            "kind": "button",
+            "rect": {
+              "x": 40,
+              "y": 2802,
+              "width": 95,
+              "height": 44
+            },
+            "label": "상담 신청",
+            "depth": 2
+          },
+          {
+            "kind": "text",
+            "rect": {
+              "x": 40,
+              "y": 2859,
+              "width": 310,
+              "height": 165
+            },
+            "depth": 2
+          },
+          {
+            "kind": "footer",
+            "rect": {
+              "x": 0,
+              "y": 3250,
+              "width": 390,
+              "height": 198
+            },
+            "label": "footer#footer",
+            "depth": 0
+          },
+          {
+            "kind": "text",
+            "rect": {
+              "x": 16,
+              "y": 3284,
+              "width": 64,
+              "height": 20
+            },
+            "depth": 1
+          }
+        ]
+      }
+    }
+  },
+  "viewportErrors": {
+    "desktop": null,
+    "mobile": null
+  },
+  "analysis": {
+    "status": "skipped",
+    "analyzedIssueCount": 0
+  },
+  "issuesDetected": 0,
+  "issuesTruncated": false,
+  "issues": [],
+  "tasks": []
+}
