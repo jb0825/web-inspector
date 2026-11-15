@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>3D 포트폴리오 · canvas 데모</title>
+<!--
+  데모 페이지: canvas 위주 페이지의 배치도(layoutMap, DETECTION_RULES 16장) 확인용 검사 대상이다.
+  Fixture가 아니므로 pnpm test:fixtures의 판정에 넣지 않는다. 미리 보기만 한다:
+    pnpm test:fixtures --page demo/canvas-only.html --report-only
+
+  Fixture와 같은 규칙을 따른다(AGENTS.md 7.1): /fonts/의 Noto Sans KR을 @font-face로 쓰고,
+  외부 리소스, JS, 애니메이션이 없다. canvas는 그리지 않고 CSS 배경만 둔다(검사는 canvas 내부를 보지 않는다).
+
+  구성: 작은 header(로고, 메뉴 3개) + 첫 화면 전체 canvas + 짧은 footer.
+  기대: 이슈 0개. 배치도에 header, canvas, footer 블록이 그려진다.
+-->
+<style>
+  @font-face {
+    font-family: 'Noto Sans KR';
+    src: url('/fonts/NotoSansKR-Regular.ttf') format('truetype');
+    font-weight: 400;
+    font-style: normal;
+    font-display: block;
+  }
+
+  @font-face {
+    font-family: 'Noto Sans KR';
+    src: url('/fonts/NotoSansKR-Bold.ttf') format('truetype');
+    font-weight: 700;
+    font-style: normal;
+    font-display: block;
+  }
+
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  body,
+  body * {
+    font-family: 'Noto Sans KR';
+  }
+
+  body {
+    margin: 0;
+    color: #e2e8f0;
+    background: #0f172a;
+    font-size: 16px;
+    line-height: 1.6;
+  }
+
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 64px;
+    padding: 0 40px;
+  }
+
+  .logo {
+    font-weight: 700;
+    font-size: 18px;
+  }
+
+  nav ul {
+    display: flex;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  nav a {
+    display: inline-block;
+    padding: 6px 14px;
+    border-radius: 999px;
+    background: #1e293b;
+    color: #e2e8f0;
+    text-decoration: none;
+    font-size: 14px;
+  }
+
+  main {
+    position: relative;
+  }
+
+  canvas {
+    display: block;
+    width: 100%;
+    height: calc(100vh - 64px);
+    min-height: 480px;
+    background: radial-gradient(circle at 30% 40%, #6366f1, #0f172a 70%);
+  }
+
+  footer {
+    padding: 48px 40px;
+    background: #020617;
+  }
+
+  footer p {
+    margin: 0 0 16px;
+    max-width: 420px;
+  }
+
+  footer a {
+    display: inline-block;
+    padding: 10px 20px;
+    border-radius: 8px;
+    background: #6366f1;
+    color: #fff;
+    text-decoration: none;
+  }
+
+  @media (max-width: 600px) {
+    header {
+      padding: 0 16px;
+    }
+
+    nav a {
+      padding: 6px 10px;
+    }
+
+    footer {
+      padding: 40px 16px;
+    }
+  }
+</style>
+</head>
+<body>
+  <header>
+    <span class="logo">Imogen Rose</span>
+    <nav aria-label="주 메뉴">
+      <ul>
+        <li><a href="#work">Work</a></li>
+        <li><a href="#about">About</a></li>
+        <li><a href="#contact">Contact</a></li>
+      </ul>
+    </nav>
+  </header>
+  <main>
+    <canvas width="1440" height="836" aria-label="3D 작품 미리보기"></canvas>
+  </main>
+  <footer id="contact">
+    <p>새 프로젝트 문의는 언제든 환영합니다. 메일로 연락해 주세요.</p>
+    <a href="#contact">이메일 보내기</a>
+  </footer>
+</body>
+</html>
