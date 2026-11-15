@@ -4,6 +4,7 @@ import type { CollectedViewport } from '@/server/collect/types';
 import { buildLookup } from '@/server/detect/geometry';
 import type { ViewportDetection } from '@/server/detect/pipeline';
 import type { DetectedIssue, RawIssue } from '@/server/detect/types';
+import { buildLayoutMap } from '@/server/layout/buildLayoutMap';
 import type { Issue, IssueOccurrence, RelatedElement, Viewport, ViewportResult } from '@/types/inspection';
 import { computeCropRect, cropBasisBox } from './crop';
 import { evidenceText } from './sentences';
@@ -109,5 +110,7 @@ export function buildViewportResult(
     elementsTruncated: collected.elementsTruncated,
     hasCanvas: collected.hasCanvas,
     overlaysDetected: [...detection.overlaysDetected],
+    // 스크린샷 성공 여부와 관계없이 항상 만든다 (DETECTION_RULES 16장)
+    layoutMap: buildLayoutMap(collected),
   };
 }

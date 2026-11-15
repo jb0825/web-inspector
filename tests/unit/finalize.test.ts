@@ -1,3 +1,4 @@
+import { buildLayoutMap } from '@/server/layout/buildLayoutMap';
 import { describe, expect, it } from 'vitest';
 import { buildIssues } from '@/server/detect/pipeline';
 import { buildViewportResult, finalizeIssues, type ViewportArtifacts } from '@/server/evidence/finalize';
@@ -109,6 +110,15 @@ describe('buildViewportResult', () => {
       elementsTruncated: false,
       hasCanvas: false,
       overlaysDetected: ['#banner'],
+      // 스크린샷 성공 여부와 관계없이 항상 들어간다 (DETECTION_RULES 16장)
+      layoutMap: buildLayoutMap(c),
     });
+  });
+
+  it('스크린샷이 없어도 layoutMap을 만든다', () => {
+    const c = site('desktop');
+    const vr = buildViewportResult(c, null, { overlaysDetected: [] }, null);
+    expect(vr.screenshotUrl).toBeNull();
+    expect(vr.layoutMap).toEqual(buildLayoutMap(c));
   });
 });

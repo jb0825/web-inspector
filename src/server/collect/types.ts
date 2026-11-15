@@ -56,6 +56,11 @@ export interface CollectedElement {
   /** DETECTION_RULES 3.5 */
   sourceHints: SourceHints;
   identity: { id?: string; testId?: string };
+  /**
+   * 페이지 구성 도면(layoutMap)의 label 원재료 (DETECTION_RULES 16.2). 속성이 하나라도 있을 때만 있다.
+   * type은 input 요소에만 넣는다(소문자).
+   */
+  layoutAttrs?: { alt?: string; placeholder?: string; type?: string };
 }
 
 export interface CollectedViewport {

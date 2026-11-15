@@ -332,7 +332,14 @@ export function collectInPage(args: InPageArgs): InPageResult {
         const testId = el.getAttribute('data-testid');
         if (testId !== null) identity.testId = testId;
 
-        elements.push({
+        const layoutAttrs: NonNullable<CollectedElement['layoutAttrs']> = {};
+        const alt = el.getAttribute('alt');
+        if (alt) layoutAttrs.alt = alt.slice(0, args.textSnippetMax);
+        const placeholder = el.getAttribute('placeholder');
+        if (placeholder) layoutAttrs.placeholder = placeholder.slice(0, args.textSnippetMax);
+        if (tag === 'input') layoutAttrs.type = (el.getAttribute('type') || 'text').toLowerCase().slice(0, 20);
+
+        const item: CollectedElement = {
           index: myIndex,
           parentIndex: frame.candidateAncestors.length > 0 ? frame.candidateAncestors[0] : null,
           ancestorIndices: frame.candidateAncestors.slice(),
@@ -373,7 +380,11 @@ export function collectInPage(args: InPageArgs): InPageResult {
           selector: selectorOf(el),
           sourceHints: sourceHintsOf(el),
           identity,
-        });
+        };
+        if (layoutAttrs.alt !== undefined || layoutAttrs.placeholder !== undefined || layoutAttrs.type !== undefined) {
+          item.layoutAttrs = layoutAttrs;
+        }
+        elements.push(item);
       }
     }
 

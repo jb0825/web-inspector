@@ -92,7 +92,7 @@ function normalizeElement(el: CollectedElement, decimals: number): CollectedElem
   if (el.sourceHints.landmark !== undefined) sourceHints.landmark = el.sourceHints.landmark;
 
   // 키 순서를 types.ts 순서로 고정해 같은 입력이 바이트 단위로 같은 JSON이 되게 한다(DETECTION_RULES 11장).
-  return {
+  const normalized: CollectedElement = {
     index: el.index,
     parentIndex: el.parentIndex,
     ancestorIndices: [...el.ancestorIndices],
@@ -129,6 +129,14 @@ function normalizeElement(el: CollectedElement, decimals: number): CollectedElem
     sourceHints,
     identity,
   };
+  if (el.layoutAttrs) {
+    const layoutAttrs: NonNullable<CollectedElement['layoutAttrs']> = {};
+    if (el.layoutAttrs.alt !== undefined) layoutAttrs.alt = el.layoutAttrs.alt;
+    if (el.layoutAttrs.placeholder !== undefined) layoutAttrs.placeholder = el.layoutAttrs.placeholder;
+    if (el.layoutAttrs.type !== undefined) layoutAttrs.type = el.layoutAttrs.type;
+    normalized.layoutAttrs = layoutAttrs;
+  }
+  return normalized;
 }
 
 /**

@@ -35,6 +35,46 @@ const rectSchema = z.strictObject({
   height: z.number(),
 }) satisfies z.ZodType<T.Rect>;
 
+const intRectSchema = z.strictObject({
+  x: z.number().int(),
+  y: z.number().int(),
+  width: z.number().int().positive(),
+  height: z.number().int().positive(),
+}) satisfies z.ZodType<T.Rect>;
+
+const layoutBlockSchema = z.strictObject({
+  kind: z.enum([
+    'header',
+    'nav',
+    'main',
+    'section',
+    'footer',
+    'aside',
+    'form',
+    'heading',
+    'text',
+    'image',
+    'button',
+    'input',
+    'canvas',
+    'video',
+    'iframe',
+    'card',
+  ]),
+  rect: intRectSchema,
+  label: z.string().min(1).max(40).optional(),
+  depth: z.number().int().nonnegative(),
+}) satisfies z.ZodType<T.LayoutBlock>;
+
+// 범위(블록 수 상한, 문서 범위 안)는 불변 조건 V-4가 본다
+const layoutMapSchema = z.strictObject({
+  width: z.number().int().nonnegative(),
+  scrollWidth: z.number().int().nonnegative(),
+  height: z.number().int().nonnegative(),
+  truncated: z.boolean(),
+  blocks: z.array(layoutBlockSchema),
+}) satisfies z.ZodType<T.LayoutMap>;
+
 const viewportResultSchema = z.strictObject({
   width: z.number(),
   height: z.number(),
@@ -51,6 +91,8 @@ const viewportResultSchema = z.strictObject({
   elementsTruncated: z.boolean(),
   hasCanvas: z.boolean(),
   overlaysDetected: z.array(z.string()),
+  // 예전 문서에는 없다 (DOMAIN_MODEL V-4)
+  layoutMap: layoutMapSchema.optional(),
 }) satisfies z.ZodType<T.ViewportResult>;
 
 const relatedElementSchema = z.strictObject({
