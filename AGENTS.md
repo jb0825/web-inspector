@@ -182,6 +182,7 @@ public/fixtures/                        # 모든 페이지가 /fonts/의 폰트�
   negative/N-01.html ... N-09.html
 public/demo/landing.html                # 샘플 리포트용 검사 대상 데모 페이지. Fixture가 아니다(test:fixtures 판정에 넣지 않음)
 public/demo/canvas-only.html            # canvas 위주 페이지의 배치도 확인용 데모 (이슈 0개 목표). Fixture가 아니다
+public/demo/split-text.html             # 글자·단어 단위로 쪼갠 텍스트, 투명 래퍼 안 canvas의 배치도 확인용 데모 (이슈 0개 목표). Fixture가 아니다
 public/sample/                          # 샘플 리포트 정적 데이터 (inspection.json, 스크린샷). pnpm import-sample로만 바꾼다
 public/showcase/{before,after}/         # Before/After 사례 정적 데이터. pnpm import-sample --target showcase/…로만 바꾼다
 scripts/                                # 로컬 도구: collect, detect, fixture-screenshots, ui-shots, import-sample(sample/core.ts), compare-inspections(compare/core.ts)
