@@ -1,13 +1,16 @@
 'use client';
 
-import { ArrowLeft, ChevronRight, X } from 'lucide-react';
+import { ArrowLeft, ChevronRight, ExternalLink, X } from 'lucide-react';
 import { useEffect, useId, useRef, type ReactNode } from 'react';
 import { AnalysisBadges, AnalysisContent } from '@/components/inspection/AnalysisContent';
 import { ConfidenceText, PriorityBadge, ViewportTagBadge } from '@/components/inspection/badges';
+import { buttonClassName } from '@/components/ui/Button';
+import { CopyButton } from '@/components/ui/CopyButton';
 import { Spinner } from '@/components/ui/Spinner';
 import { cn } from '@/lib/utils';
 import type { Inspection, Issue } from '@/types/inspection';
 import { taskForIssue } from '../crop';
+import { devtoolsQuery, openablePageUrl } from '../diagram';
 import { EvidenceBlock } from './EvidenceBlock';
 import { SourceHints } from './SourceHints';
 
@@ -115,12 +118,13 @@ export function IssueDetailPanel({ inspection, issue, onClose, onOpenTask, findR
             <ConfidenceText confidence={issue.confidence} always />
             {issue.needsReview ? <span className="text-caption text-text-secondary">검토 필요</span> : null}
           </div>
+          <PageActions url={inspection.finalUrl ?? inspection.url} selector={issue.selector} />
         </header>
 
         <Section title="Evidence" aside={<span className="text-caption text-text-secondary">브라우저에서 측정한 값</span>}>
           <div className="flex flex-col gap-6">
             {issue.occurrences.map((occurrence) => (
-              <EvidenceBlock key={occurrence.viewport} occurrence={occurrence} screenshot={inspection.viewports[occurrence.viewport]} priority={issue.priority} />
+              <EvidenceBlock key={occurrence.viewport} issue={issue} occurrence={occurrence} screenshot={inspection.viewports[occurrence.viewport]} />
             ))}
           </div>
           {issue.affectedDescendants !== undefined && issue.affectedDescendants > 0 ? (
@@ -166,5 +170,32 @@ export function IssueDetailPanel({ inspection, issue, onClose, onOpenTask, findR
         </Section>
       </div>
     </aside>
+  );
+}
+
+/**
+ * 실제 페이지에서 요소를 직접 확인하는 도구 (WIREFRAME 6.4). 스크린샷이 없을 때 특히 쓴다.
+ * - 실제 페이지 열기: 새 탭, http/https 주소만. 검사 시점과 지금 화면은 다를 수 있다
+ * - 개발자 도구에서 찾기: 콘솔에 붙여 넣을 document.querySelector(...)를 복사한다
+ */
+function PageActions({ url, selector }: { url: string; selector: string }) {
+  const href = openablePageUrl(url);
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {href ? (
+        <a href={href} target="_blank" rel="noopener noreferrer" className={buttonClassName('secondary', 'sm', 'min-h-11 sm:min-h-8')}>
+          <ExternalLink aria-hidden size={14} strokeWidth={1.75} />
+          실제 페이지 열기
+          <span className="sr-only">(새 탭)</span>
+        </a>
+      ) : null}
+      <CopyButton
+        getText={() => devtoolsQuery(selector)}
+        label="개발자 도구에서 찾기"
+        copiedLabel="콘솔 코드 복사됨"
+        announcement="개발자 도구 콘솔에 붙여 넣을 코드가 복사되었습니다"
+        className="min-h-11 sm:min-h-8"
+      />
+    </div>
   );
 }

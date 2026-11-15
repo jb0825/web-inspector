@@ -1,6 +1,6 @@
 import 'server-only';
 import { errors, type BrowserContext, type Page } from 'playwright-core';
-import { InspectionError } from '@/server/errors';
+import { InspectionError, isBrowserGone } from '@/server/errors';
 import { getRouteGuard, type RouteGuard } from '@/server/security/routeGuard';
 import { HARD_TIMEOUT_GRACE_MS, PAGE_OPEN_TIMEOUT_MS, withHardTimeout } from './timeouts';
 
@@ -94,9 +94,6 @@ async function withTimeout<T>(task: Promise<T>, ms: number): Promise<T> {
   }
 }
 
-function isPageCrash(error: unknown): boolean {
-  return error instanceof Error && /crash|Target (page, context or browser )?closed/i.test(error.message);
-}
 
 /** PRD 5.1: 최상위 문서가 차단되면 BLOCKED_TARGET. 메시지에는 호스트도 넣지 않는다(사유만) */
 function assertNotBlocked(guard: RouteGuard): void {
@@ -120,13 +117,13 @@ async function navigate(guard: RouteGuard, page: Page, url: string, timeoutMs: n
     if (error instanceof errors.TimeoutError) {
       throw new InspectionError('NAVIGATION_TIMEOUT', `Navigation timed out after ${timeoutMs}ms`, { cause: error });
     }
-    if (isPageCrash(error)) {
+    if (isBrowserGone(error)) {
       throw new InspectionError('BROWSER_CRASH', 'Page crashed during navigation', { cause: error });
     }
     // PRD 6.2.4: 네트워크 오류(net::ERR_*: DNS 조회 실패, 연결 거부, TLS 오류 등)는 NAVIGATION_FAILED. 메시지에 오류 종류를 넣는다
     const netError = navigationNetError(error);
     if (netError) throw new InspectionError('NAVIGATION_FAILED', `Navigation failed: ${netError}`, { cause: error });
-    throw new InspectionError('INTERNAL_ERROR', 'Navigation failed: unknown', { cause: error });
+    throw new InspectionError('INTERNAL_ERROR', `Navigation failed: ${error instanceof Error ? error.name : typeof error}`, { cause: error });
   }
 }
 
@@ -263,10 +260,13 @@ async function stabilize(guard: RouteGuard, page: Page, url: string, budget: Sta
       try {
         outcome = await runners[step](remainingMs);
       } catch (error) {
-        if (isPageCrash(error)) {
+        if (isBrowserGone(error)) {
           throw new InspectionError('BROWSER_CRASH', `Page crashed during ${step}`, { cause: error });
         }
-        throw new InspectionError('INTERNAL_ERROR', `Stabilize step ${step} failed`, { cause: error });
+        if (error instanceof errors.TimeoutError) {
+          throw new InspectionError('TIME_BUDGET_EXCEEDED', `Stabilize step ${step} timed out`, { cause: error });
+        }
+        throw new InspectionError('INTERNAL_ERROR', `Stabilize step ${step} failed (${error instanceof Error ? error.name : typeof error})`, { cause: error });
       }
       steps.push({ step, durationMs: Date.now() - start, outcome });
     }

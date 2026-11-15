@@ -23,7 +23,8 @@ describe.each(SHOWCASE_NAMES)('public/showcase/%s', (name) => {
       expect(doc.status).toBe('completed');
       const dir = path.dirname(file);
       const pngs = { desktop: readPng(path.join(dir, 'desktop-full.png')), mobile: readPng(path.join(dir, 'mobile-full.png')) };
-      expect(validateSample(doc, pngs, `showcase/${name}`)).toEqual([]);
+      // 사례는 layoutMap이 생기기 전에 가져온 것일 수 있다. 화면은 최소 도면으로 보여준다(WIREFRAME 5.6)
+      expect(validateSample(doc, pngs, `showcase/${name}`, { requireLayoutMap: false })).toEqual([]);
       expect(loadShowcase(name)).toEqual(doc);
     });
   } else {
@@ -68,7 +69,7 @@ describe('import 대상(--target)', () => {
     expect(screenshotUrlsFor('showcase/after')).toEqual({ desktop: '/showcase/after/desktop-full.png', mobile: '/showcase/after/mobile-full.png' });
 
     const before = toSampleDocument(sample, 'showcase/before');
-    expect(validateSample(before, undefined, 'showcase/before')).toEqual([]);
+    expect(validateSample(before, undefined, 'showcase/before', { requireLayoutMap: false })).toEqual([]);
     // 다른 대상의 경로를 가리키면 거부한다
     expect(validateSample(before, undefined, 'showcase/after').some((p) => p.includes('screenshotUrl'))).toBe(true);
     expect(validateSample(sample, undefined, 'showcase/before').some((p) => p.includes('screenshotUrl'))).toBe(true);

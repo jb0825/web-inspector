@@ -4,6 +4,7 @@ import type { CollectedViewport } from '@/server/collect/types';
 import { buildLookup } from '@/server/detect/geometry';
 import type { ViewportDetection } from '@/server/detect/pipeline';
 import type { DetectedIssue, RawIssue } from '@/server/detect/types';
+import { buildLayoutMap } from '@/server/layout/buildLayoutMap';
 import type { Issue, IssueOccurrence, RelatedElement, Viewport, ViewportResult } from '@/types/inspection';
 import { computeCropRect, cropBasisBox } from './crop';
 import { evidenceText } from './sentences';
@@ -12,10 +13,10 @@ import { issueTitle } from './title';
 // buildIssues(T06)의 중간 이슈를 Issue(PRD 8.2)로 완성한다. AI 필드(analysis, analysisSkippedReason)는 비워 둔다(DOMAIN_MODEL 4.2).
 // 측정값, ID, Priority, 정렬은 바꾸지 않는다.
 
-/** viewport 하나의 수집 데이터와 저장된 스크린샷 크기 */
+/** viewport 하나의 수집 데이터와 저장된 스크린샷 크기. 스크린샷을 찍지 못했으면(SCREENSHOT_FAILED) null이다 */
 export interface ViewportArtifacts {
   collected: CollectedViewport;
-  screenshot: Pick<ScreenshotMeta, 'screenshotWidth' | 'screenshotHeight'>;
+  screenshot: Pick<ScreenshotMeta, 'screenshotWidth' | 'screenshotHeight'> | null;
 }
 
 function toOccurrence(raw: RawIssue, artifacts: ViewportArtifacts): IssueOccurrence {
@@ -42,7 +43,8 @@ function toOccurrence(raw: RawIssue, artifacts: ViewportArtifacts): IssueOccurre
     delta: { ...raw.delta },
     evidenceText: evidenceText(raw, collected),
     relatedElements,
-    cropRect: computeCropRect(cropBox, screenshot.screenshotWidth, screenshot.screenshotHeight),
+    // PRD 5.2.4: 스크린샷이 없는 viewport의 cropRect는 모두 null이다
+    cropRect: screenshot ? computeCropRect(cropBox, screenshot.screenshotWidth, screenshot.screenshotHeight) : null,
     computedStyle: { ...el.computedStyle },
     sourceHints: structuredClone(el.sourceHints),
     confidence: raw.confidence,
@@ -80,13 +82,18 @@ export function finalizeIssues(issues: readonly DetectedIssue[], viewports: Reco
   });
 }
 
-/** PRD 8.2 ViewportResult. screenshotUrl은 T09에서 Blob URL이 들어간다 */
+/**
+ * PRD 8.2 ViewportResult. screenshotUrl은 T09에서 Blob URL이 들어간다.
+ * 스크린샷을 찍지 못했으면(SCREENSHOT_FAILED, PRD 5.2.4) screenshot과 screenshotUrl이 null이고, 스크린샷 값은 모두 null,
+ * screenshotTruncated는 false, documentHeight는 수집 시점의 값이다(DOMAIN_MODEL V-2).
+ */
 export function buildViewportResult(
   collected: CollectedViewport,
-  screenshot: ScreenshotMeta,
+  screenshot: ScreenshotMeta | null,
   detection: Pick<ViewportDetection, 'overlaysDetected'>,
-  screenshotUrl: string,
+  screenshotUrl: string | null,
 ): ViewportResult {
+  const shot = screenshot && screenshotUrl !== null ? { meta: screenshot, url: screenshotUrl } : null;
   return {
     width: collected.viewportSize.width,
     height: collected.viewportSize.height,
@@ -94,14 +101,16 @@ export function buildViewportResult(
     layoutWidth: collected.layoutWidth,
     hasMetaViewport: collected.hasMetaViewport,
     // 스크린샷 촬영 시점의 값. screenshotTruncated와 같은 기준이어야 V-2가 성립한다
-    documentHeight: screenshot.documentHeight,
-    screenshotUrl,
-    screenshotWidth: screenshot.screenshotWidth,
-    screenshotHeight: screenshot.screenshotHeight,
-    screenshotTruncated: screenshot.screenshotTruncated,
+    documentHeight: shot ? shot.meta.documentHeight : collected.documentHeight,
+    screenshotUrl: shot ? shot.url : null,
+    screenshotWidth: shot ? shot.meta.screenshotWidth : null,
+    screenshotHeight: shot ? shot.meta.screenshotHeight : null,
+    screenshotTruncated: shot ? shot.meta.screenshotTruncated : false,
     elementsInspected: collected.elements.length,
     elementsTruncated: collected.elementsTruncated,
     hasCanvas: collected.hasCanvas,
     overlaysDetected: [...detection.overlaysDetected],
+    // 스크린샷 성공 여부와 관계없이 항상 만든다 (DETECTION_RULES 16장)
+    layoutMap: buildLayoutMap(collected),
   };
 }

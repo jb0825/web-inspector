@@ -78,7 +78,7 @@ src/
   components/                           # 여러 feature가 함께 쓰는 UI
     ui/                                 # 도메인을 모르는 UI: Button, Badge, Tabs, Textarea, CopyButton, Notice ...
     layout/                             # Header, PageContainer
-    inspection/                         # 도메인 값 표시 전용: PriorityBadge, ViewportTagBadge, IssueTypeLabel, CertaintyBadge
+    inspection/                         # 도메인 값 표시 전용: PriorityBadge, ViewportTagBadge, IssueTypeLabel, CertaintyBadge, SchematicLayer(배치도 SVG)
     polling/                            # useInspectionPolling (Progress와 결과 화면이 함께 사용, API_SPEC 7장)
     api/                                # 클라이언트 fetch 래퍼 (POST/GET /api/inspections). Home, Progress, polling이 함께 사용
 
@@ -99,13 +99,15 @@ src/
     http/inspections.ts                 # API 4개의 요청 처리. route 파일은 의존성(저장소, after)만 넣어 호출한다
     browser/
       launch.ts                         # 환경별 Chromium 실행 (Local / Vercel 분기), 닫기와 강제 종료
+      crashDumps.ts                     # Vercel /tmp의 Chromium core 덤프 삭제 (닫은 뒤, 실행 전. PRD 8.5)
+      resources.ts                      # 인스턴스 자원 사용량 로그 (fd, /tmp, Chromium 프로세스)
       session.ts                        # viewport마다 실행 → 검사 → 닫기 (withFreshBrowser, inspectViewportInFreshBrowser)
       render.ts                         # viewport 1개: context → 안정화 → 수집 → 스크린샷, 단계별 강제 시간 제한
       timeouts.ts                       # withHardTimeout과 강제 제한 상수 (PRD에 없는 값)
       fonts.ts                          # CJK 폰트 로드
       stabilize.ts                      # PRD 5.2.2 렌더링 안정화 절차
       devices.ts                        # Desktop / Mobile context 설정
-      screenshot.ts                     # 전체 페이지 스크린샷, PNG 헤더에서 실제 크기 읽기 (PRD 5.2.4)
+      screenshot.ts                     # 전체 페이지 스크린샷, PNG 헤더에서 실제 크기 읽기, 실패 시 SCREENSHOT_FAILED (PRD 5.2.4)
     collect/
       inpage/                           # page.evaluate로 실행되는 브라우저 내부 코드
       collect.ts                        # viewport별 측정 데이터 수집, 반올림, 후보 정리
@@ -123,6 +125,9 @@ src/
       pipeline.ts                       # buildIssues: 탐지부터 유형 간 연결까지 (DETECTION_RULES 1.3)
       geometry.ts                       # 보이는 영역 계산 (DETECTION_RULES 3.6)
     compare/match.ts                    # Desktop / Mobile 요소 매칭 (PRD 5.6)
+    layout/
+      constants.ts                      # 페이지 구성 도면 상수 (DETECTION_RULES 16.3)
+      buildLayoutMap.ts                 # 수집 데이터 → ViewportResult.layoutMap (순수 함수, DETECTION_RULES 16장)
     analysis/
       rules.ts                          # 규칙 기반 원인 분석 규칙 표 (PRD 5.7.1, DETECTION_RULES 13.1)
       analyze.ts                        # analyzeIssues: 이슈별 analysis/skip 사유. T15에서 AI로 바뀔 자리
@@ -167,12 +172,16 @@ src/
   lib/                                  # 서버·클라이언트 공용 유틸 (도메인 로직 없음)
     utils.ts                            # cn() 등
     format.ts                           # 숫자, 날짜, px 표기
+    rect.ts                             # 사각형 교집합·합집합
+    cropBasis.ts                        # cropRect 기준 박스와 완전 포함 판정(DETECTION_RULES 8.3). 서버 cropRect와 화면 이슈 도면이 함께 쓴다
+    schematic.ts                        # 배치도 좌표 변환, label 말줄임, 최소 도면 판정 (WIREFRAME 5.6). 미리보기와 Issue Detail이 함께 쓴다
 
 public/fonts/                           # Noto Sans KR 폰트 파일과 OFL 라이선스 (단일 원본, 7.1)
 public/fixtures/                        # 모든 페이지가 /fonts/의 폰트를 @font-face로 사용 (7.1)
   positive/P-01.html ... P-06.html      # PRD 13.1
   negative/N-01.html ... N-09.html
 public/demo/landing.html                # 샘플 리포트용 검사 대상 데모 페이지. Fixture가 아니다(test:fixtures 판정에 넣지 않음)
+public/demo/canvas-only.html            # canvas 위주 페이지의 배치도 확인용 데모 (이슈 0개 목표). Fixture가 아니다
 public/sample/                          # 샘플 리포트 정적 데이터 (inspection.json, 스크린샷). pnpm import-sample로만 바꾼다
 public/showcase/{before,after}/         # Before/After 사례 정적 데이터. pnpm import-sample --target showcase/…로만 바꾼다
 scripts/                                # 로컬 도구: collect, detect, fixture-screenshots, ui-shots, import-sample(sample/core.ts), compare-inspections(compare/core.ts)
@@ -249,7 +258,7 @@ pnpm compare-inspections <before.json> <after.json>   # Before/After 비교 Mark
 | `AI_API_KEY` | LLM API |
 | `AI_MODEL` | 사용할 모델 ID |
 | `INTERNAL_API_SECRET` | `/analyze` 내부 호출 보호 |
-| `MAX_CONCURRENT_INSPECTIONS` | 기본값 2 |
+| `MAX_CONCURRENT_INSPECTIONS` | 기본값 1 (PRD 8.4: Hobby 1 vCPU에서 Chromium 두 개가 CPU를 나눠 쓰지 않게) |
 | `VERCEL_AUTOMATION_BYPASS_SECRET` | 선택. 배포 보호를 켠 경우 내부 `/analyze` 호출에 사용 (API_SPEC 4.3). Vercel의 "Protection Bypass for Automation"을 켜면 제공된다. Preview 확인에 필요하므로 등록해 둔다 |
 | `VERCEL_URL` | Vercel 시스템 환경변수(직접 설정하지 않음). 내부 호출 주소의 2순위 값으로, 요청 host를 알 수 없을 때만 쓴다 (PRD 8.1.2) |
 

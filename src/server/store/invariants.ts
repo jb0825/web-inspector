@@ -2,6 +2,7 @@ import 'server-only';
 import { VIEWPORTS } from '@/server/browser/devices';
 import { MAX_CANDIDATES, MAX_ISSUES, NEEDS_REVIEW_BELOW, SCREENSHOT_MAX_HEIGHT } from '@/server/detect/constants';
 import { formatIssueId } from '@/server/detect/order';
+import { LAYOUT_MAX_BLOCKS, LAYOUT_MAX_HEIGHT } from '@/server/layout/constants';
 import type { SubtypeByType } from '@/server/detect/types';
 import { priorityOf, toScore100 } from '@/server/priority/score';
 import { formatTaskId, issueNumber, MAX_ISSUES_PER_TASK } from '@/server/tasks/group';
@@ -10,7 +11,7 @@ import type { DevTask, Inspection, Issue, IssueType, Priority, Viewport, Viewpor
 // DOMAIN_MODEL 3장 불변 조건. 테스트(단위, Fixture, 샘플 리포트 검증)에서만 실행한다.
 // 운영 중 저장할 때는 호출하지 않는다: 코드 버그 하나로 정상적인 검사 결과 전체가 실패 처리되지 않게 하기 위해서다.
 //
-// 구현 범위: Inspection I-1~I-11, ViewportResult V-1~V-3, Issue S-1~S-13, DevTask T-1~T-8,
+// 구현 범위: Inspection I-1~I-11, ViewportResult V-1~V-4, Issue S-1~S-13, DevTask T-1~T-8,
 // 규칙 기반 분석 A-1, A-2 (T10에서 추가, DOMAIN_MODEL에 없는 조건).
 
 /**
@@ -53,18 +54,42 @@ export function viewportResultViolations(viewport: Viewport, result: ViewportRes
   if (result.width !== expected.width || result.height !== expected.height) {
     out.push({ id: 'V-1', message: `${at}: ${result.width}×${result.height} ≠ 설정값 ${expected.width}×${expected.height}` });
   }
-  if (result.screenshotHeight > SCREENSHOT_MAX_HEIGHT[viewport]) {
-    out.push({ id: 'V-2', message: `${at}: screenshotHeight ${result.screenshotHeight} > 상한 ${SCREENSHOT_MAX_HEIGHT[viewport]}` });
-  }
-  const truncated = result.documentHeight > result.screenshotHeight;
-  if (result.screenshotTruncated !== truncated) {
-    out.push({
-      id: 'V-2',
-      message: `${at}: screenshotTruncated=${result.screenshotTruncated}, documentHeight ${result.documentHeight} / screenshotHeight ${result.screenshotHeight}`,
-    });
+  if (result.screenshotUrl === null || result.screenshotWidth === null || result.screenshotHeight === null) {
+    // 스크린샷만 실패한 viewport(SCREENSHOT_FAILED, PRD 5.2.4): 세 값이 함께 null이고 잘림 표시는 하지 않는다
+    if (result.screenshotUrl !== null || result.screenshotWidth !== null || result.screenshotHeight !== null || result.screenshotTruncated) {
+      out.push({
+        id: 'V-2',
+        message: `${at}: 스크린샷 없음이면 screenshotUrl/Width/Height가 모두 null이고 screenshotTruncated가 false여야 한다 (${json([result.screenshotUrl !== null, result.screenshotWidth, result.screenshotHeight, result.screenshotTruncated])})`,
+      });
+    }
+  } else {
+    if (result.screenshotHeight > SCREENSHOT_MAX_HEIGHT[viewport]) {
+      out.push({ id: 'V-2', message: `${at}: screenshotHeight ${result.screenshotHeight} > 상한 ${SCREENSHOT_MAX_HEIGHT[viewport]}` });
+    }
+    const truncated = result.documentHeight > result.screenshotHeight;
+    if (result.screenshotTruncated !== truncated) {
+      out.push({
+        id: 'V-2',
+        message: `${at}: screenshotTruncated=${result.screenshotTruncated}, documentHeight ${result.documentHeight} / screenshotHeight ${result.screenshotHeight}`,
+      });
+    }
   }
   if (result.elementsTruncated && result.elementsInspected !== MAX_CANDIDATES) {
     out.push({ id: 'V-3', message: `${at}: elementsTruncated인데 elementsInspected ${result.elementsInspected} ≠ ${MAX_CANDIDATES}` });
+  }
+  const map = result.layoutMap;
+  if (map) {
+    // V-4: 블록 수 상한, 정수 좌표, 문서 범위 안 (예전 문서에는 layoutMap이 없다)
+    if (map.blocks.length > LAYOUT_MAX_BLOCKS) out.push({ id: 'V-4', message: `${at}: layoutMap 블록 ${map.blocks.length}개 > 상한 ${LAYOUT_MAX_BLOCKS}` });
+    if (map.height > LAYOUT_MAX_HEIGHT[viewport] || map.scrollWidth < map.width) {
+      out.push({ id: 'V-4', message: `${at}: layoutMap ${map.width}/${map.scrollWidth}×${map.height}` });
+    }
+    map.blocks.forEach((b, i) => {
+      const r = b.rect;
+      const ints = [r.x, r.y, r.width, r.height].every(Number.isInteger);
+      const inside = r.x >= 0 && r.y >= 0 && r.width > 0 && r.height > 0 && r.x + r.width <= map.scrollWidth && r.y + r.height <= map.height;
+      if (!ints || !inside) out.push({ id: 'V-4', message: `${at}: layoutMap.blocks[${i}] ${json(r)}가 정수가 아니거나 문서 ${map.scrollWidth}×${map.height} 밖이다` });
+    });
   }
   return out;
 }
@@ -138,6 +163,10 @@ function issueViolations(issue: Issue, index: number, inspection: Inspection, st
     const vr = inspection.viewports[o.viewport];
     if (!o.cropRect || !vr) continue;
     const c = o.cropRect;
+    if (vr.screenshotWidth === null || vr.screenshotHeight === null) {
+      add('S-11', `${o.viewport} 스크린샷이 없는데 cropRect ${json(c)}가 있다`);
+      continue;
+    }
     const inside =
       c.x >= -EPSILON && c.y >= -EPSILON && c.width > 0 && c.height > 0 &&
       c.x + c.width <= vr.screenshotWidth + EPSILON && c.y + c.height <= vr.screenshotHeight + EPSILON;

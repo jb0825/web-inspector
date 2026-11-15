@@ -138,6 +138,28 @@ describe('createLaunchedBrowser: 닫기와 강제 종료', () => {
     expect(Date.now() - started).toBeLessThan(500);
   });
 
+  it('정상 종료든 강제 종료든 프로세스가 끝난 뒤 정리(크래시 덤프 삭제)를 한 번 한다', async () => {
+    const order: string[] = [];
+    const s = server({ kill: vi.fn(async () => void order.push('kill')) });
+    const afterClose = vi.fn(async () => void order.push('cleanup'));
+    const killed = createLaunchedBrowser({ close: () => never() } as unknown as Browser, s, 5, { closeMs: 20, killMs: 50 }, afterClose);
+    expect(await killed.close()).toBe('killed');
+    await killed.close();
+    expect(order).toEqual(['kill', 'cleanup']);
+
+    const cleanup = vi.fn(async () => undefined);
+    const closed = createLaunchedBrowser({ close: vi.fn(async () => undefined) } as unknown as Browser, server(), 5, { closeMs: 50, killMs: 50 }, cleanup);
+    expect(await closed.close()).toBe('closed');
+    expect(cleanup).toHaveBeenCalledTimes(1);
+  });
+
+  it('정리가 실패하거나 멈춰도 닫기 결과를 돌려준다', async () => {
+    const failing = createLaunchedBrowser({ close: vi.fn(async () => undefined) } as unknown as Browser, server(), 5, { closeMs: 50, killMs: 50 }, async () => {
+      throw new Error('EACCES');
+    });
+    expect(await failing.close()).toBe('closed');
+  });
+
   it('kill도 응답하지 않으면 더 기다리지 않는다', async () => {
     const s = server({ kill: vi.fn(() => never<void>()) });
     const launched = createLaunchedBrowser({ close: () => never() } as unknown as Browser, s, 5, { closeMs: 20, killMs: 20 });
@@ -163,7 +185,7 @@ describe('withFreshBrowser / inspectViewportInFreshBrowser', () => {
   });
 
   it('실행 시간을 viewport 예산에서 빼고 timings에 launchMs를 남긴다', async () => {
-    const render = vi.fn<InspectionDeps['renderViewport']>(async () => ({ collected: site('desktop'), screenshot: {} as RenderedViewport['screenshot'], finalUrl: 'x', timings: {} }));
+    const render = vi.fn<InspectionDeps['renderViewport']>(async () => ({ collected: site('desktop'), screenshot: {} as RenderedViewport['screenshot'], screenshotError: null, finalUrl: 'x', timings: {} }));
     const result = await inspectViewportInFreshBrowser({ launchBrowser: async () => launchedWith({} as Browser), renderViewport: render }, 'desktop', 'https://example.com/', {
       guard,
       timeLimitMs: 1_000,
@@ -227,6 +249,7 @@ describe('runInspection: 멈춘 viewport를 끊고 다음 viewport를 새 브라
     const mobileRendered: RenderedViewport = {
       collected: site('mobile'),
       screenshot: { png: Buffer.from('png'), screenshotWidth: 616, screenshotHeight: 2000, documentHeight: 2000, screenshotTruncated: false, mode: 'full', failedAttempts: 0 },
+      screenshotError: null,
       finalUrl: 'https://example.com/',
       timings: {},
     };

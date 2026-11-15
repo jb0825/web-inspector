@@ -1,8 +1,13 @@
 # AI Website Inspector — Detection Rules
 
-> Version: 2.2
+> Version: 2.3
 > Status: Draft
 > Related Documents: PRD.md (v1.2), AGENTS.md
+
+### Changelog (v2.2 → v2.3)
+
+- 추가: 페이지 구성 도면 `layoutMap` 추출 규칙과 상수(16장). 수집한 후보 요소만으로 만들고 브라우저에서 새로 측정하지 않는다. 수집에 label 원재료 `layoutAttrs`(alt, placeholder, input type)를 더했다(3.1).
+- 수정: `cropRect`는 크롭 기준 박스가 스크린샷 안에 완전히 들어올 때만 만든다. 일부만 걸치면 `null`(8.3).
 
 ### Changelog (v2.1 → v2.2)
 
@@ -211,6 +216,7 @@ interface CollectedElement {
   selector: string;                        // 3.4
   sourceHints: SourceHints;                // 3.5
   identity: { id?: string; testId?: string };
+  layoutAttrs?: { alt?: string; placeholder?: string; type?: string };  // 16.2 label 원재료. 속성이 있을 때만. type은 input만(소문자)
 }
 ```
 
@@ -668,9 +674,14 @@ if subtype == spill:           box = box ∪ ([textLeft, textRight] × [textTop,
 // clipped는 잘린 글자가 화면에 보이지 않으므로 넓히지 않는다
 r = box를 사방 CROP_PADDING_PX만큼 확장
 r의 너비가 CROP_MIN_WIDTH_PX보다 작으면 중심 기준으로 넓힘, 높이도 같은 방식
+if box가 [0, screenshotWidth] × [0, screenshotHeight] 안에 완전히 들어오지 않음 (허용치 1px): cropRect = null   // v2.3
 r을 [0, screenshotWidth] × [0, screenshotHeight] 안으로 이동 (크기가 더 크면 잘라냄)   // 3.1.1: 실제 스크린샷 크기
-if box.y >= screenshotHeight: cropRect = null
 ```
+
+- **완전 포함 조건 (v2.3):** 크롭 기준 박스(패딩 전)가 스크린샷 밖이거나 일부만 걸치면 `cropRect`는 `null`이다. 일부만 보이는 크롭은 문제 부분(화면 밖으로 나간 쪽, 아래로 넘친 쪽)을 잘라 보여주기 때문이다. 화면은 이때 측정값으로 그린 배치도(16장)를 보여준다. 판정 함수는 서버와 화면이 함께 쓰는 `src/lib/cropBasis.ts`의 `cropBasisFitsScreenshot`이다. 허용치는 PRD 5.3.1의 1px이다.
+  - 예: P-04 Desktop `hidden-clip`(넘침 범위 1084~1484, 스크린샷 너비 1440)은 `cropRect = null`이다.
+
+- 스크린샷을 찍지 못한 viewport(`SCREENSHOT_FAILED`, PRD 5.2.4)는 계산하지 않고 모든 occurrence의 `cropRect`가 `null`이다(`src/server/evidence/finalize.ts`).
 
 - Overlap의 b는 대표 상대 요소(`relatedElements[0]`)다.
 - `box`는 크롭으로 **무엇을 보여줄지**만 정한다. 하이라이트 위치인 `boundingBox`는 요소의 rect 그대로다.
@@ -679,7 +690,7 @@ if box.y >= screenshotHeight: cropRect = null
 - 경계로 쓰는 스크린샷 크기는 PNG 헤더에서 읽은 실제 크기다(`src/server/browser/screenshot.ts`).
   - Mobile에서 페이지가 축소되면 `layoutWidth`보다 넓다(P-01: 616×1334).
   - 루트가 가로를 자르는 페이지(`rootClip`)는 스크린샷 너비가 `layoutWidth`다(PRD 5.2.4). 사용자가 볼 수 없는 영역을 보여주지 않기 위해서다.
-- `boundingBox`는 스크린샷 밖으로 나갈 수 있다(예: `hidden-clip`). 화면은 하이라이트 박스를 크롭 영역 안으로 잘라 그린다.
+- `boundingBox`는 스크린샷 밖으로 나갈 수 있다(예: `hidden-clip`). 이때는 기준 박스도 밖으로 나가므로 `cropRect`가 `null`이다.
 
 ### 8.4 `computedStyle`
 
@@ -967,8 +978,75 @@ PRD에 없던 구현 결정이다. AGENTS.md 6장에 따라 보고 대상이다.
 40. 프롬프트의 PRD 미정 경우(13.4)와 Markdown 처리 규칙. 새 파일 `src/server/prompt/markdown.ts`.
 41. 새 폴더 `src/server/analysis/`(`rules.ts`, `analyze.ts`)와 새 파일 `src/server/tasks/build.ts`.
 42. 분석 단계 예외(규칙 분석 실패 포함)에도 `AI_FAILED`를 쓴다(PRD 6.2.4). 이름은 AI 연동(T15)을 기준으로 둔다.
+43. (v2.3) 페이지 구성 도면 `layoutMap`의 추출 규칙과 상수 전부(16장). 새 폴더 `src/server/layout/`(`buildLayoutMap.ts`, `constants.ts`).
+44. (v2.3) 수집에 `layoutAttrs`(alt, placeholder, input type)를 더했다(3.1). label 외에는 쓰지 않는다.
+45. (v2.3) `cropRect` 완전 포함 조건과 1px 허용치(8.3).
 
 ---
 
-**Document Status:** Draft v2.2
+## 16. 페이지 구성 도면 (`layoutMap`, `src/server/layout/`)
+
+`ViewportResult.layoutMap`(PRD 8.2)은 사진이 없는 부분을 도면으로 채우기 위한 페이지 구성이다. `buildViewportResult`가 스크린샷 성공 여부와 관계없이 **항상** 만든다. 수집한 `CollectedViewport`만으로 만드는 순수 함수 `buildLayoutMap(collected)`이고, 브라우저에서 새로 측정하지 않는다. 탐지 결과, ID, Priority에 영향을 주지 않는다.
+
+### 16.1 블록 선택
+
+후보 요소를 문서 순서(index)로 보며 위에서부터 처음 맞는 순위를 쓴다. 영역은 보이는 영역(3.6 `visibleRect`, text는 `visibleTextRects`의 합집합)이고, 보이는 영역이 없으면 넣지 않는다.
+
+| 순위 | kind | 조건 |
+|---|---|---|
+| 1 | header, nav, main, section, footer, aside, form | 해당 태그 또는 `role` ∈ {banner, navigation, main, region, contentinfo, complementary, form}. 면적 ≥ `layoutWidth × LAYOUT_STRUCT_MIN_HEIGHT_PX` |
+| 2 | canvas, video, iframe | 태그. 크기 조건 없음 |
+| 3 | heading | `h1`~`h3`, `role=heading` |
+| 4 | button | `button`, `input[type=submit|button|reset|image]`, 또는 자신이 인터랙티브(3.3)이면서 테두리 박스이고 높이 ≤ `LAYOUT_BUTTON_MAX_HEIGHT_PX` (input/select/textarea 제외) |
+| 5 | image | `img`, `svg`, `background-image`에 `url(`이 있는 요소. 면적 ≥ `LAYOUT_IMAGE_MIN_AREA_PX2` |
+| 6 | input | `input`(hidden 제외, 4의 type 제외), `select`, `textarea` |
+| 7 | card | 테두리 박스이고 면적 ≥ `layoutWidth × viewportSize.height × LAYOUT_CARD_MIN_VIEWPORT_RATIO` |
+| 8 | text | 텍스트 요소. 보이는 텍스트 rect 합집합의 높이 ≥ `LAYOUT_TEXT_MIN_HEIGHT_PX` |
+
+1. 좌표를 정수로 반올림(Math.round, 네 변 각각)하고 문서 범위 `[0, scrollWidth] × [0, height]`로 자른다. 비면 버린다. `scrollWidth = max(layoutWidth, documentScrollWidth)`, `height = min(documentHeight, LAYOUT_MAX_HEIGHT[viewport])`.
+2. 중복 제거: 가장 가까운 남은 조상 블록과 사방 `LAYOUT_DEDUP_TOLERANCE_PX` 이내로 같으면 하나만 남긴다. 구조(1)·미디어(2) 블록은 항상 남기고, 한쪽만 그렇다면 그쪽을 남긴다. 둘 다 아니면 순위가 높은 쪽, 같으면 바깥쪽을 남긴다.
+3. 블록이 `LAYOUT_MAX_BLOCKS`를 넘으면 순위 → 면적(큰 순) → index로 골라 상한만큼 남기고, 다시 index 순으로 정렬한다.
+4. `depth`는 남은 구조 블록 중 조상의 개수다.
+5. `truncated = documentHeight > LAYOUT_MAX_HEIGHT[viewport] || 블록 수 상한에 걸림`.
+
+### 16.2 label
+
+페이지에서 가져온 문자열이다. 제어 문자와 줄바꿈을 공백으로 바꾸고 공백을 하나로 줄인 뒤, 길이를 넘으면 말줄임(…)한다(UTF-16 길이 기준, 서로게이트 쌍을 자르지 않는다). 화면은 문자열로만 렌더링한다(AGENTS.md 8장).
+
+| kind | label |
+|---|---|
+| 구조 블록 | `{tag}#{id}` → `{tag} "{aria-label}"` → `{tag} "{안의 첫 heading textSnippet 30자}"` → `{tag}` (40자). role로 판정한 블록은 `{tag}` 대신 kind |
+| heading | `textSnippet` 30자 |
+| button | `textSnippet`(없으면 `aria-label`) 20자 |
+| text, card | 없음 |
+| image | `alt` 20자, 없으면 "이미지" |
+| canvas, video | "canvas", "video" |
+| iframe | "iframe (내부 미검사)" |
+| input | `placeholder` → `name` 20자, 없으면 "입력" |
+
+### 16.3 상수 (`src/server/layout/constants.ts`)
+
+| 상수 | 값 |
+|---|---|
+| `LAYOUT_MAX_BLOCKS` | 400 |
+| `LAYOUT_MAX_HEIGHT` | Desktop 10,000 / Mobile 15,000 |
+| `LAYOUT_STRUCT_MIN_HEIGHT_PX` | 40 |
+| `LAYOUT_IMAGE_MIN_AREA_PX2` | 48 × 48 |
+| `LAYOUT_CARD_MIN_VIEWPORT_RATIO` | 0.02 |
+| `LAYOUT_BUTTON_MAX_HEIGHT_PX` | 120 |
+| `LAYOUT_TEXT_MIN_HEIGHT_PX` | 12 |
+| `LAYOUT_DEDUP_TOLERANCE_PX` | 4 |
+| label 길이 | 40 / heading 30 / button·image·input 20 |
+
+### 16.4 크기
+
+블록 하나가 약 80~90바이트라 viewport당 최대 약 36KB다. fillout.com(로컬 측정): Desktop 251블록 20.7KB, Mobile 228블록 18.6KB. 문서가 1MB를 넘으면 `LAYOUT_MAX_BLOCKS`를 줄인다(DOMAIN_MODEL 6.1).
+
+### 16.5 테스트 (`tests/unit/layoutMap.test.ts`)
+
+같은 입력 → 바이트 단위로 같은 출력, 입력 순서를 섞어도 같음, 순위별 선택과 label, 블록 상한, 높이 상한, 중첩 중복 제거, canvas만 있는 입력, label 정리와 길이 제한.
+
+---
+
+**Document Status:** Draft v2.3
 **Next Step:** DOMAIN_MODEL을 PRD v1.2 8.2 기준으로 다시 작성한다.

@@ -21,6 +21,8 @@ export type ErrorCode =
   | 'HTTP_ERROR'
   | 'BROWSER_CRASH'
   | 'DETECTION_FAILED'
+  /** 스크린샷만 실패함. viewport 실패가 아니다(ViewportResult.screenshotUrl = null, PRD 5.2.4) */
+  | 'SCREENSHOT_FAILED'
   | 'TIME_BUDGET_EXCEEDED'
   | 'STORAGE_FAILED'
   | 'AI_FAILED'
@@ -79,17 +81,67 @@ export interface ViewportResult {
   layoutWidth: number;
   hasMetaViewport: boolean;
   documentHeight: number;
-  screenshotUrl: string;
+  /**
+   * 스크린샷 URL. 촬영에 실패했으면(SCREENSHOT_FAILED, PRD 5.2.4) null이고, 이때 screenshotWidth/Height도 null,
+   * screenshotTruncated는 false다. 측정과 이슈는 그대로 있고 이 viewport의 cropRect는 모두 null이다.
+   */
+  screenshotUrl: string | null;
   /** 저장된 스크린샷 너비 (CSS px). Mobile 축소 시 layoutWidth보다 넓을 수 있다 */
-  screenshotWidth: number;
+  screenshotWidth: number | null;
   /** 저장된 스크린샷 높이 (CSS px) */
-  screenshotHeight: number;
+  screenshotHeight: number | null;
   screenshotTruncated: boolean;
   elementsInspected: number;
   elementsTruncated: boolean;
   hasCanvas: boolean;
   /** selector 목록 */
   overlaysDetected: string[];
+  /**
+   * 페이지 구성 도면 (DETECTION_RULES 16장). 스크린샷 성공 여부와 관계없이 항상 저장한다.
+   * 이 필드가 생기기 전에 저장된 문서에는 없다. 없으면 화면은 최소 도면을 그린다.
+   */
+  layoutMap?: LayoutMap;
+}
+
+export type LayoutBlockKind =
+  | 'header'
+  | 'nav'
+  | 'main'
+  | 'section'
+  | 'footer'
+  | 'aside'
+  | 'form'
+  | 'heading'
+  | 'text'
+  | 'image'
+  | 'button'
+  | 'input'
+  | 'canvas'
+  | 'video'
+  | 'iframe'
+  | 'card';
+
+export interface LayoutBlock {
+  kind: LayoutBlockKind;
+  /** 문서 기준, 정수, [0, scrollWidth] × [0, height] 안 */
+  rect: Rect;
+  /** 페이지에서 가져온 문자열(최대 40자). 화면에는 문자열로만 렌더링한다 */
+  label?: string;
+  /** 이 블록을 감싸는 구조 블록 수 */
+  depth: number;
+}
+
+export interface LayoutMap {
+  /** layoutWidth (화면 너비) */
+  width: number;
+  /** 문서 가로 범위 = max(layoutWidth, documentScrollWidth). 화면 밖으로 나간 블록까지 담는다 */
+  scrollWidth: number;
+  /** documentHeight (상한 LAYOUT_MAX_HEIGHT, 넘으면 truncated) */
+  height: number;
+  /** 블록 수나 높이 상한에 걸렸는지 */
+  truncated: boolean;
+  /** 문서 순서 */
+  blocks: LayoutBlock[];
 }
 
 export interface RelatedElement {

@@ -42,7 +42,8 @@ describe('public/sample/inspection.json', () => {
     for (const v of ['desktop', 'mobile'] as const) {
       expect(sample.viewports[v]?.screenshotUrl).toBe(SAMPLE_SCREENSHOT_URL[v]);
     }
-    expect(validateSample(sample, { desktop: readPng('desktop-full.png'), mobile: readPng('mobile-full.png') })).toEqual([]);
+    // 저장소의 샘플은 layoutMap이 생기기 전 검사 결과라 없다. production에서 다시 가져온 뒤 requireLayoutMap 옵션을 지운다
+    expect(validateSample(sample, { desktop: readPng('desktop-full.png'), mobile: readPng('mobile-full.png') }, 'sample', { requireLayoutMap: false })).toEqual([]);
   });
 });
 
@@ -117,6 +118,24 @@ describe('toSampleDocument / validateSample', () => {
     };
     expect(validateSample(outside).some((p) => p.startsWith('desktop: screenshotUrl'))).toBe(true);
     expect(validateSample({ nope: true })[0]).toMatch(/^schema/);
+  });
+
+  it('layoutMap이 없거나 블록이 없는 viewport가 있으면 가져오지 않는다', () => {
+    const block = { kind: 'image' as const, rect: { x: 0, y: 0, width: 10, height: 10 }, depth: 0 };
+    const withMap = (blocks: (typeof block)[]) => {
+      const out = structuredClone(sample);
+      for (const v of ['desktop', 'mobile'] as const) {
+        const vr = out.viewports[v];
+        if (vr) vr.layoutMap = { width: vr.layoutWidth, scrollWidth: vr.layoutWidth, height: vr.documentHeight, truncated: false, blocks };
+      }
+      return out;
+    };
+    expect(validateSample(sample).filter((p) => p.includes('layoutMap')).length).toBe(2);
+    expect(validateSample(withMap([block])).filter((p) => p.includes('layoutMap'))).toEqual([]);
+    expect(validateSample(withMap([])).filter((p) => p.includes('layoutMap has no blocks')).length).toBe(2);
+    const oneSide = withMap([block]);
+    if (oneSide.viewports.mobile) delete oneSide.viewports.mobile.layoutMap;
+    expect(validateSample(oneSide).filter((p) => p.includes('layoutMap'))).toEqual([expect.stringMatching(/^mobile: layoutMap is missing/)]);
   });
 
   it('PNG 크기가 문서와 다르면 문제를 돌려준다', () => {

@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8">
+<style>
+:root{--bg:#f6f7f9;--panel:#fff;--line:#e3e6ea;--text:#1b1f24;--muted:#6b7380;--red:#e5484d;--redbg:#fdecec;--amber:#d9822b;--blue:#2f6fed;--ok:#2e9d57}
+*{box-sizing:border-box;margin:0}
+body{font-family:'Noto Sans CJK KR',sans-serif;background:var(--bg);color:var(--text);font-size:13px;line-height:1.5}
+code,.mono{font-family:ui-monospace,'DejaVu Sans Mono',monospace;font-size:12px}
+#screen{width:1440px;height:940px;display:flex;flex-direction:column}
+header{height:52px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 24px}
+.logo{font-weight:800;letter-spacing:-.3px}.logo span{color:var(--blue)}
+.btn{border:1px solid var(--line);background:#fff;border-radius:6px;padding:6px 12px;font-size:12px;font-weight:600}
+.btn.pri{background:var(--text);color:#fff;border-color:var(--text)}
+.wrap{flex:1;display:flex;overflow:hidden}
+main{flex:1;padding:20px 24px;overflow:hidden}
+aside{width:500px;background:#fff;border-left:1px solid var(--line);padding:20px 22px;overflow:hidden}
+h1{font-size:20px;font-weight:700}
+.badge{display:inline-block;border-radius:4px;padding:1px 7px;font-size:11px;font-weight:700}
+.b-ok{background:#e6f4ec;color:var(--ok)}.p0{background:var(--red);color:#fff}.p1{background:#f5a524;color:#fff}.p2{background:#8b95a3;color:#fff}
+.tag{border:1px solid var(--line);border-radius:4px;padding:0 6px;font-size:11px;color:var(--muted)}
+.notice{margin:12px 0;background:#eef4ff;border:1px solid #cfdcf8;border-radius:8px;padding:9px 12px;font-size:12.5px}
+.summary{display:flex;gap:18px;font-size:13px;margin:6px 0 12px;font-variant-numeric:tabular-nums}.summary b{font-weight:700}
+.previews{display:grid;grid-template-columns:2fr 1fr;gap:14px}
+.card{background:#fff;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.card h3{font-size:11.5px;letter-spacing:.4px;font-weight:700;color:var(--muted);padding:9px 12px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between}
+.card .foot{font-size:11.5px;color:var(--muted);padding:7px 12px;border-top:1px solid var(--line)}
+.schem-label{font-size:11px;color:var(--blue);font-weight:600}
+.list{margin-top:14px;background:#fff;border:1px solid var(--line);border-radius:10px}
+.tabs{display:flex;gap:18px;padding:0 14px;border-bottom:1px solid var(--line)}
+.tabs div{padding:10px 0;font-weight:600;color:var(--muted)}.tabs .on{color:var(--text);border-bottom:2px solid var(--text)}
+.item{display:grid;grid-template-columns:34px 210px 1fr 96px;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line);align-items:start}
+.item.sel{background:#fff7f7;box-shadow:inset 3px 0 0 var(--red)}
+.item .ev{grid-column:2/5;color:var(--muted);font-size:12px}
+.sec{font-size:11.5px;font-weight:700;color:var(--muted);letter-spacing:.3px;margin:16px 0 8px;display:flex;justify-content:space-between;align-items:center}
+.schem{border:1px solid var(--line);border-radius:8px;background:#fbfcfd}
+.caption{font-size:11px;color:var(--muted);margin-top:6px}
+table{width:100%;border-collapse:collapse;margin-top:8px}td{padding:4px 0;border-bottom:1px dashed var(--line);font-size:12px}td:last-child{text-align:right;font-variant-numeric:tabular-nums}
+.actions{display:flex;gap:8px;margin-top:12px}
+.analysis{background:#fff8ef;border:1px solid #f3dcc0;border-radius:8px;padding:10px 12px;font-size:12.5px}
+/* type grid */
+#types{width:1440px;padding:28px;background:var(--bg)}
+#types h2{font-size:18px;margin-bottom:4px}
+#types .sub{color:var(--muted);margin-bottom:18px}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+.tcard{background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px}
+.tcard h4{font-size:13px;margin-bottom:2px}.tcard p{font-size:12px;color:var(--muted);margin:8px 0 0}
+.legend{display:flex;gap:16px;margin-top:16px;font-size:12px;color:var(--muted)}
+.sw{display:inline-block;width:14px;height:10px;vertical-align:middle;margin-right:5px;border-radius:2px}
+</style></head><body>
+<svg width="0" height="0" style="position:absolute"><defs>
+<pattern id="hatch" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="7" height="7" fill="#fdecec"/><line x1="0" y1="0" x2="0" y2="7" stroke="#e5484d" stroke-width="2.2" opacity=".55"/></pattern>
+<pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M40 0H0V40" fill="none" stroke="#eef0f3" stroke-width="2"/></pattern>
+</defs></svg>
+
+<div id="screen">
+<header><div class="logo">Web<span>Inspector</span></div><div class="btn">새 검사</div></header>
+<div class="wrap">
+<main>
+  <div style="display:flex;align-items:center;gap:10px"><h1>검사 결과</h1><span class="badge b-ok">완료</span><div style="flex:1"></div><div class="btn">링크 복사</div></div>
+  <div style="color:var(--muted);margin-top:2px">https://startup-landing.example → https://www.startup-landing.example/ · 2026-11-15 18:20 · Desktop 1440 / Mobile 390</div>
+  <div class="notice">ⓘ Desktop 화면을 저장하지 못해 <b>측정값으로 그린 배치도</b>로 표시합니다. 측정과 이슈는 정상입니다.</div>
+  <div class="summary"><span>전체 <b>6</b></span><span>P0 <b>1</b></span><span>P1 <b>2</b></span><span>P2 <b>3</b></span><span style="color:var(--muted)">· 검토 필요 1 · Desktop 3 / Mobile 4</span></div>
+
+  <div class="previews">
+    <div class="card">
+      <h3><span>DESKTOP 1440 × 900</span><span class="schem-label">배치도 · 스크린샷 없음</span></h3>
+      <svg viewBox="0 600 1440 540" width="100%" height="300" style="display:block;background:#fff">
+        <rect x="0" y="0" width="1440" height="5820" fill="url(#grid)"/>
+        <line x1="2" y1="0" x2="2" y2="5820" stroke="#c9ced6" stroke-width="4"/><line x1="1438" y1="0" x2="1438" y2="5820" stroke="#c9ced6" stroke-width="4"/>
+        <line x1="0" y1="900" x2="1440" y2="900" stroke="#2f6fed" stroke-width="3" stroke-dasharray="18 12"/>
+        <text x="16" y="888" font-size="26" fill="#2f6fed">첫 화면 끝 (900px)</text>
+        <g><rect x="980" y="700" width="300" height="70" fill="#fdecec" stroke="#e5484d" stroke-width="5"/><circle cx="980" cy="700" r="24" fill="#e5484d"/><text x="980" y="710" font-size="28" fill="#fff" text-anchor="middle" font-weight="700">1</text></g>
+        <g><rect x="160" y="980" width="520" height="170" fill="#fff4e5" stroke="#f5a524" stroke-width="5"/><circle cx="160" cy="980" r="24" fill="#f5a524"/><text x="160" y="990" font-size="28" fill="#fff" text-anchor="middle" font-weight="700">2</text></g>
+        <g><rect x="760" y="1000" width="520" height="160" fill="#f1f3f5" stroke="#8b95a3" stroke-width="5"/><circle cx="760" cy="1000" r="24" fill="#8b95a3"/><text x="760" y="1010" font-size="28" fill="#fff" text-anchor="middle" font-weight="700">3</text></g>
+        <rect x="1410" y="640" width="14" height="120" rx="7" fill="#c9ced6"/>
+      </svg>
+      <div class="foot">이슈 3 · 페이지 윤곽과 이슈 위치만 표시 · 문서 높이 5,820px</div>
+    </div>
+    <div class="card">
+      <h3><span>MOBILE 390 × 844</span><span>스크린샷</span></h3>
+      <div style="height:300px;background:#0f172a;position:relative;overflow:hidden">
+        <div style="position:absolute;left:14px;top:16px;width:60px;height:10px;background:#334155;border-radius:3px"></div>
+        <div style="position:absolute;left:14px;top:52px;width:150%;height:22px;background:#e2e8f0;border-radius:3px;opacity:.9"></div>
+        <div style="position:absolute;left:14px;top:84px;width:80%;height:22px;background:#e2e8f0;border-radius:3px;opacity:.9"></div>
+        <div style="position:absolute;left:14px;top:124px;width:70%;height:10px;background:#64748b;border-radius:3px"></div>
+        <div style="position:absolute;left:14px;top:142px;width:60%;height:10px;background:#64748b;border-radius:3px"></div>
+        <div style="position:absolute;left:14px;top:172px;width:46%;height:34px;background:#6366f1;border-radius:6px"></div>
+        <div style="position:absolute;left:14px;top:226px;width:90%;height:70px;background:#1e293b;border-radius:8px"></div>
+        <div style="position:absolute;left:8px;top:46px;width:calc(100% - 4px);height:66px;border:3px solid #e5484d;border-right:none"></div>
+        <div style="position:absolute;left:0;top:34px;width:22px;height:22px;border-radius:50%;background:#e5484d;color:#fff;font-weight:700;font-size:12px;display:flex;align-items:center;justify-content:center">1</div>
+      </div>
+      <div class="foot">이슈 4</div>
+    </div>
+  </div>
+
+  <div class="list">
+    <div class="tabs"><div class="on">이슈 6</div><div>개발 태스크 3</div></div>
+    <div class="item sel"><span class="badge p0">P0</span><span>Viewport Overflow · page-scroll</span><span class="mono">h1 "지금 바로 무료로 시작…"</span><span class="tag">mobile-only</span><span class="ev">요소의 오른쪽 끝(493px)이 Mobile 화면 너비(390px)를 103px 벗어나 페이지 가로 스크롤이 발생합니다.</span></div>
+    <div class="item"><span class="badge p0">P0</span><span>Element Overlap</span><span class="mono">a "로그인" ↔ a "무료 체험"</span><span class="tag">desktop-only</span><span class="ev">a "로그인"과 a "무료 체험"의 표시 영역이 312px² 겹칩니다. (작은 요소 면적의 41%)</span></div>
+  </div>
+</main>
+
+<aside>
+  <div style="display:flex;justify-content:space-between"><span class="mono" style="color:var(--muted)">ISS-001</span><span style="font-size:16px;color:var(--muted)">✕</span></div>
+  <div style="font-size:15px;font-weight:700;margin:2px 0 6px">Viewport Overflow · page-scroll — h1 "지금 바로 무료로 시작…"</div>
+  <div style="display:flex;gap:6px"><span class="badge p0">P0</span><span class="tag">mobile-only</span><span class="tag">Confidence 1.0</span></div>
+
+  <div class="sec"><span>EVIDENCE · MOBILE 390 × 844</span><span class="schem-label">배치도</span></div>
+  <div class="schem">
+    <svg viewBox="-20 -18 560 250" width="100%" style="display:block">
+      <rect x="0" y="0" width="390" height="214" fill="#ffffff" stroke="#c9ced6" stroke-width="1.5"/>
+      <text x="6" y="-5" font-size="10" fill="#6b7380">화면 (0 ~ 390px)</text>
+      <rect x="390" y="0" width="150" height="214" fill="#f3f4f6"/>
+      <text x="400" y="-5" font-size="10" fill="#6b7380">화면 밖</text>
+      <rect x="12" y="34" width="366" height="150" fill="none" stroke="#9aa3af" stroke-width="1.3" stroke-dasharray="4 3"/>
+      <text x="18" y="50" font-size="10" fill="#6b7380">section#hero</text>
+      <rect x="24" y="70" width="342" height="46" fill="#fff" stroke="#e5484d" stroke-width="2"/>
+      <text x="30" y="84" font-size="10" fill="#e5484d" font-weight="700">h1 (요소 박스, 342px)</text>
+      <rect x="24" y="92" width="366" height="18" fill="#fde2e2"/>
+      <rect x="390" y="92" width="103" height="18" fill="url(#hatch)" stroke="#e5484d" stroke-width="1.5"/>
+      <text x="30" y="105" font-size="10" fill="#7a1f22">지금 바로 무료로 시작하세요 — 14일 무료 체험</text>
+      <line x1="390" y1="-14" x2="390" y2="230" stroke="#2f6fed" stroke-width="2" stroke-dasharray="6 4"/>
+      <text x="394" y="228" font-size="10" fill="#2f6fed" font-weight="700">화면 너비 390px</text>
+      <line x1="390" y1="132" x2="493" y2="132" stroke="#e5484d" stroke-width="1.5"/>
+      <line x1="493" y1="88" x2="493" y2="138" stroke="#e5484d" stroke-width="1.5"/>
+      <text x="441" y="148" font-size="11" fill="#e5484d" text-anchor="middle" font-weight="700">103px 밖으로</text>
+      <text x="493" y="84" font-size="10" fill="#e5484d" text-anchor="middle">493px</text>
+    </svg>
+  </div>
+  <div class="caption">측정값으로 그린 배치도입니다. 글꼴과 색은 실제 화면과 다를 수 있습니다.</div>
+  <div style="margin-top:10px">요소의 오른쪽 끝(493px)이 Mobile 화면 너비(390px)를 103px 벗어나 페이지 가로 스크롤이 발생합니다.</div>
+  <table><tr><td>measured · elementRight</td><td>493</td></tr><tr><td>expected · layoutWidth</td><td>390</td></tr><tr><td>delta · overflowRight</td><td>103</td></tr><tr><td>Selector</td><td class="mono">section#hero &gt; h1.title</td></tr></table>
+  <div class="actions"><div class="btn">실제 페이지 열기 ↗</div><div class="btn">개발자 도구에서 찾기 ⧉</div></div>
+
+  <div class="sec"><span>원인 분석</span><span><span class="tag">규칙 기반 추정</span> <span class="tag">likely</span></span></div>
+  <div class="analysis"><b>white-space: nowrap</b>으로 줄바꿈이 금지되어 제목이 화면 밖으로 나갑니다.<br><span class="mono" style="color:#8a5a1f">.title { white-space: normal; overflow-wrap: anywhere; }</span></div>
+</aside>
+</div></div>
+
+<div id="types">
+  <h2>유형별 이슈 도면</h2>
+  <div class="sub">Issue Detail의 하이라이트 자리에 스크린샷 대신 표시됩니다. 모두 저장된 측정값만으로 그립니다.</div>
+  <div class="grid">
+    <div class="tcard"><h4>Viewport Overflow</h4><span class="tag">page-scroll</span>
+      <svg viewBox="-10 -10 300 170" width="100%" style="margin-top:8px">
+        <rect x="0" y="0" width="200" height="150" fill="#fff" stroke="#c9ced6"/><rect x="200" y="0" width="90" height="150" fill="#f3f4f6"/>
+        <rect x="14" y="56" width="180" height="30" fill="#fff" stroke="#e5484d" stroke-width="2"/>
+        <rect x="14" y="62" width="186" height="18" fill="#fde2e2"/><rect x="200" y="62" width="62" height="18" fill="url(#hatch)" stroke="#e5484d"/>
+        <line x1="200" y1="-6" x2="200" y2="156" stroke="#2f6fed" stroke-width="2" stroke-dasharray="5 4"/>
+      </svg><p>화면 경계선과 그 밖으로 나간 범위를 빗금으로 표시</p></div>
+    <div class="tcard"><h4>Element Overlap</h4><span class="tag">interactive</span>
+      <svg viewBox="-10 -10 300 170" width="100%" style="margin-top:8px">
+        <rect x="0" y="0" width="280" height="150" fill="#fff" stroke="#c9ced6"/>
+        <rect x="40" y="50" width="120" height="44" rx="6" fill="#fff" stroke="#e5484d" stroke-width="2"/><text x="52" y="77" font-size="13" fill="#e5484d">a "로그인"</text>
+        <rect x="120" y="62" width="130" height="44" rx="6" fill="#fff" stroke="#f5a524" stroke-width="2"/><text x="170" y="98" font-size="13" fill="#b26b00">a "무료 체험"</text>
+        <rect x="120" y="62" width="40" height="32" fill="url(#hatch)"/>
+      </svg><p>두 요소 박스와 교차 영역(빗금), 대표 상대 요소 강조</p></div>
+    <div class="tcard"><h4>Text Overflow</h4><span class="tag">clipped</span>
+      <svg viewBox="-10 -10 300 170" width="100%" style="margin-top:8px">
+        <rect x="0" y="0" width="280" height="150" fill="#fff" stroke="#c9ced6"/>
+        <rect x="40" y="56" width="150" height="40" rx="6" fill="#eef2ff" stroke="#e5484d" stroke-width="2"/>
+        <text x="52" y="81" font-size="13" fill="#1b1f24">지금 무료로 시작</text>
+        <rect x="190" y="56" width="58" height="40" fill="url(#hatch)" stroke="#e5484d" stroke-dasharray="4 3"/>
+        <text x="219" y="114" font-size="11" fill="#e5484d" text-anchor="middle">잘린 54px</text>
+      </svg><p>컨테이너 박스와 잘려서 안 보이는 크기(scrollWidth − clientWidth)</p></div>
+    <div class="tcard"><h4>Text Overflow</h4><span class="tag">spill</span>
+      <svg viewBox="-10 -10 300 170" width="100%" style="margin-top:8px">
+        <rect x="0" y="0" width="280" height="150" fill="#fff" stroke="#c9ced6"/>
+        <rect x="50" y="14" width="180" height="90" rx="8" fill="#f8fafc" stroke="#9aa3af" stroke-width="1.5"/>
+        <rect x="62" y="28" width="156" height="96" fill="#fde2e2" opacity=".7"/>
+        <rect x="62" y="104" width="156" height="20" fill="url(#hatch)" stroke="#e5484d"/>
+        <line x1="50" y1="104" x2="230" y2="104" stroke="#9aa3af" stroke-width="1.5"/>
+        <text x="140" y="142" font-size="11" fill="#e5484d" text-anchor="middle">아래쪽 20px 넘침</text>
+      </svg><p>테두리 박스(카드)와 그 밖으로 넘친 텍스트 범위</p></div>
+  </div>
+  <div class="legend"><span><span class="sw" style="border:2px solid #e5484d"></span>대상 요소</span><span><span class="sw" style="background:url();background:repeating-linear-gradient(45deg,#e5484d 0 2px,#fdecec 2px 5px)"></span>문제 영역</span><span><span class="sw" style="border-top:2px dashed #2f6fed;height:0"></span>화면 경계</span><span><span class="sw" style="border:1.5px dashed #9aa3af"></span>관련 요소 / 컨테이너</span></div>
+</div>
+</body></html>

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ANALYSIS_SOURCE_LABELS, ANALYSIS_UNAVAILABLE_MESSAGES, NO_ISSUES_MESSAGES, SCOPE_NOTICE_MESSAGES, SHARE_DISCLOSURE, TASK_TAB_MESSAGES } from '@/components/inspection/labels';
 import { buildIssueList, EMPTY_FILTER, isViewportFilterAvailable, issueTarget, sortIssues, summarizeIssues } from '@/features/report/logic/issues';
-import { layoutMarkers, placeBox } from '@/features/report/logic/markers';
+import { layoutMarkers, placeBox, type ScreenshotSize } from '@/features/report/logic/markers';
 import { buildScopeNotices } from '@/features/report/logic/scope';
 import { parseSelection, selectionSearch } from '@/features/report/logic/selection';
 import type { Inspection, ViewportResult } from '@/types/inspection';
@@ -126,13 +126,13 @@ describe('마커 좌표 (WIREFRAME 5.6, DETECTION_RULES 8.3)', () => {
   });
 
   it('P-01 Mobile: 축소된 616px 스크린샷의 viewBox에 boundingBox를 그대로 그린다', () => {
-    const mobile = P01_VIEWPORTS.mobile as ViewportResult;
+    const mobile = P01_VIEWPORTS.mobile as ViewportResult & ScreenshotSize;
     const listed = buildIssueList([P01_ISSUE], EMPTY_FILTER);
     const layout = layoutMarkers(listed, 'mobile', mobile, { includeNeedsReview: false });
     expect(layout.viewBox).toEqual({ width: 616, height: 1334 });
     expect(layout.markers).toHaveLength(1);
     expect(layout.markers[0]!.rect).toEqual(P01_ISSUE.occurrences[0]!.boundingBox);
-    expect(layoutMarkers(listed, 'desktop', P01_VIEWPORTS.desktop as ViewportResult, { includeNeedsReview: false }).issueCount).toBe(0);
+    expect(layoutMarkers(listed, 'desktop', P01_VIEWPORTS.desktop as ViewportResult & ScreenshotSize, { includeNeedsReview: false }).issueCount).toBe(0);
   });
 
   it('범위 밖 개수를 세고, Needs Review는 펼쳤을 때만 넣는다', () => {
@@ -171,7 +171,7 @@ describe('buildScopeNotices (WIREFRAME 5.4)', () => {
     const texts = buildScopeNotices(doc).map((n) => [n.kind, n.text]);
     expect(texts).toEqual([
       ['viewport-failed', 'Mobile 검사에 실패했습니다: 제한 시간 안에 페이지를 불러오지 못했습니다. Desktop 결과만 표시합니다.'],
-      ['screenshot-truncated', 'Desktop 스크린샷은 10,000px까지만 저장되었습니다. (측정은 전체 페이지)'],
+      ['screenshot-truncated', 'Desktop 스크린샷은 10,000px까지 저장되어, 그 아래는 배치도로 표시합니다.'],
       ['elements-truncated', '요소가 많아 Desktop 문서 앞쪽 3,000개만 검사했습니다.'],
       ['issues-truncated', '이슈가 240개 발견되어 우선순위가 높은 상위 200개만 표시합니다.'],
       ['canvas', SCOPE_NOTICE_MESSAGES.canvas],

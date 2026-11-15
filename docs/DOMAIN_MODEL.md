@@ -50,7 +50,7 @@ Inspection (Redis 문서 1개, 집합의 루트)
 | v1.0 엔티티 | v2.0 위치 |
 |---|---|
 | Evidence | `IssueOccurrence`의 `measured`, `expected`, `delta`, `evidenceText`, `relatedElements` |
-| ScreenshotArtifact | `ViewportResult.screenshotUrl`, `screenshotWidth`, `screenshotHeight` |
+| ScreenshotArtifact | `ViewportResult.screenshotUrl`, `screenshotWidth`, `screenshotHeight` (촬영 실패 시 모두 `null`, PRD 5.2.4) |
 | AIAnalysis | `Issue.analysis` (이슈당 최대 1개, 이력 없음) |
 | Prompt | `DevTask.prompt` (태스크당 1개, 버전 없음) |
 
@@ -101,8 +101,9 @@ Inspection (Redis 문서 1개, 집합의 루트)
 | # | 조건 |
 |---|---|
 | V-1 | `width`, `height`는 PRD 5.2.1 설정값과 같다(Desktop 1440×900, Mobile 390×844). |
-| V-2 | `screenshotHeight ≤ SCREENSHOT_MAX_HEIGHT[viewport]`, `screenshotTruncated = documentHeight > screenshotHeight` |
+| V-2 | 스크린샷이 있으면 `screenshotHeight ≤ SCREENSHOT_MAX_HEIGHT[viewport]`, `screenshotTruncated = documentHeight > screenshotHeight`. 스크린샷이 없으면(`SCREENSHOT_FAILED`, PRD 5.2.4) `screenshotUrl`, `screenshotWidth`, `screenshotHeight`가 모두 `null`이고 `screenshotTruncated = false`다. 그 viewport의 occurrence는 `cropRect = null`이다(S-11). |
 | V-3 | `elementsTruncated`이면 `elementsInspected = MAX_CANDIDATES`다. |
+| V-4 | `layoutMap`이 있으면 블록 수 ≤ `LAYOUT_MAX_BLOCKS`(400), `height` ≤ `LAYOUT_MAX_HEIGHT[viewport]`, `scrollWidth ≥ width`이고, 모든 블록의 `rect`는 정수이며 `[0, scrollWidth] × [0, height]` 안에 있다. `layoutMap`이 없는 문서(이 필드 전에 저장된 검사, 샘플)도 정상이다. |
 
 ### 3.3 Issue
 
@@ -118,7 +119,7 @@ Inspection (Redis 문서 1개, 집합의 루트)
 | S-8 | `confidence = min(occurrences[].confidence)`, `needsReview = confidence < 0.5` |
 | S-9 | `needsReview`이면 `analysis`가 없고 `analysisSkippedReason = needs-review`다. |
 | S-10 | `analysis`와 `analysisSkippedReason` 중 최대 하나만 있다. AI 단계가 끝난 뒤에는 정확히 하나가 있다. |
-| S-11 | `cropRect`가 있으면 해당 viewport의 `[0, screenshotWidth] × [0, screenshotHeight]` 안에 있다. |
+| S-11 | `cropRect`가 있으면 해당 viewport의 `[0, screenshotWidth] × [0, screenshotHeight]` 안에 있다. 크롭 기준 박스가 스크린샷 안에 완전히 들어올 때만 만든다(DETECTION_RULES 8.3). |
 | S-12 | `type`과 `subtype` 조합은 DETECTION_RULES 1.1 표에 있는 것만 허용한다. |
 | S-13 | `element-overlap` occurrence의 `relatedElements`는 1~5개이고 모두 `role = overlap-target`이며, `measured.overlapTargetCount ≥ relatedElements.length`다(DETECTION_RULES 5.6). |
 
@@ -298,6 +299,7 @@ export const inspectionSchema = z.strictObject({ /* … */ }) satisfies z.ZodTyp
 - 키가 없으면 404. 스키마 검증에 실패하면 500(`INTERNAL_ERROR`)으로 응답하고 로그에는 검사 ID만 남긴다.
 
 크기: 이슈 수백 개 기준으로 문서는 수백 KB 수준이다. API 응답 한도(4.5MB)와 Upstash 요청 한도 안에 들어가는지 큰 페이지로 한 번 확인한다.
+- `layoutMap`(V-4): 블록 하나가 약 80~90바이트라 viewport당 최대 약 36KB(400블록)다. fillout.com 실측(로컬, 2026-11-15): Desktop 251블록 20.7KB, Mobile 228블록 18.6KB, 이슈 11개 포함 문서 약 90KB. 문서가 1MB를 넘으면 `LAYOUT_MAX_BLOCKS`를 줄인다.
 
 ### 6.2 Blob (Vercel Blob)
 
@@ -365,9 +367,11 @@ PRD에 없던 결정이다(AGENTS.md 6장).
 11. 새 파일: `src/server/store/invariants.ts`, `src/server/store/schemas.ts`, `src/server/collect/schemas.ts`, `src/schemas/inspectionRequest.ts`, `src/schemas/enums.ts`
 12. 이슈 수 상한 관련 불변 조건 I-11, 겹침 이슈 묶기 관련 불변 조건 S-13을 추가했다(PRD 5.3.3, 5.3.7).
 13. I-9는 AI 단계가 끝난 문서에만 적용한다. 브라우저 실행·결과 저장 실패로 끝난 `failed`는 viewport 결과와 이슈를 비운다(I-5). 멈춘 `analyzing`을 보여줄 때 이슈의 skip 사유를 채운다(4.4). (T09)
-14. 스크린샷 업로드가 실패한 viewport는 `STORAGE_FAILED`로 처리하고, 남은 viewport의 수집 데이터로 이슈를 다시 만든다. `screenshotUrl`이 없는 `ViewportResult`를 만들지 않는다. (T09)
+14. 찍은 스크린샷의 업로드가 실패한 viewport는 `STORAGE_FAILED`로 처리하고, 남은 viewport의 수집 데이터로 이슈를 다시 만든다. (T09) 스크린샷을 찍지 못한 viewport는 업로드할 것이 없으므로 `screenshotUrl = null`인 `ViewportResult`를 만든다(PRD 5.2.4, T14에서 바꿈: 이전에는 `screenshotUrl`이 없는 `ViewportResult`를 만들지 않았다).
 15. (T10) T-1, T-2는 `analysis.status = completed`일 때만 확인한다(3.4). 규칙 분석 조건 A-1, A-2를 추가했다(3.5).
 16. (T10) 분석 단계의 예외는 규칙 분석 실패도 `AI_FAILED`로 기록한다. `generating_tasks` 단계 저장은 step만 바꾼다(4.3).
+17. (T14) 스크린샷만 실패한 viewport(`SCREENSHOT_FAILED`)는 viewport 실패가 아니다. `viewportErrors`에 기록하지 않고 상태 판정에 영향을 주지 않는다. V-2에 "스크린샷 없음" 조건을 더했다.
+18. (배치도) `ViewportResult.layoutMap`(선택 필드)과 불변 조건 V-4를 추가했다. 예전 문서와의 호환을 위해 필드를 선택으로 두고, 없으면 화면이 최소 도면을 그린다. S-11에 "완전히 들어올 때만" 조건을 덧붙였다.
 
 ---
 

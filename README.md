@@ -208,7 +208,7 @@ N-07(이미지 위 배지)의 1건은 `Needs Review`로 분류되어 확정 이�
 - **긴 페이지:** 스크린샷은 Desktop 10,000px, Mobile 5,000px에서 자릅니다(측정은 전체 페이지).
 - **단일 페이지:** 크롤링, 로그인이 필요한 페이지, 검사 내역은 범위 밖입니다.
 
-실제로 겪은 문제: 서버리스 Chromium(`@sparticuz/chromium`)은 `--single-process`로 실행되어 브라우저 하나에 context를 하나만 쓸 수 있습니다. 처음에는 브라우저 하나에서 Desktop과 Mobile context를 차례로 열었는데, production에서 Mobile 검사가 항상 시간 제한까지 멈췄습니다. 지금은 viewport마다 브라우저를 새로 띄웠다 닫고, 실행·페이지 로드·안정화·수집·스크린샷 단계마다 브라우저 응답을 기다리지 않는 강제 시간 제한을 둡니다. 또 production에서 웹 폰트 없이 시스템 폰트를 쓰는 사이트가 모두 Open Sans로 그려지는 것과, 전체 페이지 스크린샷이 가끔 실패하는 것을 발견했습니다. 글자 폭이 같은 폰트를 번들해 별칭으로 연결했고, 스크린샷이 실패하면 줄여서 다시 찍어 측정 결과를 버리지 않게 했습니다.
+실제로 겪은 문제: 서버리스 Chromium(`@sparticuz/chromium`)은 `--single-process`로 실행되어 브라우저 하나에 context를 하나만 쓸 수 있습니다. 처음에는 브라우저 하나에서 Desktop과 Mobile context를 차례로 열었는데, production에서 Mobile 검사가 항상 시간 제한까지 멈췄습니다. 지금은 viewport마다 브라우저를 새로 띄웠다 닫고, 실행·페이지 로드·안정화·수집·스크린샷 단계마다 브라우저 응답을 기다리지 않는 강제 시간 제한을 둡니다. 또 production에서 웹 폰트 없이 시스템 폰트를 쓰는 사이트가 모두 Open Sans로 그려지는 것과, 전체 페이지 스크린샷이 가끔 실패하는 것을 발견했습니다. 글자 폭이 같은 폰트를 번들해 별칭으로 연결했습니다. Desktop 스크린샷은 한 장에 12~57초가 걸려(canvas 없는 페이지도 12초) 측정과 스크린샷 시간을 40초로 늘렸고, 그래도 찍지 못하면 스크린샷 없이 측정과 이슈를 보여줍니다. 같은 인스턴스에서 브라우저를 여러 번 띄우면 Chromium이 종료할 때 남기는 core 덤프가 `/tmp`에 쌓여 브라우저가 실행 직후 죽던 문제도 찾아 고쳤습니다.
 
 ---
 
@@ -237,7 +237,7 @@ N-07(이미지 위 배지)의 1건은 `Needs Review`로 분류되어 확정 이�
 pnpm install
 ```
 
-`.env.example`을 `.env.local`로 복사하고 값을 채웁니다. 변수 이름: `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `BLOB_READ_WRITE_TOKEN`, `INTERNAL_API_SECRET`, `MAX_CONCURRENT_INSPECTIONS`(기본 2), `VERCEL_AUTOMATION_BYPASS_SECRET`(선택), `AI_API_KEY`·`AI_MODEL`(AI 연동 전에는 쓰지 않음). 단위 테스트와 Fixture 테스트는 환경변수 없이 돌아갑니다.
+`.env.example`을 `.env.local`로 복사하고 값을 채웁니다. 변수 이름: `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `BLOB_READ_WRITE_TOKEN`, `INTERNAL_API_SECRET`, `MAX_CONCURRENT_INSPECTIONS`(기본 1), `VERCEL_AUTOMATION_BYPASS_SECRET`(선택), `AI_API_KEY`·`AI_MODEL`(AI 연동 전에는 쓰지 않음). 단위 테스트와 Fixture 테스트는 환경변수 없이 돌아갑니다.
 
 ```bash
 pnpm dev

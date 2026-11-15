@@ -1,11 +1,13 @@
 import { ERROR_MESSAGES, SCOPE_NOTICE_MESSAGES as M, VIEWPORT_LABELS } from '@/components/inspection/labels';
 import { formatCount, formatPx } from '@/lib/format';
 import type { Inspection, Viewport } from '@/types/inspection';
+import { isCanvasLarge } from './preview';
 
 // WIREFRAME 5.4 검사 범위 안내. 해당 항목이 없으면 빈 배열이고, 화면은 영역 전체를 숨긴다.
 
 export type ScopeNoticeKind =
   | 'viewport-failed'
+  | 'screenshot-missing'
   | 'screenshot-truncated'
   | 'elements-truncated'
   | 'issues-truncated'
@@ -36,9 +38,16 @@ export function buildScopeNotices(
     }
   }
 
+  // 두 viewport 모두 스크린샷이 없으면 한 문장으로 알린다
+  const missing = VIEWPORTS.filter((v) => inspection.viewports[v]?.screenshotUrl === null);
+  if (missing.length === 2) {
+    notices.push({ kind: 'screenshot-missing', text: M.screenshotMissing(`${VIEWPORT_LABELS.desktop}과 ${VIEWPORT_LABELS.mobile}`) });
+  }
   for (const v of VIEWPORTS) {
     const result = inspection.viewports[v];
-    if (result?.screenshotTruncated) {
+    if (result && result.screenshotUrl === null) {
+      if (missing.length === 1) notices.push({ kind: 'screenshot-missing', viewport: v, text: M.screenshotMissing(VIEWPORT_LABELS[v]) });
+    } else if (result?.screenshotTruncated && result.screenshotHeight !== null) {
       notices.push({ kind: 'screenshot-truncated', viewport: v, text: M.screenshotTruncated(VIEWPORT_LABELS[v], formatPx(result.screenshotHeight)) });
     }
   }
@@ -55,7 +64,13 @@ export function buildScopeNotices(
     notices.push({ kind: 'issues-truncated', text: M.issuesTruncated(formatCount(inspection.issuesDetected), formatCount(inspection.issues.length)) });
   }
 
-  if (VIEWPORTS.some((v) => inspection.viewports[v]?.hasCanvas)) notices.push({ kind: 'canvas', text: M.canvas });
+  if (VIEWPORTS.some((v) => inspection.viewports[v]?.hasCanvas)) {
+    const large = VIEWPORTS.some((v) => {
+      const result = inspection.viewports[v];
+      return result ? isCanvasLarge(result) : false;
+    });
+    notices.push({ kind: 'canvas', text: large ? M.canvasLarge : M.canvas });
+  }
 
   const mobile = inspection.viewports.mobile;
   if (mobile && !mobile.hasMetaViewport) notices.push({ kind: 'no-meta-viewport', viewport: 'mobile', text: M.noMetaViewport(formatPx(mobile.layoutWidth)) });

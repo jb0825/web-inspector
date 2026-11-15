@@ -1,5 +1,5 @@
 import { intersectBox, type Box } from '@/lib/rect';
-import type { Issue, Priority, Viewport, ViewportResult } from '@/types/inspection';
+import type { Issue, Priority, Viewport } from '@/types/inspection';
 import type { ListedIssue } from './issues';
 
 // WIREFRAME 5.6 마커 좌표 규칙. SVG viewBox를 스크린샷 실제 크기(screenshotWidth × screenshotHeight)로 두고
@@ -26,8 +26,13 @@ export interface MarkerLayout {
   issueCount: number;
 }
 
-/** occurrence 박스 하나를 스크린샷 좌표로 바꾼다. 그릴 수 없으면 null */
-export function placeBox(box: Box, screenshot: Pick<ViewportResult, 'screenshotWidth' | 'screenshotHeight'>): { rect: Box; clipped: boolean } | null {
+/** 마커를 그릴 미리보기 좌표계 크기 (logic/preview.ts의 PreviewGeometry.width × height). 사진만이면 스크린샷 크기다 */
+export interface ScreenshotSize {
+  screenshotWidth: number;
+  screenshotHeight: number;
+}
+
+export function placeBox(box: Box, screenshot: ScreenshotSize): { rect: Box; clipped: boolean } | null {
   // PRD 5.4.1: 스크린샷 높이 밖이면 "범위 밖"
   if (box.y >= screenshot.screenshotHeight) return null;
   const inside = box.x >= 0 && box.y >= 0 && box.x + box.width <= screenshot.screenshotWidth && box.y + box.height <= screenshot.screenshotHeight;
@@ -49,7 +54,7 @@ export function occurrenceOf(issue: Issue, viewport: Viewport) {
 export function layoutMarkers(
   listed: { regular: readonly ListedIssue[]; needsReview: readonly ListedIssue[] },
   viewport: Viewport,
-  screenshot: Pick<ViewportResult, 'screenshotWidth' | 'screenshotHeight'>,
+  screenshot: ScreenshotSize,
   options: { includeNeedsReview: boolean },
 ): MarkerLayout {
   const candidates = options.includeNeedsReview ? [...listed.regular, ...listed.needsReview] : [...listed.regular];

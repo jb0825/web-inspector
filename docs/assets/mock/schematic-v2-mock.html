@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8">
+<style>
+:root{--bg:#f6f7f9;--line:#e3e6ea;--text:#1b1f24;--muted:#6b7380;--red:#e5484d;--blue:#2f6fed;--ok:#2e9d57}
+*{box-sizing:border-box;margin:0}
+body{font-family:'Noto Sans CJK KR',sans-serif;background:var(--bg);color:var(--text);font-size:13px;line-height:1.5}
+.mono{font-family:ui-monospace,'DejaVu Sans Mono',monospace;font-size:12px}
+.screen{width:1440px;display:flex;flex-direction:column;background:var(--bg)}
+header.app{height:52px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 24px}
+.logo{font-weight:800}.logo span{color:var(--blue)}
+.btn{border:1px solid var(--line);background:#fff;border-radius:6px;padding:6px 12px;font-size:12px;font-weight:600;display:inline-block}
+.wrap{display:flex}
+main{flex:1;padding:20px 24px}
+aside{width:500px;background:#fff;border-left:1px solid var(--line);padding:20px 22px}
+h1{font-size:20px;font-weight:700}
+.badge{display:inline-block;border-radius:4px;padding:1px 7px;font-size:11px;font-weight:700}
+.b-ok{background:#e6f4ec;color:var(--ok)}.p0{background:#e5484d;color:#fff}.p1{background:#f5a524;color:#fff}.p2{background:#8b95a3;color:#fff}
+.tag{border:1px solid var(--line);border-radius:4px;padding:0 6px;font-size:11px;color:var(--muted);display:inline-block}
+.notice{margin:12px 0 0;background:#eef4ff;border:1px solid #cfdcf8;border-radius:8px;padding:8px 12px;font-size:12.5px}
+.notice+.notice{margin-top:6px}
+.summary{display:flex;gap:18px;margin:12px 0;font-variant-numeric:tabular-nums}.summary b{font-weight:700}
+.previews{display:grid;grid-template-columns:2fr 1fr;gap:14px}
+.card{background:#fff;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.card h3{font-size:11.5px;letter-spacing:.4px;font-weight:700;color:var(--muted);padding:9px 12px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between}
+.card h3 .k{color:var(--blue)}
+.card .foot{font-size:11.5px;color:var(--muted);padding:7px 12px;border-top:1px solid var(--line)}
+.view{position:relative;overflow:hidden;background:#fff}
+.legend{display:flex;gap:16px;margin-top:8px;font-size:11.5px;color:var(--muted)}
+.sw{display:inline-block;width:14px;height:10px;vertical-align:middle;margin-right:5px;border-radius:2px}
+.list{margin-top:14px;background:#fff;border:1px solid var(--line);border-radius:10px}
+.tabs{display:flex;gap:18px;padding:0 14px;border-bottom:1px solid var(--line)}
+.tabs div{padding:10px 0;font-weight:600;color:var(--muted)}.tabs .on{color:var(--text);border-bottom:2px solid var(--text)}
+.item{display:grid;grid-template-columns:34px 210px 1fr 96px;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line)}
+.item.sel{background:#fffaf0;box-shadow:inset 3px 0 0 #f5a524}
+.item .ev{grid-column:2/5;color:var(--muted);font-size:12px}
+.sec{font-size:11.5px;font-weight:700;color:var(--muted);margin:16px 0 8px;display:flex;justify-content:space-between}
+.k{color:var(--blue)}
+.schem{border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.caption{font-size:11px;color:var(--muted);margin-top:6px}
+.inline-note{background:#eef4ff;border:1px solid #cfdcf8;border-radius:6px;padding:6px 10px;font-size:12px;margin-bottom:8px}
+table{width:100%;border-collapse:collapse;margin-top:8px}td{padding:4px 0;border-bottom:1px dashed var(--line);font-size:12px}td:last-child{text-align:right}
+.analysis{background:#fff8ef;border:1px solid #f3dcc0;border-radius:8px;padding:10px 12px;font-size:12.5px}
+.empty{padding:34px;text-align:center;color:var(--muted)}.empty b{display:block;color:var(--text);font-size:15px;margin-bottom:4px}
+.scrollbar{position:absolute;right:4px;width:6px;border-radius:3px;background:#c9ced6}
+</style></head><body>
+
+<!-- ============ Screen A: hybrid + full schematic + out-of-range detail ============ -->
+<div class="screen" id="A">
+<header class="app"><div class="logo">Web<span>Inspector</span></div><div class="btn">새 검사</div></header>
+<div class="wrap">
+<main>
+  <div style="display:flex;align-items:center;gap:10px"><h1>검사 결과</h1><span class="badge b-ok">완료</span><div style="flex:1"></div><div class="btn">링크 복사</div></div>
+  <div style="color:var(--muted);margin-top:2px">https://formly.example → https://www.formly.example/ · 2026-11-15 18:40 · Desktop 1440 / Mobile 390</div>
+  <div class="notice">ⓘ Desktop 화면을 저장하지 못해 <b>측정값으로 그린 배치도</b>로 표시합니다. 측정과 이슈는 정상입니다.</div>
+  <div class="notice">ⓘ Mobile 스크린샷은 844px까지 저장되어, 그 아래는 배치도로 표시합니다.</div>
+  <div class="summary"><span>전체 <b>5</b></span><span>P0 <b>1</b></span><span>P1 <b>2</b></span><span>P2 <b>2</b></span><span style="color:var(--muted)">· Desktop 3 / Mobile 3</span></div>
+  <div class="previews">
+    <div class="card"><h3><span>DESKTOP 1440 × 900</span><span class="k">배치도 · 스크린샷 없음</span></h3>
+      <div class="view" id="desk" style="height:380px"></div>
+      <div class="foot">이슈 3 · 측정값으로 그린 배치도 · 문서 높이 5,200px</div></div>
+    <div class="card"><h3><span>MOBILE 390 × 844</span><span class="k">스크린샷 + 배치도</span></h3>
+      <div class="view" id="mob" style="height:380px"></div>
+      <div class="foot">이슈 3 · 스크린샷 0~844px, 이후 배치도</div></div>
+  </div>
+  <div class="legend"><span><span class="sw" style="border:2px solid #e5484d"></span>이슈 (색 = Priority)</span><span><span class="sw" style="background:repeating-linear-gradient(45deg,#e5484d 0 2px,#fdecec 2px 5px)"></span>문제 영역</span><span><span class="sw" style="border-top:2px dashed #2f6fed;height:0"></span>첫 화면 · 화면 경계 · 사진 끝</span><span><span class="sw" style="border:1.5px dashed #9aa3af"></span>구조 (section 등)</span><span><span class="sw" style="background:repeating-linear-gradient(45deg,#2f6fed 0 1px,#eaf1ff 1px 5px)"></span>canvas</span></div>
+  <div class="list">
+    <div class="tabs"><div class="on">이슈 5</div><div>개발 태스크 3</div></div>
+    <div class="item"><span class="badge p0">P0</span><span>Element Overlap</span><span class="mono">a "데모 보기" ↔ img "제품 화면"</span><span class="tag">desktop-only</span><span class="ev">a "데모 보기"와 img "제품 화면"의 표시 영역이 1,240px² 겹칩니다. (작은 요소 면적의 15%)</span></div>
+    <div class="item sel"><span class="badge p1">P1</span><span>Text Overflow · clipped</span><span class="mono">h3 "조건부 로직과 자동화"</span><span class="tag">mobile-only</span><span class="ev">내부 콘텐츠 너비(326px)가 컨테이너 너비(278px)를 48px 초과합니다. (overflow: hidden으로 잘림)</span></div>
+  </div>
+</main>
+<aside>
+  <div style="display:flex;justify-content:space-between"><span class="mono" style="color:var(--muted)">ISS-003</span><span style="color:var(--muted);font-size:16px">✕</span></div>
+  <div style="font-size:15px;font-weight:700;margin:2px 0 6px">Text Overflow · clipped — h3 "조건부 로직과 자동화"</div>
+  <div style="display:flex;gap:6px"><span class="badge p1">P1</span><span class="tag">mobile-only</span><span class="tag">Confidence 1.0</span></div>
+  <div class="sec"><span>EVIDENCE · MOBILE 390 × 844</span><span class="k">배치도</span></div>
+  <div class="inline-note">ⓘ 이 위치는 스크린샷 범위 밖이라 배치도로 표시합니다.</div>
+  <div class="schem" id="detail" style="height:250px;position:relative"></div>
+  <div class="caption">측정값으로 그린 배치도입니다. 글꼴과 색은 실제 화면과 다를 수 있습니다.</div>
+  <div style="margin-top:10px">내부 콘텐츠 너비(326px)가 컨테이너 너비(278px)를 48px 초과합니다. (overflow: hidden으로 잘림)</div>
+  <table><tr><td>measured · scrollWidth</td><td>326</td></tr><tr><td>expected · clientWidth</td><td>278</td></tr><tr><td>delta · overflowX</td><td>48</td></tr><tr><td>Selector</td><td class="mono">#features &gt; .card:nth-of-type(1) &gt; h3</td></tr></table>
+  <div style="display:flex;gap:8px;margin-top:12px"><span class="btn">실제 페이지 열기 ↗</span><span class="btn">개발자 도구에서 찾기 ⧉</span></div>
+  <div class="sec"><span>원인 분석</span><span><span class="tag">규칙 기반 추정</span> <span class="tag">likely</span></span></div>
+  <div class="analysis"><b>white-space: nowrap</b> 상태에서 너비가 부족해 제목이 잘립니다.<br><span class="mono" style="color:#8a5a1f">.card h3 { white-space: normal; }</span></div>
+</aside>
+</div></div>
+
+<!-- ============ Screen B: canvas-only, 0 issues + minimal fallback ============ -->
+<div class="screen" id="B" style="margin-top:40px">
+<header class="app"><div class="logo">Web<span>Inspector</span></div><div class="btn">새 검사</div></header>
+<main>
+  <div style="display:flex;align-items:center;gap:10px"><h1>검사 결과</h1><span class="badge b-ok">완료</span></div>
+  <div style="color:var(--muted);margin-top:2px">https://portfolio-3d.example · 2026-11-15 18:52 · Desktop 1440 / Mobile 390</div>
+  <div class="notice">ⓘ Desktop과 Mobile 화면을 저장하지 못해 <b>측정값으로 그린 배치도</b>로 표시합니다.</div>
+  <div class="notice">ⓘ 이 페이지는 canvas 영역이 커서, canvas 안의 그래픽은 검사하지 않았습니다.</div>
+  <div class="summary"><span>전체 <b>0</b></span></div>
+  <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:14px">
+    <div class="card"><h3><span>DESKTOP 1440 × 900</span><span class="k">배치도 · 스크린샷 없음</span></h3><div class="view" id="cDesk" style="height:330px"></div><div class="foot">이슈 0 · 측정값으로 그린 배치도 · 문서 높이 1,400px</div></div>
+    <div class="card"><h3><span>MOBILE 390 × 844</span><span class="k">배치도 · 스크린샷 없음</span></h3><div class="view" id="cMob" style="height:330px"></div><div class="foot">이슈 0 · 문서 높이 1,250px</div></div>
+    <div class="card"><h3><span>참고 · 최소 도면</span><span class="k">구조 블록 없음</span></h3><div class="view" id="cMin" style="height:330px"></div><div class="foot">구조를 하나도 얻지 못한 경우 (예전 검사 포함)</div></div>
+  </div>
+  <div class="list"><div class="tabs"><div class="on">이슈 0</div><div>개발 태스크 0</div></div>
+    <div class="empty"><b>검사한 항목에서 문제가 발견되지 않았습니다</b>Text Overflow, Element Overlap, Viewport Overflow 외의 문제는 검사하지 않았습니다.</div></div>
+</main></div>
+
+<script>
+const NS='http://www.w3.org/2000/svg';
+const PCOL={P0:'#e5484d',P1:'#f5a524',P2:'#8b95a3',P3:'#b8bfc9'};
+function el(n,a,p){const e=document.createElementNS(NS,n);for(const k in a)e.setAttribute(k,a[k]);if(p)p.appendChild(e);return e}
+function txt(p,x,y,s,o){const t=el('text',Object.assign({x,y,'font-size':o.size||10,fill:o.fill||'#6b7380','font-weight':o.weight||400,'text-anchor':o.anchor||'start','font-family':"'Noto Sans CJK KR',sans-serif"},{}),p);t.textContent=s;return t}
+function fit(s,maxPx,size){const n=Math.floor(maxPx/(size*0.95));return s.length>n?s.slice(0,Math.max(1,n-1))+'…':s}
+function defs(svg){const d=el('defs',{},svg);
+ const h=el('pattern',{id:'hatch',width:7,height:7,patternUnits:'userSpaceOnUse',patternTransform:'rotate(45)'},d);el('rect',{width:7,height:7,fill:'#fdecec'},h);el('line',{x1:0,y1:0,x2:0,y2:7,stroke:'#e5484d','stroke-width':2.2,opacity:.55},h);
+ const c=el('pattern',{id:'chatch',width:8,height:8,patternUnits:'userSpaceOnUse',patternTransform:'rotate(45)'},d);el('rect',{width:8,height:8,fill:'#eaf1ff'},c);el('line',{x1:0,y1:0,x2:0,y2:8,stroke:'#2f6fed','stroke-width':1.2,opacity:.45},c);}
+/* draw schematic into svg; s = doc->screen scale; oy = doc y at svg top */
+function schematic(svg,{docW,docH,vpH,layoutW,blocks,issues,s,oy,from=0,grid=true}){
+ const X=v=>v*s, Y=v=>(v-oy)*s;
+ const g=el('g',{},svg); const labels=[];
+ if(grid){for(let x=0;x<=docW;x+=40)el('line',{x1:X(x),y1:Y(from),x2:X(x),y2:Y(docH),stroke:'#eef0f3','stroke-width':1},g);
+          for(let y=Math.ceil(from/40)*40;y<=docH;y+=40)el('line',{x1:0,y1:Y(y),x2:X(docW),y2:Y(y),stroke:'#eef0f3','stroke-width':1},g);}
+ el('line',{x1:X(0)+1,y1:Y(from),x2:X(0)+1,y2:Y(docH),stroke:'#c9ced6','stroke-width':2},g);
+ el('line',{x1:X(docW)-1,y1:Y(from),x2:X(docW)-1,y2:Y(docH),stroke:'#c9ced6','stroke-width':2},g);
+ for(const b of blocks){ const [x,y,w,h]=b.r; if(y+h<from) continue; const y0=Math.max(y,from); const R={x:X(x),y:Y(y0),w:X(w),h:(y+h-y0)*s}; const top=y>=from;
+  switch(b.k){
+   case'struct': el('rect',{x:R.x+2,y:R.y+2,width:R.w-4,height:R.h-4,fill:'none',stroke:'#9aa3af','stroke-width':1.2,'stroke-dasharray':'5 4'},g); labels.push({x:R.x+6,y:R.y+4,t:fit(top?b.l:b.l+' (계속)',R.w-16,10)}); break;
+   case'heading': el('rect',{x:R.x,y:R.y,width:R.w,height:R.h,fill:'#e9ecf0',rx:2},g); if(R.h>=13) txt(g,R.x+6,R.y+Math.min(R.h/2+4,16),fit(b.l,R.w-12,Math.min(12,Math.max(9,R.h*.5))),{fill:'#3b4350',size:Math.min(12,Math.max(9,R.h*.5)),weight:700}); break;
+   case'text': {const n=Math.max(1,Math.min(4,Math.floor(R.h/9)));for(let i=0;i<n;i++)el('rect',{x:R.x,y:R.y+i*(R.h/n)+1,width:R.w*(i==n-1?.62:1),height:Math.max(3,R.h/n-4),fill:'#e3e6ea',rx:1.5},g);break;}
+   case'image': el('rect',{x:R.x,y:R.y,width:R.w,height:R.h,fill:'#f1f3f5',stroke:'#c9ced6'},g); el('line',{x1:R.x,y1:R.y,x2:R.x+R.w,y2:R.y+R.h,stroke:'#d5dae0'},g); el('line',{x1:R.x+R.w,y1:R.y,x2:R.x,y2:R.y+R.h,stroke:'#d5dae0'},g); if(R.w>50&&R.h>16){const t=txt(g,R.x+R.w/2,R.y+R.h/2+4,fit(b.l||'이미지',R.w-10,10),{anchor:'middle'});} break;
+   case'button': el('rect',{x:R.x,y:R.y,width:R.w,height:R.h,fill:'#e8ecf2',stroke:'#c9ced6',rx:Math.min(6,R.h/2)},g); if(R.h>=12) txt(g,R.x+R.w/2,R.y+R.h/2+4,fit(b.l,R.w-8,10),{anchor:'middle',fill:'#3b4350',weight:600}); break;
+   case'input': el('rect',{x:R.x,y:R.y,width:R.w,height:R.h,fill:'#fff',stroke:'#c9ced6',rx:3},g); txt(g,R.x+6,R.y+R.h/2+4,fit(b.l,R.w-12,10),{}); break;
+   case'card': el('rect',{x:R.x,y:R.y,width:R.w,height:R.h,fill:'none',stroke:'#d5dae0','stroke-width':1.2,rx:4},g); break;
+   case'canvas': el('rect',{x:R.x,y:R.y,width:R.w,height:R.h,fill:'url(#chatch)',stroke:'#2f6fed','stroke-width':1.2,'stroke-dasharray':'6 4'},g); const cy=R.y+R.h/2; el('rect',{x:R.x+R.w/2-34,y:cy-11,width:68,height:20,rx:10,fill:'#fff',stroke:'#2f6fed'},g); txt(g,R.x+R.w/2,cy+3,'canvas',{anchor:'middle',fill:'#2f6fed',weight:700,size:10.5}); break;
+  }}
+ for(const L of labels){const w=L.t.length*6.2+10; el('rect',{x:L.x,y:L.y,width:w,height:15,rx:3,fill:'#fff',stroke:'#d5dae0'},g); txt(g,L.x+5,L.y+11,L.t,{size:9.5,fill:'#6b7380'});}
+ if(vpH>=from) {el('line',{x1:0,y1:Y(vpH),x2:X(docW),y2:Y(vpH),stroke:'#2f6fed','stroke-width':1.5,'stroke-dasharray':'7 5'},g); el('rect',{x:X(docW)-112,y:Y(vpH)-9,width:104,height:18,rx:9,fill:'#fff',stroke:'#2f6fed'},g); txt(g,X(docW)-60,Y(vpH)+4,`첫 화면 끝 (${vpH}px)`,{anchor:'middle',fill:'#2f6fed',size:10,weight:600});}
+ for(const i of issues){const [x,y,w,h]=i.r; if(y+h<from) continue; const c=PCOL[i.p]; el('rect',{x:X(x),y:Y(y),width:X(w),height:h*s,fill:c,'fill-opacity':.12,stroke:c,'stroke-width':2},g); el('circle',{cx:X(x),cy:Y(y),r:9,fill:c},g); txt(g,X(x),Y(y)+3.5,String(i.n),{anchor:'middle',fill:'#fff',weight:700,size:10.5});}
+ return g;}
+function mkSvg(host,w,h){const svg=el('svg',{width:w,height:h,style:'display:block'});defs(svg);host.appendChild(svg);return svg}
+
+/* ---------- Desktop full schematic ---------- */
+const deskBlocks=[
+ {k:'struct',r:[0,0,1440,72],l:'header'},{k:'image',r:[40,20,120,32],l:'로고'},{k:'struct',r:[860,12,560,48],l:'nav'},
+ {k:'button',r:[900,22,70,28],l:'제품'},{k:'button',r:[980,22,70,28],l:'요금제'},{k:'button',r:[1060,22,70,28],l:'고객 사례'},{k:'button',r:[1260,18,130,36],l:'무료 시작'},
+ {k:'struct',r:[0,72,1440,800],l:'section#hero'},{k:'heading',r:[140,190,620,110],l:'모든 팀을 위한 폼 빌더'},{k:'text',r:[140,320,560,70]},
+ {k:'button',r:[140,420,190,52],l:'무료로 시작하기'},{k:'button',r:[350,420,150,52],l:'데모 보기'},{k:'image',r:[820,150,500,560],l:'img "제품 화면"'},
+ {k:'struct',r:[0,872,1440,920],l:'section#features'},{k:'heading',r:[140,930,520,56],l:'주요 기능'},
+ {k:'card',r:[140,1020,360,320]},{k:'card',r:[540,1020,360,320]},{k:'card',r:[940,1020,360,320]},
+ {k:'image',r:[170,1050,64,64],l:''},{k:'heading',r:[170,1134,260,30],l:'조건부 로직과 자동화'},{k:'text',r:[170,1176,300,80]},
+ {k:'image',r:[570,1050,64,64],l:''},{k:'heading',r:[570,1134,260,30],l:'실시간 협업'},{k:'text',r:[570,1176,300,80]},
+ {k:'image',r:[970,1050,64,64],l:''},{k:'heading',r:[970,1134,260,30],l:'결과 분석'},{k:'text',r:[970,1176,300,80]}];
+const deskIssues=[{n:1,p:'P0',r:[350,420,150,52]},{n:2,p:'P2',r:[540,1020,360,320]}];
+(()=>{const host=document.getElementById('desk');const W=host.clientWidth||810;const s=W/1440;const H=380;const svg=mkSvg(host,W,H);
+ schematic(svg,{docW:1440,docH:5200,vpH:900,layoutW:1440,blocks:deskBlocks,issues:deskIssues,s,oy:0});
+ const sb=document.createElement('div');sb.className='scrollbar';sb.style.top='6px';sb.style.height='40px';host.appendChild(sb);})();
+
+/* ---------- Mobile hybrid ---------- */
+(()=>{const host=document.getElementById('mob');const W=host.clientWidth||400;const s=W/390;const H=380;const oy=560; const shotH=844;
+ // fake screenshot part
+ const shot=document.createElement('div');shot.style.cssText=`position:absolute;left:0;top:${(0-oy)*s}px;width:${W}px;height:${shotH*s}px;background:#0f172a;overflow:hidden`;
+ shot.innerHTML=`<div style="position:absolute;left:16px;top:${40*s}px;width:70px;height:12px;background:#334155;border-radius:3px"></div>
+ <div style="position:absolute;left:16px;top:${120*s}px;width:85%;height:26px;background:#e2e8f0;border-radius:3px"></div>
+ <div style="position:absolute;left:16px;top:${156*s}px;width:60%;height:26px;background:#e2e8f0;border-radius:3px"></div>
+ <div style="position:absolute;left:16px;top:${600*s}px;width:52%;height:${44*s}px;background:#6366f1;border-radius:8px"></div>
+ <div style="position:absolute;left:16px;top:${660*s}px;width:40%;height:${40*s}px;border:1px solid #475569;border-radius:8px"></div>
+ <div style="position:absolute;left:16px;top:${716*s}px;width:${358*s}px;height:${200*s}px;background:#1e293b;border-radius:10px"></div>`;
+ host.appendChild(shot);
+ const fade=document.createElement('div');fade.style.cssText=`position:absolute;left:0;top:${(shotH-oy)*s-60}px;width:${W}px;height:60px;background:linear-gradient(to bottom,rgba(255,255,255,0),#fff)`;host.appendChild(fade);
+ const svg=mkSvg(host,W,H);svg.style.cssText='position:absolute;left:0;top:0';
+ const mb=[{k:'struct',r:[0,844,390,980],l:'section#features'},{k:'heading',r:[24,880,240,40],l:'주요 기능'},{k:'card',r:[16,950,358,300]},{k:'image',r:[40,975,56,56],l:''},{k:'heading',r:[40,1050,278,30],l:'조건부 로직과 자동화'},{k:'text',r:[40,1092,300,74]},{k:'card',r:[16,1270,358,300]}];
+ const bg=el('rect',{x:0,y:(shotH-oy)*s,width:W,height:H,fill:'#fff'},svg);
+ schematic(svg,{docW:390,docH:4800,vpH:-1,layoutW:390,blocks:mb,issues:[{n:3,p:'P1',r:[40,1050,278,30]}],s,oy,from:shotH});
+ const sy=(shotH-oy)*s; el('line',{x1:0,y1:sy,x2:W,y2:sy,stroke:'#2f6fed','stroke-width':1.5,'stroke-dasharray':'7 5'},svg);
+ const lb=el('rect',{x:W-196,y:sy-10,width:184,height:20,rx:10,fill:'#fff',stroke:'#2f6fed'},svg);txt(svg,W-104,sy+4,'여기부터 배치도 (844px~)',{anchor:'middle',fill:'#2f6fed',weight:700,size:10.5});
+ // marker in photo part
+ el('rect',{x:16,y:(600-oy)*s,width:190,height:44*s,fill:'none',stroke:'#e5484d','stroke-width':2},svg);el('circle',{cx:16,cy:(600-oy)*s,r:9,fill:'#e5484d'},svg);txt(svg,16,(600-oy)*s+3.5,'1',{anchor:'middle',fill:'#fff',weight:700,size:10.5});
+ const sb=document.createElement('div');sb.className='scrollbar';sb.style.top='60px';sb.style.height='34px';host.appendChild(sb);})();
+
+/* ---------- Detail schematic (out of screenshot range) ---------- */
+(()=>{const host=document.getElementById('detail');const W=host.clientWidth||456;const H=250;const pad=10;const ox=-8,oy=930,vw=410;const s=(W)/vw;
+ const svg=mkSvg(host,W,H);const g=el('g',{transform:`translate(${-ox*s},0)`},svg);
+ const blocks=[{k:'struct',r:[0,844,390,980],l:'section#features'},{k:'card',r:[16,950,358,300]},{k:'image',r:[40,975,56,56],l:''},{k:'heading',r:[40,1050,278,30],l:'조건부 로직과 자동화'},{k:'text',r:[40,1092,300,74]}];
+ schematic(g,{docW:390,docH:1200,vpH:-1,layoutW:390,blocks,issues:[],s,oy,from:oy});
+ const X=v=>v*s,Y=v=>(v-oy)*s;
+ el('rect',{x:X(40),y:Y(1050),width:X(278),height:30*s,fill:'#fff',stroke:'#e5484d','stroke-width':2},g);
+ txt(g,X(46),Y(1050)+30*s/2+4,'조건부 로직과 자동',{fill:'#1b1f24',size:12,weight:700});
+ el('rect',{x:X(318),y:Y(1050),width:X(48),height:30*s,fill:'url(#hatch)',stroke:'#e5484d','stroke-dasharray':'4 3'},g);
+ el('line',{x1:X(318),y1:Y(1088),x2:X(366),y2:Y(1088),stroke:'#e5484d','stroke-width':1.5},g);
+ txt(g,X(342),Y(1088)+14,'잘린 48px',{anchor:'middle',fill:'#e5484d',weight:700,size:11});
+ txt(g,X(40),Y(1050)-6,'h3 (컨테이너 278px)',{fill:'#e5484d',size:10,weight:700});
+ })();
+
+/* ---------- Canvas-only ---------- */
+function canvasCard(id,docW,docH,vpH,blocks){const host=document.getElementById(id);const W=host.clientWidth;const H=330;const s=W/docW;const svg=mkSvg(host,W,H);
+ const oy=Math.max(0,(docH*s-H)/s*0.0); schematic(svg,{docW,docH,vpH,layoutW:docW,blocks,issues:[],s,oy});}
+canvasCard('cDesk',1440,1400,900,[{k:'struct',r:[0,0,1440,64],l:'header'},{k:'image',r:[40,16,110,32],l:'로고'},{k:'button',r:[1080,16,90,32],l:'Work'},{k:'button',r:[1180,16,90,32],l:'About'},{k:'button',r:[1280,16,110,32],l:'Contact'},
+ {k:'canvas',r:[0,64,1440,836]},{k:'heading',r:[120,330,520,70],l:'Imogen Rose — 3D Portfolio'},{k:'struct',r:[0,900,1440,500],l:'footer'},{k:'text',r:[120,980,420,60]},{k:'button',r:[120,1080,160,44],l:'이메일 보내기'}]);
+canvasCard('cMob',390,1250,844,[{k:'struct',r:[0,0,390,56],l:'header'},{k:'image',r:[16,14,90,28],l:'로고'},{k:'button',r:[320,12,54,32],l:'메뉴'},
+ {k:'canvas',r:[0,56,390,788]},{k:'heading',r:[24,300,300,60],l:'Imogen Rose — 3D'},{k:'struct',r:[0,844,390,406],l:'footer'},{k:'text',r:[24,900,300,60]}]);
+(()=>{const host=document.getElementById('cMin');const W=host.clientWidth;const H=330;const s=W/390;const svg=mkSvg(host,W,H);
+ schematic(svg,{docW:390,docH:1600,vpH:844,layoutW:390,blocks:[],issues:[],s,oy:0});
+ const box=document.createElement('div');box.style.cssText='position:absolute;left:16px;right:16px;top:110px;background:#fff;border:1px solid #e3e6ea;border-radius:8px;padding:10px 12px;font-size:12px;color:#3b4350;text-align:center;box-shadow:0 1px 2px rgba(0,0,0,.04)';
+ box.innerHTML='이 페이지는 대부분 canvas로 그려져 있어<br>구조를 표시할 수 없습니다.<br><span style="color:#6b7380">canvas 내부는 검사하지 않습니다.</span>';host.appendChild(box);})();
+</script>
+</body></html>

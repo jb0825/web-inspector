@@ -16,3 +16,19 @@ export function intersectBox(a: Box, b: Box): Box | null {
   if (right <= left || bottom <= top) return null;
   return { x: left, y: top, width: right - left, height: bottom - top };
 }
+
+/** 사각형들을 모두 덮는 가장 작은 사각형. 비어 있으면 null */
+export function unionBoxes(boxes: readonly Box[]): Box | null {
+  if (boxes.length === 0) return null;
+  let left = Infinity;
+  let top = Infinity;
+  let right = -Infinity;
+  let bottom = -Infinity;
+  for (const box of boxes) {
+    left = Math.min(left, box.x);
+    top = Math.min(top, box.y);
+    right = Math.max(right, box.x + box.width);
+    bottom = Math.max(bottom, box.y + box.height);
+  }
+  return { x: left, y: top, width: right - left, height: bottom - top };
+}

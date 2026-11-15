@@ -2,6 +2,7 @@ import 'server-only';
 import type { Browser } from 'playwright-core';
 import { launchBrowser, type LaunchedBrowser } from '@/server/browser/launch';
 import { renderViewport, type RenderedViewport, type RenderOptions } from '@/server/browser/render';
+import { flattenSnapshot, resourceSnapshot, type ResourceSnapshot } from '@/server/browser/resources';
 import { inspectViewportInFreshBrowser } from '@/server/browser/session';
 import { BROWSER_CLOSE_TIMEOUT_MS, BROWSER_KILL_TIMEOUT_MS } from '@/server/browser/timeouts';
 import { buildIssues, type BuildIssuesResult } from '@/server/detect/pipeline';
@@ -21,6 +22,23 @@ import type { Inspection, InspectionErrorInfo, Issue, Viewport, ViewportResult }
 
 /** PRD 8.1.3: 전체 검사 상한 */
 export const INSPECTION_TIME_BUDGET_MS = 180_000;
+/**
+ * PRD 8.1.3: Desktop이 느려도 Mobile이 쓸 수 있게 남겨 두는 시간. PRD에 없는 값이다(T14).
+ * production 측정(Mobile): 실행 0.1~4s, 열기·안정화 5.6~6.9s, 수집 0.9s, 촬영 3.4~4.2s, 닫기 최대 7s(강제 종료 포함) → 합계 약 15~23s.
+ * 그 두 배 정도를 남긴다.
+ */
+export const MOBILE_RESERVE_MS = 45_000;
+
+/**
+ * viewport 하나에 줄 시간. 순수 함수다(PRD 8.1.3).
+ * Desktop은 남은 전체 시간에서 Mobile 몫을 뺀다. 그래서 Desktop의 측정·촬영 제한은 min(40초, 남은 전체 시간 − MOBILE_RESERVE_MS)이 된다(render.ts).
+ * 남은 시간이 Mobile 몫보다 적으면 Desktop이 남은 시간을 모두 쓴다(Mobile은 시간이 없으면 건너뛴다).
+ * Mobile은 남은 시간을 모두 쓴다. 어느 쪽이든 전체 상한(INSPECTION_TIME_BUDGET_MS)을 넘지 않는다.
+ */
+export function viewportTimeLimit(viewport: Viewport, remainingMs: number): number {
+  if (viewport === 'mobile') return remainingMs;
+  return remainingMs > MOBILE_RESERVE_MS ? remainingMs - MOBILE_RESERVE_MS : remainingMs;
+}
 /** API_SPEC 4.2: analyze 호출 1회의 응답 대기 */
 export const ANALYZE_CALL_TIMEOUT_MS = 10_000;
 /** API_SPEC 4.2: 실패하면 1회 다시 시도 → 최대 2회 */
@@ -47,6 +65,8 @@ export interface InspectionDeps {
   log: Logger;
   /** 검사 중지 요청을 확인하는 간격. 기본값 CANCEL_POLL_MS (테스트에서 줄인다) */
   cancelPollMs?: number;
+  /** 인스턴스 자원 사용량(로그용, T14). 브라우저 실행 전후와 종료 뒤에 남긴다. 없으면 남기지 않는다 */
+  resourceSnapshot?: () => Promise<ResourceSnapshot | null>;
 }
 
 /** 검사 중지 요청 확인 간격. 검사 1회(최대 300초)에 Redis GET 최대 150번 */
@@ -207,13 +227,22 @@ export async function runInspection(id: string, deps: InspectionDeps): Promise<v
       }
       await step(viewport === 'desktop' ? 'rendering_desktop' : 'rendering_mobile');
       const viewportStart = now();
+      // 같은 인스턴스에서 브라우저를 여러 번 띄운 뒤 실행이 바로 실패하는 문제(T14) 진단용. 로그 실패는 무시한다
+      const logResources = (phase: string) =>
+        deps.resourceSnapshot?.()
+          .then((snapshot) => {
+            if (snapshot) log('resources', { id, host, viewport, step: phase, resources: flattenSnapshot(snapshot) });
+          })
+          .catch(() => undefined);
+      await logResources('before-launch');
+      const timeLimitMs = viewportTimeLimit(viewport, remaining);
       // 마지막 안전장치: 단계별 강제 제한(render.ts)과 브라우저 강제 종료(launch.ts)까지 끝났어야 하는 시각
-      const guard = sleepReject(remaining + RENDER_GRACE_MS, () => new InspectionError('TIME_BUDGET_EXCEEDED', 'Viewport did not stop in time'));
+      const guard = sleepReject(timeLimitMs + RENDER_GRACE_MS, () => new InspectionError('TIME_BUDGET_EXCEEDED', 'Viewport did not stop in time'));
       try {
         rendered[viewport] = await Promise.race([
           inspectViewportInFreshBrowser(deps, viewport, doc.url, {
             guard: guardOptions,
-            timeLimitMs: remaining,
+            timeLimitMs,
             onStep: (s) => log('viewport-step', { id, host, viewport, step: s, durationMs: now() - viewportStart }),
             // 스크린샷이 실패하면 줄여서 다시 찍는다(browser/screenshot.ts). 실패한 시도마다 크기와 원인을 남긴다
             onScreenshotFailed: (failure) =>
@@ -223,23 +252,30 @@ export async function runInspection(id: string, deps: InspectionDeps): Promise<v
                 viewport,
                 step: failure.diagnostics.mode,
                 durationMs: failure.durationMs,
-                screenshot: { ...failure.diagnostics },
+                screenshot: { ...failure.diagnostics, timeoutMs: failure.timeoutMs },
                 cause: describeFailure(failure.error),
               }),
             onLaunched: (launched) => {
               current = launched;
               log('launch', { id, host, viewport, durationMs: launched.launchMs });
+              void logResources('after-launch');
               // 실행 중에 중지 요청을 받았으면 바로 닫는다
               if (cancelled) void launched.close();
             },
             onClosed: (result, durationMs) => {
               current = null;
               log(result === 'killed' ? 'browser-killed' : 'browser-closed', { id, host, viewport, durationMs });
+              void logResources('after-close');
             },
           }),
           guard.promise,
         ]);
         const shot = rendered[viewport]?.screenshot;
+        const screenshotError = rendered[viewport]?.screenshotError;
+        // PRD 5.2.4: 스크린샷만 실패했다. viewport 결과는 남는다
+        if (screenshotError) {
+          log('screenshot-missing', { id, host, viewport, code: screenshotError.code, step: screenshotError.step, cause: describeFailure(screenshotError) });
+        }
         log('viewport', {
           id,
           host,
@@ -250,7 +286,16 @@ export async function runInspection(id: string, deps: InspectionDeps): Promise<v
         });
       } catch (error) {
         errors[viewport] = errorInfo(error);
-        log('viewport-failed', { id, host, viewport, code: errors[viewport]?.code, durationMs: now() - viewportStart, cause: describeFailure(error) });
+        log('viewport-failed', {
+          id,
+          host,
+          viewport,
+          code: errors[viewport]?.code,
+          // 실패한 단계와 원래 오류 종류(cause의 name)를 남긴다(T14)
+          step: isInspectionError(error) ? error.step : undefined,
+          durationMs: now() - viewportStart,
+          cause: describeFailure(error),
+        });
       } finally {
         guard.cancel();
         // 오케스트레이터가 끊은 경우(위 guard) 브라우저가 아직 떠 있다. 다음 viewport를 띄우기 전에 닫는다(강제 종료 포함).
@@ -277,11 +322,12 @@ export async function runInspection(id: string, deps: InspectionDeps): Promise<v
     let uploadFailed = false;
     for (const viewport of VIEWPORT_LIST) {
       const r = rendered[viewport];
-      if (!r) continue;
+      // 스크린샷을 찍지 못한 viewport(SCREENSHOT_FAILED)는 올릴 것이 없다. screenshotUrl = null로 남긴다(PRD 5.2.4)
+      if (!r || !r.screenshot) continue;
       try {
         urls[viewport] = await deps.screenshots.upload(id, viewport, r.screenshot.png);
       } catch {
-        // screenshotUrl이 없는 ViewportResult를 만들지 않는다. 이 viewport는 실패로 처리하고 이슈를 다시 만든다
+        // 찍은 스크린샷을 올리지 못한 것은 저장 실패다(DOMAIN_MODEL 규칙 14). 이 viewport는 실패로 처리하고 이슈를 다시 만든다
         rendered[viewport] = null;
         errors[viewport] = { code: 'STORAGE_FAILED', message: `Screenshot upload failed (${viewport})` };
         uploadFailed = true;
@@ -295,7 +341,10 @@ export async function runInspection(id: string, deps: InspectionDeps): Promise<v
       const r = rendered[viewport];
       const url = urls[viewport];
       const detection = assembled.result?.viewports[viewport];
-      if (r && url && detection) viewports[viewport] = buildViewportResult(r.collected, r.screenshot, detection, url);
+      if (!r || !detection) continue;
+      // 스크린샷이 없으면 url도 null이다. 있으면 업로드한 url이 있어야 한다(위에서 실패하면 rendered가 null이 된다)
+      if (r.screenshot && !url) continue;
+      viewports[viewport] = buildViewportResult(r.collected, r.screenshot, detection, url);
     }
 
     if (browserStageStatus(viewports) === 'failed') {
@@ -416,6 +465,32 @@ function isTimeout(error: unknown): boolean {
   return error instanceof Error && (error.name === 'TimeoutError' || (error.name === 'AbortError' && /timeout/i.test(String(error.message))));
 }
 
+/**
+ * 202가 아닌 analyze 응답을 로그용으로 요약한다. 호출한 호스트, bypass 헤더를 붙였는지, 응답이 analyze route에서 왔는지(x-matched-path),
+ * 리다이렉트였다면 어느 호스트로 가는지만 남긴다(URL 전체, 본문, 비밀값은 남기지 않는다, AGENTS.md 8장).
+ */
+export function describeAnalyzeResponse(
+  response: Pick<Response, 'status' | 'headers' | 'redirected'>,
+  call: { host: string; bypass: boolean },
+): string {
+  const parts = [String(response.status), `host=${call.host}`, `bypass=${call.bypass}`];
+  const location = response.headers.get('location');
+  if (location) {
+    let host = 'invalid';
+    try {
+      host = new URL(location, 'http://relative.invalid').host;
+    } catch {
+      // host는 invalid로 남긴다
+    }
+    parts.push(`location=${host === 'relative.invalid' ? 'relative' : host}`);
+  }
+  parts.push(`redirected=${response.redirected}`);
+  parts.push(`matched=${response.headers.get('x-matched-path') ?? 'none'}`);
+  const type = response.headers.get('content-type')?.split(';')[0]?.trim();
+  if (type) parts.push(`type=${type}`);
+  return parts.join(' ');
+}
+
 export function createAnalyzeTrigger(requestOrigin: string | undefined): (id: string) => Promise<void> {
   return async (id) => {
     const env = getInternalEnv();
@@ -430,13 +505,16 @@ export function createAnalyzeTrigger(requestOrigin: string | undefined): (id: st
         headers,
         signal: AbortSignal.timeout(ANALYZE_CALL_TIMEOUT_MS),
         cache: 'no-store',
+        // 리다이렉트를 따라가지 않는다. fetch는 다른 origin으로 리다이렉트해도 x-internal-secret 헤더를 그대로 보내고,
+        // 따라간 끝의 응답(예: 로그인 페이지 200)이 analyze 응답처럼 보여 원인을 알 수 없게 된다
+        redirect: 'manual',
       });
     } catch (error) {
       if (isTimeout(error)) throw new AnalyzeCallTimeout({ cause: error });
       throw error;
     }
     await response.body?.cancel().catch(() => undefined);
-    if (response.status !== 202) throw new InspectionError('INTERNAL_ERROR', `Analyze call returned ${response.status}`);
+    if (response.status !== 202) throw new InspectionError('INTERNAL_ERROR', `Analyze call returned ${describeAnalyzeResponse(response, { host: new URL(origin).host, bypass: 'x-vercel-protection-bypass' in headers })}`);
   };
 }
 
@@ -448,6 +526,7 @@ export function createInspectionDeps(requestOrigin: string | undefined): Inspect
     renderViewport,
     createChecker: () => createHostChecker(),
     triggerAnalyze: createAnalyzeTrigger(requestOrigin),
+    resourceSnapshot,
     now: Date.now,
     log: logEvent,
   };

@@ -3,15 +3,35 @@ import type { Page } from 'playwright-core';
 import type { CollectedViewport } from '@/server/collect/types';
 import { SCREENSHOT_MAX_HEIGHT } from '@/server/detect/constants';
 import type { Viewport } from '@/types/inspection';
+import { InspectionError } from '@/server/errors';
 import { VIEWPORTS } from './devices';
 
 // 전체 페이지 스크린샷 (PRD 5.2.4). 업로드는 하지 않는다(T09에서 Blob에 올린다).
 
 /**
- * 스크린샷 1장의 시간 제한. PRD 8.1.3 "viewport당 측정과 스크린샷 20s" 안에서 스크린샷에 쓰는 몫이다.
- * 수집(COLLECT_TIMEOUT_MS)과 합한 상한은 T09 오케스트레이션에서 남은 예산으로 다시 자른다.
+ * deadline 없이 부를 때(로컬 도구) 시도 1회의 시간 제한. 검사 경로는 render.ts가 deadline을 넘기고,
+ * 그때는 시도마다 deadline까지 남은 시간을 모두 쓴다(screenshotAttemptTimeout).
  */
 export const SCREENSHOT_TIMEOUT_MS = 10_000;
+
+/** 시도 시간 제한을 단계 제한(측정과 스크린샷)보다 이만큼 먼저 끝낸다. PRD에 없는 값이다(T14) */
+export const SCREENSHOT_DEADLINE_MARGIN_MS = 500;
+/** 시도 1회의 최소 시간 제한. 남은 시간이 이보다 적어도 이만큼은 준다(단계 제한이 먼저 끊는다) */
+export const SCREENSHOT_MIN_ATTEMPT_MS = 1_000;
+
+/**
+ * 시도 1회의 시간 제한. 순수 함수다.
+ * Vercel Chromium의 Desktop 촬영은 한 장에 12~57초가 걸린다(T14 production 측정: canvas 없는 페이지 첫 화면도 12초).
+ * 시간 초과가 난 촬영은 같은 page를 계속 붙잡아 그 뒤 시도가 모두 실패하므로, 시간을 나누지 않고 남은 시간을 모두 준다.
+ */
+export function screenshotAttemptTimeout(remainingMs: number): number {
+  return Math.max(SCREENSHOT_MIN_ATTEMPT_MS, Math.floor(remainingMs));
+}
+
+/** Playwright 시간 초과. 이 오류 뒤에는 같은 page에서 다시 찍지 않는다 */
+export function isScreenshotTimeout(error: unknown): boolean {
+  return error instanceof Error && error.name === 'TimeoutError';
+}
 
 export interface ScreenshotMeta {
   /** 저장된 이미지의 실제 크기 (CSS px, PNG 헤더에서 읽음) */
@@ -32,9 +52,10 @@ export interface CapturedScreenshot extends ScreenshotMeta {
 }
 
 /**
- * 촬영 방식 (T14). 서버리스 Chromium(single-process, SwiftShader)에서 전체 페이지 촬영이 가끔
- * "Unable to capture screenshot"으로 실패한다(production에서 Desktop·Mobile 모두 확인, 로컬 macOS에서는 재현되지 않음).
- * 측정은 이미 끝났으므로 스크린샷 하나 때문에 viewport 결과를 버리지 않도록, 실패하면 더 작게 다시 찍는다.
+ * 촬영 방식 (T14, PRD 5.2.4). 서버리스 Chromium(single-process, SwiftShader)에서 전체 페이지 촬영이
+ * "Unable to capture screenshot"으로 바로 실패하거나 시간 초과가 난다(production 확인, 로컬 macOS에서는 재현되지 않음).
+ * 바로 실패한 경우(시간 초과가 아님)에만 더 작게 다시 찍는다. 시간 초과 뒤에는 다시 찍지 않는다.
+ * 모두 실패하면 SCREENSHOT_FAILED로, viewport 결과는 스크린샷 없이 남는다(render.ts).
  * - full: PRD 5.2.4 그대로 (높이 상한만 적용)
  * - reduced: 실제 픽셀(CSS px × deviceScaleFactor)이 SCREENSHOT_MAX_DEVICE_PX를 넘지 않게 줄인다
  * - first-screen: 첫 화면 높이만
@@ -73,6 +94,8 @@ export interface ScreenshotDiagnostics {
 
 export interface ScreenshotAttemptFailure {
   diagnostics: ScreenshotDiagnostics;
+  /** 이번 시도에 준 시간 제한 */
+  timeoutMs: number;
   durationMs: number;
   error: unknown;
 }
@@ -135,27 +158,34 @@ export function screenshotClip(
 
 /**
  * 시도할 촬영 방식 목록 (순서대로). 앞 방식보다 작아지지 않는 방식은 넣지 않는다. 순수 함수다.
+ * canvas가 있고 전체 촬영의 실제 픽셀이 SCREENSHOT_MAX_DEVICE_PX를 넘으면 전체 촬영을 건너뛰고 reduced부터 찍는다(PRD 5.2.4).
+ * WebGL canvas가 있는 페이지의 큰 촬영은 시간 초과로 끝나고, 시간 초과 뒤에는 다시 찍지 않기 때문이다
+ * (T14 production: imogen-rose Mobile 1170×14,628 촬영이 38초 시간 초과, 1170×8,190은 성공. canvas 없는 1170×15,000은 성공).
  */
 export function screenshotPlans(
-  page: { width: number; height: number },
+  page: { width: number; height: number; canvasCount?: number },
   viewport: Viewport,
   layout: Pick<CollectedViewport, 'rootOverflowX' | 'layoutWidth'>,
 ): ScreenshotPlan[] {
   const full = screenshotClip(page, viewport, layout);
   const width = full?.width ?? page.width;
   const height = full?.height ?? page.height;
-  const plans: ScreenshotPlan[] = [{ mode: 'full', clip: full }];
+  const scale = VIEWPORTS[viewport].deviceScaleFactor;
+  const plans: ScreenshotPlan[] = [];
+  const oversized = Math.ceil(width * scale) > SCREENSHOT_MAX_DEVICE_PX || Math.ceil(height * scale) > SCREENSHOT_MAX_DEVICE_PX;
+  if (!((page.canvasCount ?? 0) > 0 && oversized)) plans.push({ mode: 'full', clip: full });
   let lastWidth = width;
   let lastHeight = height;
   const add = (mode: ScreenshotMode, w: number, h: number) => {
     const nextWidth = Math.max(1, Math.min(lastWidth, w));
     const nextHeight = Math.max(1, Math.min(lastHeight, h));
-    if (nextWidth === lastWidth && nextHeight === lastHeight) return;
+    // 전체 촬영을 건너뛴 경우 reduced는 항상 넣는다(크기가 줄어든다)
+    if (plans.length > 0 && nextWidth === lastWidth && nextHeight === lastHeight) return;
     plans.push({ mode, clip: { x: 0, y: 0, width: nextWidth, height: nextHeight } });
     lastWidth = nextWidth;
     lastHeight = nextHeight;
   };
-  const maxCss = Math.floor(SCREENSHOT_MAX_DEVICE_PX / VIEWPORTS[viewport].deviceScaleFactor);
+  const maxCss = Math.floor(SCREENSHOT_MAX_DEVICE_PX / scale);
   add('reduced', maxCss, maxCss);
   add('first-screen', lastWidth, VIEWPORTS[viewport].height);
   return plans;
@@ -186,14 +216,20 @@ export function screenshotDiagnostics(
  * 전체 페이지를 CSS px 크기로 찍는다(`scale: 'css'`: Mobile의 deviceScaleFactor 3을 적용하지 않아 이미지 픽셀 = CSS px).
  * 문서 높이가 상한을 넘으면 상한까지만 찍는다(PRD 5.2.4).
  * 이미지 크기는 페이지 측정값으로 추정하지 않고 PNG에서 읽는다. Mobile에서 페이지가 축소되면 너비가 layoutWidth와 다르다(DETECTION_RULES 3.1.1).
- * 촬영이 실패하면 screenshotPlans 순서대로 줄여서 다시 찍는다. 모두 실패하면 마지막 오류를 던진다.
+ * 촬영이 시간 초과가 아닌 오류로 바로 실패하면 screenshotPlans 순서대로 줄여서 다시 찍는다.
+ * 시간 초과가 나면 더 시도하지 않는다(앞 촬영이 page를 붙잡고 있어 같은 page의 다음 촬영도 실패한다, T14 production 확인).
+ * 찍지 못하면 SCREENSHOT_FAILED(InspectionError)를 던지고, 원래 오류는 cause에 둔다.
  */
 export async function captureFullPage(
   page: Page,
   viewport: Viewport,
   /** 수집 결과의 값. 탐지(rootClip)와 같은 기준으로 자르기 위해 페이지에서 다시 재지 않는다 */
   layout: Pick<CollectedViewport, 'rootOverflowX' | 'layoutWidth'>,
-  options: { onAttemptFailed?: (failure: ScreenshotAttemptFailure) => void } = {},
+  options: {
+    onAttemptFailed?: (failure: ScreenshotAttemptFailure) => void;
+    /** 모든 시도를 끝내야 하는 시각(epoch ms). 시도마다 남은 시간을 모두 준다. 없으면 시도마다 SCREENSHOT_TIMEOUT_MS */
+    deadline?: number;
+  } = {},
 ): Promise<CapturedScreenshot> {
   const size = await page.evaluate(() => {
     const root = document.documentElement;
@@ -203,10 +239,12 @@ export async function captureFullPage(
       canvasCount: document.getElementsByTagName('canvas').length,
     };
   });
+  const plans = screenshotPlans(size, viewport, layout);
   let lastError: unknown = null;
   let failedAttempts = 0;
-  for (const plan of screenshotPlans(size, viewport, layout)) {
+  for (const plan of plans) {
     const startedAt = Date.now();
+    const timeout = options.deadline === undefined ? SCREENSHOT_TIMEOUT_MS : screenshotAttemptTimeout(options.deadline - startedAt);
     try {
       const png = await page.screenshot({
         type: 'png',
@@ -214,7 +252,7 @@ export async function captureFullPage(
         scale: 'css',
         animations: 'disabled',
         caret: 'hide',
-        timeout: SCREENSHOT_TIMEOUT_MS,
+        timeout,
         ...(plan.clip ? { clip: plan.clip } : {}),
       });
       const { width, height } = readPngSize(png);
@@ -230,10 +268,11 @@ export async function captureFullPage(
     } catch (error) {
       lastError = error;
       failedAttempts += 1;
-      options.onAttemptFailed?.({ diagnostics: screenshotDiagnostics(plan, viewport, size), durationMs: Date.now() - startedAt, error });
-      // 페이지나 브라우저가 닫혔으면 다시 찍을 수 없다
-      if (page.isClosed()) break;
+      options.onAttemptFailed?.({ diagnostics: screenshotDiagnostics(plan, viewport, size), timeoutMs: timeout, durationMs: Date.now() - startedAt, error });
+      // 시간 초과 뒤에는 같은 page에서 다시 찍지 않는다. 페이지나 브라우저가 닫혔어도 다시 찍을 수 없다
+      if (isScreenshotTimeout(error) || page.isClosed()) break;
+      if (options.deadline !== undefined && options.deadline - Date.now() < SCREENSHOT_MIN_ATTEMPT_MS) break;
     }
   }
-  throw lastError;
+  throw new InspectionError('SCREENSHOT_FAILED', `Screenshot failed after ${failedAttempts} attempt(s)`, { cause: lastError });
 }

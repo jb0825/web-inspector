@@ -63,6 +63,13 @@ const elementSchema = z.strictObject({
     id: z.string().min(1).optional(),
     testId: z.string().optional(),
   }),
+  layoutAttrs: z
+    .strictObject({
+      alt: z.string().min(1).optional(),
+      placeholder: z.string().min(1).optional(),
+      type: z.string().optional(),
+    })
+    .optional(),
 }) satisfies z.ZodType<CollectedElement>;
 
 export const inPageResultSchema = z

@@ -5,6 +5,15 @@
 > Product Type: AI-powered Website UI Inspection Tool
 > Deployment Target: Vercel (Serverless, Fluid compute)
 
+### Changelog (T14 이후)
+
+- 스크린샷 촬영 실패를 viewport 실패에서 분리: 찍지 못하면 `SCREENSHOT_FAILED`로 스크린샷 없이 결과를 남긴다. 시간 초과 뒤에는 다시 찍지 않는다 (5.2.4, 5.4.1, 6.2.4, 8.2, 10장)
+- 측정과 스크린샷 20s → 40s, Desktop에 Mobile 몫(45s)을 남기는 규칙 추가 (8.1.3)
+- canvas가 있고 실제 픽셀이 8,192px를 넘으면 줄인 크기부터 촬영, 스크린샷이 없으면 측정값으로 그린 도면 표시 (5.2.4, 5.4.1)
+- 동시 실행 기본값 2 → 1, 검사 시간 목표에 production 실측값 추가, Chromium core 덤프 정리 (8.4, 8.5)
+- 페이지 구성 도면 `ViewportResult.layoutMap` 추가. 사진이 없는 부분(스크린샷 없음, 잘린 아래쪽, 스크린샷 밖 이슈)은 항상 도면으로 채운다 (8.2, 5.4.1)
+- `cropRect`는 크롭 기준 박스가 스크린샷 안에 완전히 들어올 때만 만든다. 일부만 걸치면 `null`이고 화면은 배치도로 그린다 (5.4.1)
+
 ### Changelog (v1.1 → v1.2)
 
 - 우선순위 점수를 정수 연산으로 비교하도록 변경 (부동소수점 경계 오차 제거, 5.5.2)
@@ -232,10 +241,14 @@ Requirements:
 - 같은 페이지의 Desktop / Mobile 결과를 비교한다(5.6 참고).
 - 스크린샷을 볼 수 있게 한다.
 - `html` 또는 `body`가 `overflow-x: hidden`/`clip`이면 스크린샷 너비를 `layoutWidth`로 자른다. 사용자가 볼 수 없는 영역을 보여주지 않기 위해서다. 그 밖의 경우(예: Mobile 축소로 넓어진 페이지)는 실제 페이지 너비대로 찍는다.
-- 촬영이 실패하면 줄여서 다시 찍는다(T14). 서버리스 Chromium에서 전체 페이지 촬영이 가끔 "Unable to capture screenshot"으로 실패하기 때문이다(production에서 Desktop·Mobile 모두 확인). 측정은 이미 끝났으므로 스크린샷 때문에 viewport 결과를 버리지 않는다.
-  1. 전체(위 높이 상한 적용) → 2. 실제 픽셀(CSS px × `deviceScaleFactor`)이 가로·세로 8,192px 이하(Mobile CSS 2,730px) → 3. 첫 화면 높이(Desktop 900px, Mobile 844px). 앞 방식보다 작아지지 않는 방식은 건너뛴다.
-  - 줄여 찍은 결과는 높이 상한으로 자른 것과 같이 `screenshotTruncated`로 표시하고, 스크린샷 밖의 이슈는 `cropRect`가 `null`이다(5.4.1). 시도 시간은 "측정과 스크린샷 20s"(8.1.3) 안에서 쓴다.
-  - 세 방식이 모두 실패하면 그 viewport는 실패다(`INTERNAL_ERROR`). 실패한 시도마다 크기, 배율, canvas 수, 원인을 로그(`screenshot-retry`)에 남긴다.
+- 촬영이 실패해도 측정 결과는 버리지 않는다(T14). 서버리스 Chromium(1 vCPU, 소프트웨어 렌더링)에서는 촬영이 느리고(production 측정: Desktop 한 장 12~57초, canvas가 없는 페이지의 첫 화면도 12초) 가끔 "Unable to capture screenshot"으로 바로 실패한다.
+  1. 전체(위 높이 상한 적용)를 찍는다. 시도마다 "측정과 스크린샷" 예산(8.1.3)에 남은 시간을 모두 쓴다. 단, 페이지에 canvas가 있고 전체 촬영의 실제 픽셀이 가로나 세로로 8,192px를 넘으면 전체를 건너뛰고 2번의 줄인 크기부터 찍는다(production: WebGL 페이지의 Mobile 1170×14,628 촬영은 38초 시간 초과, 1170×8,190은 성공. canvas 없는 1170×15,000은 성공).
+  2. 시간 초과가 아닌 오류로 바로 실패했을 때만 줄여서 다시 찍는다: 실제 픽셀(CSS px × `deviceScaleFactor`)이 가로·세로 8,192px 이하(Mobile CSS 2,730px) → 첫 화면 높이(Desktop 900px, Mobile 844px). 앞 방식보다 작아지지 않는 방식은 건너뛴다.
+  3. 시간 초과가 나면 다시 찍지 않는다. 시간 초과된 촬영이 page를 계속 붙잡아, 같은 page의 다음 촬영이 크기와 관계없이 모두 실패하기 때문이다(production 확인).
+  - 줄여 찍은 결과는 높이 상한으로 자른 것과 같이 `screenshotTruncated`로 표시하고, 스크린샷 밖의 이슈는 `cropRect`가 `null`이다(5.4.1).
+  - 찍지 못하면 `SCREENSHOT_FAILED`다. **viewport 실패가 아니다.** 그 viewport의 결과(측정, 이슈)는 그대로 남고 `screenshotUrl`, `screenshotWidth`, `screenshotHeight`는 `null`, `screenshotTruncated`는 `false`, 그 viewport의 `cropRect`는 모두 `null`이다. 상태 판정(6.2.2)에 영향을 주지 않으며, 결과 화면의 스크린샷 자리와 검사 범위 안내로 알린다.
+  - 실패한 시도마다 크기, 배율, canvas 수, 시간 제한, 원인을 로그(`screenshot-retry`)에 남기고, 스크린샷 없이 끝나면 `screenshot-missing`을 남긴다.
+  - 촬영 직전에 페이지 JS를 멈추는 방법(`requestAnimationFrame` 가로채기, `Emulation.setScriptExecutionDisabled`, `Page.setWebLifecycleState(frozen)`)과 CDP 직접 촬영(`optimizeForSpeed`)은 production에서 촬영 시간을 줄이지 못해 쓰지 않는다(T14 측정).
 
 ### 5.3 Feature 3. UI Issue Detection
 
@@ -387,7 +400,8 @@ Confidence 하향 조건:
 **하이라이트 스크린샷**
 - 크롭 이미지를 따로 만들어 업로드하지 않는다. 화면에서 전체 스크린샷을 `cropRect` 영역만 보이게 잘라 표시하고, 그 위에 대상 요소의 박스를 그린다.
 - `cropRect`는 코드(`src/server/evidence/crop.ts`)가 계산한다: `boundingBox`를 사방 24px 넓히고, 최소 크기 320×160px을 보장한 뒤, 실제 스크린샷 경계(`screenshotWidth × screenshotHeight`) 안으로 맞춘다.
-- 대상 요소가 잘린 스크린샷 높이(5.2.4) 밖에 있으면 `cropRect`는 `null`이고, 화면에 "스크린샷 범위 밖" 안내를 표시한다.
+- 크롭 기준 박스(DETECTION_RULES 8.3, 패딩 전)가 스크린샷 `[0, screenshotWidth] × [0, screenshotHeight]` 안에 **완전히** 들어올 때만 `cropRect`를 만든다. 스크린샷 밖이거나 일부만 걸치면 `null`이고, 화면은 측정값으로 그린 배치도(`layoutMap`)에 이슈를 그리고 "이 위치는 스크린샷 범위 밖이라 배치도로 표시합니다."를 안내한다. "스크린샷 범위 밖" 문구만 보여주는 화면은 없다.
+- 스크린샷을 찍지 못한 viewport(`SCREENSHOT_FAILED`, 5.2.4)는 `cropRect`가 모두 `null`이고, 화면은 저장된 측정값으로 그린 이슈 도면을 보여준다(WIREFRAME 5.6, 6.4).
 - 이유: 이슈마다 이미지를 업로드하면 Blob 사용량과 검사 시간이 늘고, 별도 이미지 처리 라이브러리가 필요해진다.
 
 #### 5.4.2 Source Hints
@@ -736,6 +750,7 @@ Viewport별 오류와 AI 분석 상태를 따로 기록하고(8.2), 최상위 `s
 | `INTERNAL_ERROR` | 공통 | 그 밖의 예상하지 못한 오류 |
 | `CANCELLED` | 검사 | 사용자가 브라우저 단계(`pending`, `running`)에서 검사를 중지함. `status = failed`, 측정 결과는 비운다(DOMAIN_MODEL 4.1) |
 | `NAVIGATION_FAILED` | viewport | `goto`가 네트워크 오류로 실패(DNS 조회 실패, 연결 거부, TLS 오류 등). 메시지에 오류 종류를 포함한다. 요청 단계의 DNS 조회 실패는 `INVALID_URL`이다 |
+| `SCREENSHOT_FAILED` | viewport 결과 안 (`screenshotUrl: null`) | 스크린샷만 실패(5.2.4). **viewport 실패가 아니다.** `viewportErrors`에 기록하지 않고 상태 판정(6.2.2)에도 영향을 주지 않는다. 측정과 이슈는 그대로 보여주고, 검사 범위 안내와 스크린샷 자리에 알린다 |
 
 ---
 
@@ -874,10 +889,12 @@ Viewport별 오류와 AI 분석 상태를 따로 기록하고(8.2), 최상위 `s
 | Chromium 실행 (콜드 스타트 포함) | 15s (viewport마다) |
 | viewport당 페이지 로드 (`goto`) | 30s |
 | viewport당 안정화 (networkidle, 스크롤, 폰트) | 20s |
-| viewport당 측정과 스크린샷 | 20s |
+| viewport당 측정과 스크린샷 | 40s (Desktop은 `min(40s, 남은 전체 시간 − Mobile 몫)`) |
 | 저장 | 15s |
 | **전체 검사 상한** | **180s** (넘으면 끝내지 못한 viewport에 `TIME_BUDGET_EXCEEDED`를 기록하고, 이미 얻은 결과로 다음 단계를 진행한다) |
 
+- 측정과 스크린샷은 20s에서 40s로 늘렸다(T14). Vercel Chromium의 Desktop 촬영이 한 장에 12~22초 걸리는 페이지가 있어서다(5.2.4).
+- Mobile 몫: Desktop은 남은 전체 시간에서 `MOBILE_RESERVE_MS`(45s)를 뺀 시간만 쓴다. Desktop이 느려도 Mobile을 검사할 시간을 남기기 위해서다. 근거는 production 측정(Mobile 실행 0.1~4s, 열기·안정화 5.6~6.9s, 수집 0.9s, 촬영 3.4~4.2s, 닫기 최대 7s → 합계 약 15~23s)의 약 두 배다. 남은 시간이 Mobile 몫보다 적으면 Desktop이 남은 시간을 쓴다. Mobile은 남은 시간을 모두 쓴다. 두 viewport를 합쳐도 전체 상한(180s)을 넘지 않는다.
 - 각 제한은 Playwright 응답을 기다리지 않는 강제 제한이다. 브라우저가 멈춰도 제한 시간에 그 viewport를 실패로 끝내고 브라우저를 닫는다. 정상 종료가 5초 안에 끝나지 않으면 프로세스를 강제 종료한다(T13, 구현 상수는 `src/server/browser/timeouts.ts`).
 
 AI 단계(analyze 함수)의 상한은 240초다. 넘으면 그때까지 받은 분석 결과로 태스크와 프롬프트를 만들고 끝낸다.
@@ -937,14 +954,33 @@ interface ViewportResult {
   layoutWidth: number;                  // document.documentElement.clientWidth
   hasMetaViewport: boolean;
   documentHeight: number;
-  screenshotUrl: string;
-  screenshotWidth: number;              // 저장된 스크린샷 너비 (CSS px). Mobile 축소 시 layoutWidth보다 넓을 수 있다
-  screenshotHeight: number;             // 저장된 스크린샷 높이 (CSS px)
-  screenshotTruncated: boolean;
+  screenshotUrl: string | null;         // 스크린샷을 찍지 못했으면(SCREENSHOT_FAILED, 5.2.4) null. 아래 두 값도 함께 null
+  screenshotWidth: number | null;       // 저장된 스크린샷 너비 (CSS px). Mobile 축소 시 layoutWidth보다 넓을 수 있다
+  screenshotHeight: number | null;      // 저장된 스크린샷 높이 (CSS px)
+  screenshotTruncated: boolean;         // 스크린샷이 없으면 false
   elementsInspected: number;
   elementsTruncated: boolean;
   hasCanvas: boolean;
   overlaysDetected: string[];           // selector 목록
+  layoutMap?: LayoutMap;                // 페이지 구성 도면 (DETECTION_RULES 16장). 스크린샷 성공 여부와 관계없이 항상 저장. 이 필드 전에 저장된 문서에는 없다
+}
+
+// 수집한 후보 요소에서 뽑은 페이지 구성. 브라우저에서 따로 측정하지 않는다. 화면이 사진 없는 부분을 그리는 데 쓴다
+interface LayoutMap {
+  width: number;                        // layoutWidth
+  scrollWidth: number;                  // max(layoutWidth, documentScrollWidth). 화면 밖으로 나간 블록까지 담는 문서 가로 범위
+  height: number;                       // documentHeight (상한 LAYOUT_MAX_HEIGHT, 넘으면 truncated)
+  truncated: boolean;                   // 블록 수나 높이 상한에 걸렸는지
+  blocks: LayoutBlock[];                // 문서 순서, 최대 LAYOUT_MAX_BLOCKS(400)개
+}
+
+interface LayoutBlock {
+  kind: 'header' | 'nav' | 'main' | 'section' | 'footer' | 'aside' | 'form'
+      | 'heading' | 'text' | 'image' | 'button' | 'input'
+      | 'canvas' | 'video' | 'iframe' | 'card';
+  rect: Rect;                           // 문서 기준, 정수, [0, scrollWidth] × [0, height] 안
+  label?: string;                       // 페이지에서 가져온 문자열, 최대 40자. 화면에는 문자열로만 렌더링
+  depth: number;                        // 이 블록을 감싸는 구조 블록 수
 }
 
 interface RelatedElement {
@@ -1053,11 +1089,12 @@ interface DevTask {
 - 검사 작업은 API 응답과 분리해 비동기로 처리한다(`after()`).
 - 클라이언트는 polling으로 상태를 조회한다. 종료 상태(`completed`, `partial`, `failed`)가 되면 멈추고, 이전 요청이 끝나기 전에는 다음 요청을 보내지 않는다.
 - 단계별 시간 예산(8.1.3)을 적용한다.
-- 동시 검사 수는 최대 2개(`MAX_CONCURRENT_INSPECTIONS`)로 제한한다. Hobby 플랜 함수는 1 vCPU / 2GB이기 때문이다.
+- 동시 검사 수는 1개(`MAX_CONCURRENT_INSPECTIONS` 기본값)로 제한한다. Hobby 플랜 함수는 1 vCPU / 2GB라, 검사 두 개가 겹치면 Chromium 두 개가 CPU 하나를 나눠 쓴다. 촬영이 이미 느린 환경(5.2.4)에서 두 검사가 모두 시간 제한에 걸릴 수 있다(T14, 2에서 1로 낮춤).
   - 구현: Redis Sorted Set `inspections:running`(member = inspection id, score = 만료 시각)을 Lua 스크립트로 원자적으로 다룬다. 만료된 항목 제거 → 개수 확인 → 추가를 한 번에 처리한다.
   - 만료 시각은 시작 후 300초다. 함수가 중간에 죽어도 슬롯이 영구히 잠기지 않게 하기 위해서다.
   - 검사가 끝나면 `finally`에서 슬롯을 반환한다.
 - 목표: 일반적인 랜딩 페이지 기준으로 브라우저 검사 90초 이내, 전체 2분 이내.
+  - production 실측(T14, 단계별): Desktop 실행 0.1~4s, 열기·안정화 6~10s, 수집 1~4s, 촬영 12~22s(canvas 없는 페이지) / 42~57s(WebGL 페이지), 닫기 최대 7s. Mobile은 합계 약 15~23s. 일반 페이지의 브라우저 검사는 약 40~70s로 목표 안이다. WebGL처럼 촬영이 40초를 넘는 페이지는 스크린샷 없이 끝난다(5.2.4).
 
 ### 8.5 Reliability
 
@@ -1066,7 +1103,8 @@ interface DevTask {
 - AI 분석이 실패해도 브라우저 검사 결과는 그대로 남는다(별도 함수, 별도 저장).
 - 브라우저는 `finally`에서 반드시 종료한다.
 - 배포 첫 단계에서 "Vercel 환경에서 스크린샷 1장 찍기"를 검증한다. Playwright와 Chromium 버전 호환 문제로 실패하면 Fallback(Puppeteer)으로 바꾼다.
-- 같은 단계에서 Fluid compute가 한 인스턴스에 검사 2개를 동시에 보낼 때의 메모리 사용량을 확인한다. 메모리가 부족하면 `MAX_CONCURRENT_INSPECTIONS`를 1로 낮춘다.
+- 동시 실행은 1개다(8.4). Fluid compute가 한 인스턴스에 검사 두 개를 보내 Chromium 두 개가 CPU를 나눠 쓰는 일을 막는다(T14).
+- 같은 인스턴스에서 브라우저를 계속 띄워도 망가지지 않아야 한다. Chromium(single-process)은 종료할 때 자주 비정상 종료해 `/tmp`에 core 덤프(개당 300~470MB)를 남기므로, 브라우저를 닫은 뒤와 실행 전에 지운다(T14 production 확인: 지우지 않으면 실행 12번에 `/tmp` 2.1GB, 이후 실행 직후 실패).
 
 ### 8.6 Security
 
@@ -1142,7 +1180,7 @@ URL과 네트워크:
 | meta viewport 없음 | Mobile에서 layout viewport가 390px이 아니게 된다. | 측정한 `layoutWidth` 기준으로 판정하고 결과에 안내한다. |
 | DNS rebinding | route 검사 뒤 Chromium의 재조회 결과가 바뀌면 막을 수 없다. | MVP에서는 위험을 받아들이고, 정식 서비스에서는 네트워크 수준 격리를 검토한다. |
 | 실행 환경 차이 | 서버리스 Chromium은 실제 기기의 Safari나 Chrome과 렌더링이 다를 수 있다. 시스템 폰트는 글자 폭이 같은 Liberation 폰트로 대체하지만(5.2.3) 모양은 다르고, Georgia처럼 폭이 같은 대체 폰트가 없는 경우 측정값이 실제와 다를 수 있다. | Chromium 기준 결과라는 점을 명시한다. |
-| 스크린샷 촬영 실패 | 서버리스 Chromium에서 전체 페이지 촬영이 가끔 실패한다. WebGL canvas는 빈 화면으로 찍힐 수 있다. | 줄여서 다시 찍고 잘림을 표시한다(5.2.4). |
+| 스크린샷 촬영 실패 | 서버리스 Chromium은 촬영이 느리다(Desktop 한 장 12~57초). WebGL 페이지는 40초 안에 못 찍는 경우가 많다. | 시간 초과가 아닌 오류일 때만 줄여서 다시 찍고, 찍지 못하면 스크린샷 없이 측정과 이슈를 보여준다(`SCREENSHOT_FAILED`, 5.2.4). 위치 표시(마커, 하이라이트)는 없다. |
 | 서버 경유 요청 | 리다이렉트를 hop마다 검사하려고 서버가 대신 요청하므로, TLS·HTTP 특성이 브라우저 직접 요청과 달라 봇 차단 결과가 다를 수 있다. 응답은 함수 메모리에 버퍼링된다. | 동영상·오디오는 불러오지 않는다. 크기를 CSS로 정하지 않은 video는 레이아웃이 실제와 다를 수 있다. |
 
 ---

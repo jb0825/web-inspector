@@ -5,13 +5,15 @@
 //  - 진행 화면: 이 파일의 fakeInspection
 //  - 결과 화면: `pnpm test:fixtures`가 만든 .tmp/fixtures-report/{ID}.inspection.json과 {ID}-{viewport}.png
 //
-// 실행: pnpm test:fixtures → pnpm dev → pnpm ui:shots  (주소를 바꾸려면 UI_SHOTS_BASE_URL)
+// 실행: pnpm test:fixtures → 데모 2개 (pnpm test:fixtures --page demo/landing.html --report-only,
+//       pnpm test:fixtures --page demo/canvas-only.html --report-only) → pnpm dev → pnpm ui:shots  (주소를 바꾸려면 UI_SHOTS_BASE_URL)
+// 배치도 화면(schematic-*)과 시안 비교(compare-*: 시안과 같은 크기로 찍어 나란히 붙인 이미지)도 만든다. UI_SHOTS_ONLY=compare면 비교만.
 // 390px 화면에서 가로 스크롤이 생기거나 P-01 Mobile 마커 위치가 어긋나면 종료 코드 1로 끝난다.
 
-import { mkdir, readFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { chromium, type Page } from 'playwright';
-import type { Inspection, Issue } from '../src/types/inspection';
+import { chromium, type Browser, type Page } from 'playwright';
+import type { Inspection, Issue, LayoutBlock, ViewportResult } from '../src/types/inspection';
 
 const BASE_URL = process.env.UI_SHOTS_BASE_URL ?? 'http://localhost:3000';
 const OUT_DIR = path.join(process.cwd(), '.tmp', 'ui-shots');
@@ -66,7 +68,24 @@ const ID = {
   partial: uuid(22),
   empty: uuid(23),
   review: uuid(24),
+  // 스크린샷 없음(SCREENSHOT_FAILED): 결과 화면과 Issue Detail 유형 4종 (T14)
+  noshotP01: uuid(31),
+  noshotP02: uuid(32),
+  noshotP03: uuid(33),
+  noshotP04: uuid(34),
+  noshotP05: uuid(35),
+  // 배치도 개선: 사진 + 도면, canvas 페이지, 예전 문서(layoutMap 없음), 높이 상한에 걸린 긴 페이지
+  hybrid: uuid(41),
+  canvas: uuid(42),
+  legacy: uuid(43),
+  longPage: uuid(44),
 };
+
+/** 시안 (docs/assets/mock). 같은 크기로 찍어 나란히 비교한다 */
+const MOCK_DIR = path.join(process.cwd(), 'docs', 'assets', 'mock');
+/** ui-shot 1번의 Mobile 스크린샷 높이 (첫 화면만 저장된 경우) */
+const HYBRID_SHOT_HEIGHT = 844;
+const HYBRID_SHOT_FILE = `demo-landing-mobile-${HYBRID_SHOT_HEIGHT}.png`;
 
 // ── 결과 화면 (T12): Fixture 문서를 읽어 상태별로 바꾼다 ───────────────
 
@@ -129,6 +148,80 @@ function asMobileFailed(doc: Inspection): Inspection {
   };
 }
 
+/** 스크린샷 없음(SCREENSHOT_FAILED, PRD 5.2.4): 두 viewport의 스크린샷 값과 cropRect를 비운다 */
+function asNoScreenshot(doc: Inspection): Inspection {
+  const viewports = { ...doc.viewports };
+  for (const v of ['desktop', 'mobile'] as const) {
+    const vr = viewports[v];
+    if (vr) viewports[v] = { ...vr, screenshotUrl: null, screenshotWidth: null, screenshotHeight: null, screenshotTruncated: false };
+  }
+  return { ...doc, viewports, issues: doc.issues.map((issue) => ({ ...issue, occurrences: issue.occurrences.map((o) => ({ ...o, cropRect: null })) })) };
+}
+
+/** 한 viewport만 스크린샷 없음으로 바꾼다 */
+function withoutScreenshot(doc: Inspection, v: 'desktop' | 'mobile'): Inspection {
+  const vr = doc.viewports[v];
+  if (!vr) return doc;
+  return {
+    ...doc,
+    viewports: { ...doc.viewports, [v]: { ...vr, screenshotUrl: null, screenshotWidth: null, screenshotHeight: null, screenshotTruncated: false } },
+    issues: doc.issues.map((issue) => ({ ...issue, occurrences: issue.occurrences.map((o) => (o.viewport === v ? { ...o, cropRect: null } : o)) })),
+  };
+}
+
+/**
+ * ui-shot 1: Desktop 스크린샷 없음 + Mobile은 첫 화면(844px)만 저장된 경우.
+ * 일부만 걸치거나 범위 밖인 cropRect는 서버 규칙(DETECTION_RULES 8.3)대로 null로 둔다.
+ */
+function asHybrid(doc: Inspection): Inspection {
+  const noDesktop = withoutScreenshot(doc, 'desktop');
+  const mobile = noDesktop.viewports.mobile;
+  if (!mobile) return noDesktop;
+  const height = HYBRID_SHOT_HEIGHT;
+  return {
+    ...noDesktop,
+    viewports: { ...noDesktop.viewports, mobile: { ...mobile, screenshotUrl: `${SHOT_PREFIX}${HYBRID_SHOT_FILE}`, screenshotHeight: height, screenshotTruncated: mobile.documentHeight > height } },
+    issues: noDesktop.issues.map((issue) => ({
+      ...issue,
+      occurrences: issue.occurrences.map((o) => (o.viewport === 'mobile' && o.cropRect && o.boundingBox.y + o.boundingBox.height > height ? { ...o, cropRect: null } : o)),
+    })),
+  };
+}
+
+/** ui-shot 3: layoutMap이 생기기 전에 저장된 문서 */
+function asLegacy(doc: Inspection): Inspection {
+  const viewports = { ...doc.viewports };
+  for (const v of ['desktop', 'mobile'] as const) {
+    const vr = viewports[v];
+    if (!vr) continue;
+    const copy: ViewportResult = { ...vr };
+    delete copy.layoutMap;
+    viewports[v] = copy;
+  }
+  return { ...doc, viewports };
+}
+
+/** ui-shot 4: Desktop 문서 높이가 도면 상한(10,000px)을 넘는 긴 페이지. 데모 페이지의 블록을 아래로 반복해 만든다 */
+function asLongPage(doc: Inspection): Inspection {
+  const base = withoutScreenshot(doc, 'desktop');
+  const desktop = base.viewports.desktop;
+  const map = desktop?.layoutMap;
+  if (!desktop || !map) return base;
+  const limit = 10_000;
+  const blocks: LayoutBlock[] = [];
+  for (let offset = 0; offset < limit && blocks.length < 400; offset += map.height) {
+    for (const b of map.blocks) {
+      const y = b.rect.y + offset;
+      if (y >= limit || blocks.length >= 400) continue;
+      blocks.push({ ...b, rect: { ...b.rect, y, height: Math.min(b.rect.height, limit - y) } });
+    }
+  }
+  return {
+    ...base,
+    viewports: { ...base.viewports, desktop: { ...desktop, documentHeight: 14_000, layoutMap: { ...map, height: limit, truncated: true, blocks } } },
+  };
+}
+
 /** Needs Review 그룹 확인용: 대표 이슈를 복제해 검토 필요 이슈와 태스크를 하나씩 더한다 */
 function withNeedsReview(doc: Inspection): Inspection {
   const base = doc.issues[0];
@@ -178,6 +271,15 @@ async function buildResponses(): Promise<Record<string, { status: number; body: 
     [ID.partial]: ok(asMobileFailed(await fixtureDoc('P-03', ID.partial))),
     [ID.empty]: ok(await fixtureDoc('N-01', ID.empty)),
     [ID.review]: ok(withNeedsReview(await fixtureDoc('P-03', ID.review))),
+    [ID.noshotP01]: ok(asNoScreenshot(await fixtureDoc('P-01', ID.noshotP01))),
+    [ID.noshotP02]: ok(asNoScreenshot(await fixtureDoc('P-02', ID.noshotP02))),
+    [ID.noshotP03]: ok(asNoScreenshot(await fixtureDoc('P-03', ID.noshotP03))),
+    [ID.noshotP04]: ok(asNoScreenshot(await fixtureDoc('P-04', ID.noshotP04))),
+    [ID.noshotP05]: ok(asNoScreenshot(await fixtureDoc('P-05', ID.noshotP05))),
+    [ID.hybrid]: ok(asHybrid(await fixtureDoc('demo-landing', ID.hybrid))),
+    [ID.canvas]: ok(asNoScreenshot(await fixtureDoc('demo-canvas-only', ID.canvas))),
+    [ID.legacy]: ok(asLegacy(asNoScreenshot(await fixtureDoc('P-01', ID.legacy)))),
+    [ID.longPage]: ok(asLongPage(await fixtureDoc('demo-landing', ID.longPage))),
   };
 }
 
@@ -228,6 +330,33 @@ const SCREENS: Screen[] = [
   { name: 'report-analyzing-tasks', path: `/report/${ID.analyzing}?tab=tasks`, ready: 'text=원인 분석과 태스크 생성 중입니다' },
   { name: 'report-partial', path: `/report/${ID.partial}`, ready: 'text=Mobile 검사에 실패했습니다' },
   { name: 'report-empty', path: `/report/${ID.empty}`, ready: 'text=검사한 항목에서 문제가 발견되지 않았습니다' },
+  // 스크린샷 없음(SCREENSHOT_FAILED): 미리보기 도면과 Issue Detail 이슈 도면 (T14, WIREFRAME 5.6·6.4)
+  { name: 'report-noshot', path: `/report/${ID.noshotP01}`, ready: 'h1:has-text("검사 결과")' },
+  { name: 'report-noshot-viewport-overflow', path: `/report/${ID.noshotP04}?issue=ISS-001`, ready: 'aside figure svg', fullPage: false },
+  { name: 'report-noshot-spill', path: `/report/${ID.noshotP05}?issue=ISS-001`, ready: 'aside figure svg', fullPage: false },
+  { name: 'report-noshot-clipped', path: `/report/${ID.noshotP02}?issue=ISS-001`, ready: 'aside figure svg', fullPage: false },
+  { name: 'report-noshot-overlap', path: `/report/${ID.noshotP03}?issue=ISS-001`, ready: 'aside figure svg', fullPage: false },
+  // 배치도 개선 (사진이 없는 부분은 도면으로 채운다)
+  // 1. Desktop 스크린샷 없음 + Mobile 첫 화면만 + 범위 밖 이슈(ISS-004, Mobile 874px)의 Issue Detail
+  { name: 'schematic-hybrid', path: `/report/${ID.hybrid}?issue=ISS-004`, ready: 'aside figure svg', fullPage: false },
+  { name: 'schematic-hybrid-full', path: `/report/${ID.hybrid}`, ready: 'h1:has-text("검사 결과")' },
+  // 2. canvas 위주 페이지, 이슈 0개
+  { name: 'schematic-canvas', path: `/report/${ID.canvas}`, ready: 'text=검사한 항목에서 문제가 발견되지 않았습니다' },
+  // 3. layoutMap이 없는 예전 문서 → 최소 도면
+  { name: 'schematic-legacy', path: `/report/${ID.legacy}`, ready: 'text=표시할 구조 요소를 찾지 못했습니다' },
+  // 4. 높이 상한(Desktop 10,000px)에 걸린 긴 페이지: 미리보기를 "배치도 끝" 근처로 스크롤해서 찍는다
+  {
+    name: 'schematic-long-page',
+    path: `/report/${ID.longPage}`,
+    ready: 'h1:has-text("검사 결과")',
+    before: async (page) => {
+      await page.locator('section[aria-label="Desktop 미리보기"] .overflow-y-auto').evaluate((el) => {
+        const svg = el.querySelector('svg');
+        const height = svg ? svg.getBoundingClientRect().height : el.scrollHeight;
+        el.scrollTop = (10_000 / 14_000) * height - el.clientHeight / 2;
+      });
+    },
+  },
   {
     name: 'report-needs-review',
     path: `/report/${ID.review}`,
@@ -297,12 +426,89 @@ const roundBox = (b: { x: number; y: number; width: number; height: number }) =>
   height: Math.round(b.height * 10) / 10,
 });
 
+/** PNG 헤더(IHDR)의 크기 */
+function pngSize(buffer: Buffer): { width: number; height: number } {
+  return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) };
+}
+
+/** 이미지 위쪽 height px만 남긴 PNG를 만든다 (첫 화면만 저장된 스크린샷 흉내) */
+async function cropTop(browser: Browser, src: string, dst: string, height: number) {
+  const buffer = await readFile(src);
+  const { width } = pngSize(buffer);
+  const context = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: 1 });
+  try {
+    const page = await context.newPage();
+    await page.setContent(`<body style="margin:0"><img style="display:block" src="data:image/png;base64,${buffer.toString('base64')}"></body>`);
+    await page.locator('img').evaluate((img: HTMLImageElement) => img.decode());
+    await page.screenshot({ path: dst, clip: { x: 0, y: 0, width, height } });
+  } finally {
+    await context.close();
+  }
+}
+
+/** 시안 이미지와 같은 크기(1440 CSS px, 2배율)로 찍어 나란히 붙인 비교 이미지를 만든다 */
+const COMPARES = [
+  { name: 'compare-hybrid', mock: 'schematic-v2-hybrid.png', path: () => `/report/${ID.hybrid}?issue=ISS-004`, ready: 'aside figure svg' },
+  { name: 'compare-canvas', mock: 'schematic-v2-canvas-only.png', path: () => `/report/${ID.canvas}`, ready: 'text=검사한 항목에서 문제가 발견되지 않았습니다' },
+] as const;
+
+async function compareWithMocks(responses: Record<string, { status: number; body: unknown }>) {
+  for (const item of COMPARES) {
+    const mock = await readFile(path.join(MOCK_DIR, item.mock));
+    const size = pngSize(mock);
+    const viewport = { width: size.width / 2, height: Math.round(size.height / 2) };
+    // 비교마다 브라우저를 새로 띄운다 (브라우저 하나에 context 하나)
+    let ours: Buffer;
+    const browser = await chromium.launch();
+    try {
+      const context = await browser.newContext({ viewport, deviceScaleFactor: 2, reducedMotion: 'reduce' });
+      const page = await context.newPage();
+      await mockApi(page, responses);
+      await page.goto(`${BASE_URL}${item.path()}`, { waitUntil: 'load', timeout: NAVIGATION_TIMEOUT_MS });
+      await page.locator(item.ready).first().waitFor({ state: 'visible', timeout: READY_TIMEOUT_MS });
+      await page.evaluate(() => document.fonts.ready);
+      await waitForVisibleImages(page);
+      ours = await page.screenshot();
+      await writeFile(path.join(OUT_DIR, `${item.name}-ours.png`), ours);
+      await context.close();
+    } finally {
+      await browser.close();
+    }
+    const composer = await chromium.launch();
+    try {
+      const gap = 24;
+      const label = 28;
+      const context = await composer.newContext({ viewport: { width: viewport.width * 2 + gap, height: viewport.height + label }, deviceScaleFactor: 1 });
+      const page = await context.newPage();
+      const img = (b: Buffer) => `data:image/png;base64,${b.toString('base64')}`;
+      await page.setContent(`<body style="margin:0;display:flex;gap:${gap}px;background:#d0d4da;font:14px sans-serif">
+        <figure style="margin:0;width:${viewport.width}px"><figcaption style="height:${label}px;line-height:${label}px;padding-left:8px">시안 ${item.mock}</figcaption><img style="display:block;width:${viewport.width}px" src="${img(mock)}"></figure>
+        <figure style="margin:0;width:${viewport.width}px"><figcaption style="height:${label}px;line-height:${label}px;padding-left:8px">구현 ${item.path()}</figcaption><img style="display:block;width:${viewport.width}px" src="${img(ours)}"></figure></body>`);
+      await page.evaluate(() => Promise.all(Array.from(document.images).map((i) => i.decode())));
+      const file = path.join(OUT_DIR, `${item.name}.png`);
+      await page.screenshot({ path: file });
+      console.log(`✓ ${path.relative(process.cwd(), file)}`);
+      await context.close();
+    } finally {
+      await composer.close();
+    }
+  }
+}
+
 async function main() {
   await mkdir(OUT_DIR, { recursive: true });
+  // ui-shot 1용: Mobile 스크린샷의 위쪽 844px만 남긴 이미지
+  const cropper = await chromium.launch();
+  try {
+    await cropTop(cropper, path.join(FIXTURE_DIR, 'demo-landing-mobile.png'), path.join(FIXTURE_DIR, HYBRID_SHOT_FILE), HYBRID_SHOT_HEIGHT);
+  } finally {
+    await cropper.close();
+  }
   const responses = await buildResponses();
   const p01 = responses[ID.p01]!.body as Inspection;
   const p01Box = p01.issues[0]!.occurrences.find((o) => o.viewport === 'mobile')!.boundingBox;
   const p01Width = p01.viewports.mobile!.screenshotWidth;
+  if (p01Width === null) throw new Error('P-01 Mobile screenshot is missing');
 
   const overflow: string[] = [];
   const problems: string[] = [];
@@ -320,6 +526,11 @@ async function main() {
       try {
         for (const screen of SCREENS.filter((s) => !ONLY || s.name.startsWith(ONLY))) {
           const page = await context.newPage();
+          // 화면의 콘솔 오류(React key 중복 등)를 함께 알린다
+          const consoleErrors = new Set<string>();
+          page.on('console', (message) => {
+            if (message.type() === 'error') consoleErrors.add(message.text().slice(0, 300));
+          });
           await mockApi(page, responses);
           await screen.init?.(page);
           await page.goto(`${BASE_URL}${screen.path}`, { waitUntil: 'load', timeout: NAVIGATION_TIMEOUT_MS });
@@ -340,6 +551,7 @@ async function main() {
           const wider = scrollWidth > clientWidth;
           if (wider) overflow.push(`${screen.name}-${size.name}`);
           console.log(`${wider ? '✗' : '✓'} ${path.relative(process.cwd(), file)}  scrollWidth=${scrollWidth} clientWidth=${clientWidth}`);
+          for (const text of consoleErrors) console.warn(`  console.error: ${text}`);
           await page.close();
         }
       } finally {
@@ -349,6 +561,7 @@ async function main() {
       await browser.close();
     }
   }
+  if (!ONLY || ONLY.startsWith('compare')) await compareWithMocks(responses);
   if (overflow.length > 0) console.error(`가로 스크롤이 있는 화면: ${overflow.join(', ')}`);
   for (const problem of problems) console.error(problem);
   if (overflow.length > 0 || problems.length > 0) process.exitCode = 1;

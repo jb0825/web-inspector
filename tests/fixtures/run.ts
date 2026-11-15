@@ -20,6 +20,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { analyzeIssues } from '@/server/analysis/analyze';
 import { selectRule, type RuleId } from '@/server/analysis/rules';
+import type { RenderedViewport } from '@/server/browser/render';
 import type { CapturedScreenshot } from '@/server/browser/screenshot';
 import type { CollectedViewport } from '@/server/collect/types';
 import { buildLookup } from '@/server/detect/geometry';
@@ -138,11 +139,18 @@ function parseArgs(argv: string[]): ParsedArgs {
   return { mode: 'fixtures', fixtures, repeat };
 }
 
+/** Fixture 판정에는 스크린샷이 필요하다(cropRect 검증). 로컬에서 찍지 못하면 실패로 본다 */
+function withScreenshot(rendered: RenderedViewport, viewport: Viewport): RenderedViewport & { screenshot: CapturedScreenshot } {
+  const { screenshot } = rendered;
+  if (!screenshot) throw new Error(`${viewport} screenshot failed: ${rendered.screenshotError?.message ?? 'unknown'}`);
+  return { ...rendered, screenshot };
+}
+
 async function runFixture(baseUrl: string, fixture: RunTarget): Promise<FixtureRun> {
   const started = performance.now();
   // Desktop과 Mobile은 순서대로, viewport마다 브라우저를 새로 띄운다(AGENTS.md 7장, runInspection과 같은 경로)
-  const desktop = await inspectLocalViewport(`${baseUrl}${fixture.path}`, 'desktop');
-  const mobile = await inspectLocalViewport(`${baseUrl}${fixture.path}`, 'mobile');
+  const desktop = withScreenshot(await inspectLocalViewport(`${baseUrl}${fixture.path}`, 'desktop'), 'desktop');
+  const mobile = withScreenshot(await inspectLocalViewport(`${baseUrl}${fixture.path}`, 'mobile'), 'mobile');
   const browserMs = performance.now() - started;
   const buildStarted = performance.now();
   const result = buildIssues({ desktop: desktop.collected, mobile: mobile.collected });
@@ -539,7 +547,7 @@ async function writeReport(run: FixtureRun, verdict?: Verdict): Promise<void> {
     const occurrences = issue.occurrences.map((o) => {
       const vr = run.viewportResults[o.viewport];
       const meta = `<p class="meta">${o.viewport} · boundingBox ${escapeHtml(JSON.stringify(o.boundingBox))} · cropRect ${escapeHtml(JSON.stringify(o.cropRect))}</p>`;
-      if (!o.cropRect) return `${meta}<p class="evidence">${escapeHtml(o.evidenceText)}</p><p class="out">스크린샷 범위 밖</p>`;
+      if (!o.cropRect || vr.screenshotUrl === null) return `${meta}<p class="evidence">${escapeHtml(o.evidenceText)}</p><p class="out">스크린샷 범위 밖</p>`;
       const c = o.cropRect;
       const b = o.boundingBox;
       const related = o.relatedElements

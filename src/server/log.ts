@@ -19,6 +19,8 @@ export interface LogFields {
   cause?: string;
   /** 스크린샷 진단 값(크기, 배율, canvas 수, 촬영 방식). 숫자와 정해진 이름만 넣는다(T14) */
   screenshot?: Record<string, number | string>;
+  /** 인스턴스 자원 사용량(파일 디스크립터 수, /tmp 크기와 상위 항목 이름, Chromium 프로세스 수, T14) */
+  resources?: Record<string, number | string>;
 }
 
 export type Logger = (event: string, fields: LogFields) => void;
@@ -51,12 +53,12 @@ export type LogLevel = 'info' | 'warn' | 'error';
  * 이벤트 이름으로 로그 레벨을 정한다. Vercel 로그는 console.error/warn을 error/warning 레벨로 표시한다.
  * - error: 실패(…-failed, …-timeout, unexpected, read-invalid, analyze-config-missing)
  * - warn: 정상 처리되지만 사용자가 원하는 결과를 받지 못한 경우(동시 실행 초과, 시간 부족으로 viewport 건너뜀,
- *   스크린샷 촬영 실패 후 줄여서 다시 찍음)
+ *   스크린샷 촬영 실패 후 줄여서 다시 찍음, 스크린샷 없이 결과를 남김)
  */
 export function logLevelOf(event: string): LogLevel {
   if (event.endsWith('-failed') || event.endsWith('-timeout') || event === 'unexpected' || event === 'read-invalid' || event === 'analyze-config-missing')
     return 'error';
-  if (event === 'create-rejected' || event === 'viewport-skipped' || event === 'screenshot-retry') return 'warn';
+  if (event === 'create-rejected' || event === 'viewport-skipped' || event === 'screenshot-retry' || event === 'screenshot-missing') return 'warn';
   return 'info';
 }
 

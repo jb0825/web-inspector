@@ -15,13 +15,15 @@ export function CropView({ occurrence, screenshot, priority, label }: { occurren
   const width = useElementWidth(containerRef);
   const crop = occurrence.cropRect;
 
-  if (!crop || !screenshot) {
-    return (
-      <div className="flex h-40 items-center justify-center rounded-md bg-background-secondary text-body-sm text-text-secondary">스크린샷 범위 밖</div>
-    );
-  }
+  const image =
+    screenshot && screenshot.screenshotUrl !== null && screenshot.screenshotWidth !== null && screenshot.screenshotHeight !== null
+      ? { url: screenshot.screenshotUrl, width: screenshot.screenshotWidth, height: screenshot.screenshotHeight }
+      : null;
 
-  const view = computeCropView(crop, { width: screenshot.screenshotWidth, height: screenshot.screenshotHeight }, width);
+  // 사진 / 배치도 판정(evidenceView)이 사진일 때만 이 컴포넌트를 쓴다. 크롭이 없으면 그리지 않는다
+  if (!crop || !image) return null;
+
+  const view = computeCropView(crop, { width: image.width, height: image.height }, width);
   const target = view ? boxInCrop(occurrence.boundingBox, crop, view.scale) : null;
   const partners = view
     ? occurrence.relatedElements
@@ -38,9 +40,9 @@ export function CropView({ occurrence, screenshot, priority, label }: { occurren
           {/* 크롭 이미지를 따로 만들지 않고 전체 스크린샷을 옮겨 보여준다. next/image 최적화를 쓰지 않는다(T12 2.3) */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={screenshot.screenshotUrl}
-            width={screenshot.screenshotWidth}
-            height={screenshot.screenshotHeight}
+            src={image.url}
+            width={image.width}
+            height={image.height}
             loading="lazy"
             decoding="async"
             alt={`${label} 하이라이트`}

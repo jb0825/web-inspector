@@ -17,7 +17,7 @@ import {
   TEXT_SNIPPET_MAX,
   UNSTABLE_CLASS_PATTERNS,
 } from '@/server/detect/constants';
-import { InspectionError } from '@/server/errors';
+import { InspectionError, isBrowserGone } from '@/server/errors';
 import { collectInPage } from './inpage/collectInPage';
 import { roundMeasure } from './round';
 import { inPageResultSchema } from './schemas';
@@ -92,7 +92,7 @@ function normalizeElement(el: CollectedElement, decimals: number): CollectedElem
   if (el.sourceHints.landmark !== undefined) sourceHints.landmark = el.sourceHints.landmark;
 
   // 키 순서를 types.ts 순서로 고정해 같은 입력이 바이트 단위로 같은 JSON이 되게 한다(DETECTION_RULES 11장).
-  return {
+  const normalized: CollectedElement = {
     index: el.index,
     parentIndex: el.parentIndex,
     ancestorIndices: [...el.ancestorIndices],
@@ -129,6 +129,14 @@ function normalizeElement(el: CollectedElement, decimals: number): CollectedElem
     sourceHints,
     identity,
   };
+  if (el.layoutAttrs) {
+    const layoutAttrs: NonNullable<CollectedElement['layoutAttrs']> = {};
+    if (el.layoutAttrs.alt !== undefined) layoutAttrs.alt = el.layoutAttrs.alt;
+    if (el.layoutAttrs.placeholder !== undefined) layoutAttrs.placeholder = el.layoutAttrs.placeholder;
+    if (el.layoutAttrs.type !== undefined) layoutAttrs.type = el.layoutAttrs.type;
+    normalized.layoutAttrs = layoutAttrs;
+  }
+  return normalized;
 }
 
 /**
@@ -165,9 +173,6 @@ export function normalizeCollected(
   };
 }
 
-function isPageCrash(error: unknown): boolean {
-  return error instanceof Error && /crash|Target (page, context or browser )?closed/i.test(error.message);
-}
 
 /**
  * 안정화가 끝난 page에서 측정 데이터를 수집한다(DETECTION_RULES 1.3).
@@ -194,7 +199,7 @@ export async function collectViewport(
     raw = await Promise.race([page.evaluate(expression), timeout]);
   } catch (error) {
     if (error instanceof InspectionError) throw error;
-    if (isPageCrash(error)) {
+    if (isBrowserGone(error)) {
       throw new InspectionError('BROWSER_CRASH', 'Page crashed during collect', { cause: error });
     }
     throw new InspectionError('DETECTION_FAILED', 'In-page collect failed', { cause: error });

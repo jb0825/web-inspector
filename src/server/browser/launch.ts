@@ -1,6 +1,7 @@
 import 'server-only';
 import type { Browser } from 'playwright-core';
 import { getChildProcessEnv, getRuntimeEnv, type RuntimeEnv } from '@/server/env';
+import { removeCrashDumps } from './crashDumps';
 import { ensureFonts, type FontTarget } from './fonts';
 import { BROWSER_CLOSE_TIMEOUT_MS, BROWSER_KILL_TIMEOUT_MS, settledWithin, withHardTimeout } from './timeouts';
 
@@ -49,14 +50,21 @@ export interface CloseLimits {
   killMs: number;
 }
 
+/** Vercel에서 Chromium이 비정상 종료할 때 core 덤프가 생기는 곳(crashDumps.ts, production 확인) */
+const VERCEL_CRASH_DUMP_DIR = '/tmp';
+/** 브라우저를 닫은 뒤 정리(크래시 덤프 삭제) 제한. 넘어도 기다리지 않는다. 다음 실행 전에 다시 지운다 */
+export const AFTER_CLOSE_TIMEOUT_MS = 2_000;
+
 export function createLaunchedBrowser(
   browser: Browser,
   server: BrowserServerLike,
   launchMs: number,
   limits: CloseLimits = { closeMs: BROWSER_CLOSE_TIMEOUT_MS, killMs: BROWSER_KILL_TIMEOUT_MS },
+  /** 브라우저 프로세스가 끝난 뒤 정리(예: 크래시 덤프 삭제). 실패해도 닫기 결과에 영향을 주지 않는다 */
+  afterClose?: () => Promise<unknown>,
 ): LaunchedBrowser {
   let closing: Promise<BrowserCloseResult> | null = null;
-  const close = async (): Promise<BrowserCloseResult> => {
+  const stop = async (): Promise<BrowserCloseResult> => {
     const graceful = (async () => {
       await browser.close().catch(() => undefined);
       await server.close().catch(() => undefined);
@@ -64,6 +72,11 @@ export function createLaunchedBrowser(
     if (await settledWithin(graceful, limits.closeMs)) return 'closed';
     await settledWithin(server.kill(), limits.killMs);
     return 'killed';
+  };
+  const close = async (): Promise<BrowserCloseResult> => {
+    const result = await stop();
+    if (afterClose) await settledWithin(afterClose(), AFTER_CLOSE_TIMEOUT_MS);
+    return result;
   };
   return {
     browser,
@@ -118,10 +131,13 @@ export async function launchBrowser(): Promise<LaunchedBrowser> {
   const target = getLaunchTarget();
   const startedAt = Date.now();
   const starting = (async (): Promise<LaunchedBrowser> => {
+    // Vercel: 앞 브라우저의 크래시 덤프가 남아 있으면(닫기 정리가 시간 안에 끝나지 않은 경우) 먼저 지운다
+    const cleanup = target === 'vercel' ? () => removeCrashDumps(VERCEL_CRASH_DUMP_DIR) : undefined;
+    if (cleanup) await cleanup();
     const { server, connect } = target === 'vercel' ? await startVercel() : await startLocal(target);
     try {
       const browser = await connect(server.wsEndpoint());
-      return createLaunchedBrowser(browser, server, Date.now() - startedAt);
+      return createLaunchedBrowser(browser, server, Date.now() - startedAt, undefined, cleanup);
     } catch (error) {
       await settledWithin(server.kill(), BROWSER_KILL_TIMEOUT_MS);
       throw error;

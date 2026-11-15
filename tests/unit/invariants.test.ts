@@ -121,6 +121,17 @@ describe('ViewportResult (3.2)', () => {
     expect(violatesWith((i) => { if (i.viewports.desktop) i.viewports.desktop.elementsTruncated = true; })).toEqual(['V-3']);
     expect(violatesWith((i) => { if (i.viewports.desktop) Object.assign(i.viewports.desktop, { elementsTruncated: true, elementsInspected: 3000 }); })).toEqual([]);
   });
+
+  it('V-4: layoutMap 블록 수 상한, 정수 좌표, 문서 범위 안. 없는 예전 문서는 정상', () => {
+    const block = { kind: 'image' as const, rect: { x: 0, y: 0, width: 10, height: 10 }, depth: 0 };
+    const map = (blocks: typeof block[], height = 1000) => ({ width: 390, scrollWidth: 390, height, truncated: false, blocks });
+    expect(violatesWith((i) => { if (i.viewports.mobile) i.viewports.mobile.layoutMap = map([block]); })).toEqual([]);
+    expect(violatesWith((i) => { if (i.viewports.mobile) delete i.viewports.mobile.layoutMap; })).toEqual([]);
+    expect(violatesWith((i) => { if (i.viewports.mobile) i.viewports.mobile.layoutMap = map(Array.from({ length: 401 }, () => block)); })).toEqual(['V-4']);
+    expect(violatesWith((i) => { if (i.viewports.mobile) i.viewports.mobile.layoutMap = map([{ ...block, rect: { x: 0.5, y: 0, width: 10, height: 10 } }]); })).toEqual(['V-4']);
+    expect(violatesWith((i) => { if (i.viewports.mobile) i.viewports.mobile.layoutMap = map([{ ...block, rect: { x: 385, y: 0, width: 10, height: 10 } }]); })).toEqual(['V-4']);
+    expect(violatesWith((i) => { if (i.viewports.mobile) i.viewports.mobile.layoutMap = map([block], 20_000); })).toEqual(['V-4']);
+  });
 });
 
 describe('Issue (3.3)', () => {
