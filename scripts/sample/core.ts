@@ -101,8 +101,16 @@ export function toSampleDocument(inspection: Inspection, target: ImportTarget = 
  * - inspectionSchema.parse, assertInspectionInvariants(…, 'final')와 같은 조건 (DOMAIN_MODEL 3장, 6.3)
  * - status completed, screenshotUrl이 대상 폴더(/sample/ 등)의 파일
  * - PNG 실제 크기 = screenshotWidth × screenshotHeight
+ * - 두 viewport 모두 layoutMap이 있고 blocks가 1개 이상 (배치도 개선). 가져오는 쪽(import-sample)은 항상 확인한다.
+ *   layoutMap이 생기기 전에 저장된 파일을 검증하는 테스트만 requireLayoutMap: false로 끈다
  */
-export function validateSample(document: unknown, pngs?: Partial<Record<Viewport, Uint8Array>>, target: ImportTarget = 'sample'): string[] {
+export function validateSample(
+  document: unknown,
+  pngs?: Partial<Record<Viewport, Uint8Array>>,
+  target: ImportTarget = 'sample',
+  options: { requireLayoutMap?: boolean } = {},
+): string[] {
+  const requireLayoutMap = options.requireLayoutMap ?? true;
   const urls = screenshotUrlsFor(target);
   const parsed = inspectionSchema.safeParse(document);
   if (!parsed.success) return parsed.error.issues.map((issue) => `schema ${issue.path.join('.') || '(root)'}: ${issue.message}`);
@@ -116,6 +124,10 @@ export function validateSample(document: unknown, pngs?: Partial<Record<Viewport
       continue;
     }
     if (result.screenshotUrl !== urls[v]) problems.push(`${v}: screenshotUrl ${result.screenshotUrl} is not ${urls[v]}`);
+    if (requireLayoutMap) {
+      if (!result.layoutMap) problems.push(`${v}: layoutMap is missing (배치도 개선 이전 배포에서 검사한 결과일 수 있다. 새 배포에서 다시 검사한다)`);
+      else if (result.layoutMap.blocks.length < 1) problems.push(`${v}: layoutMap has no blocks`);
+    }
     const png = pngs?.[v];
     if (!pngs) continue;
     if (!png) {
