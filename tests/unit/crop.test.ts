@@ -24,21 +24,28 @@ describe('computeCropRect', () => {
     expect(computeCropRect(r(1400, 1980, 30, 10), 1440, 2000)).toEqual(r(1120, 1840, 320, 160));
   });
 
-  it('스크린샷보다 크면 잘라낸다', () => {
-    expect(computeCropRect(r(-50, 0, 2000, 100), 1440, 2000)).toEqual(r(0, 0, 1440, 160));
-    expect(computeCropRect(r(0, 0, 100, 900), 390, 844)).toEqual(r(0, 0, 320, 844));
+  it('패딩과 최소 크기를 더한 영역이 스크린샷보다 크면 잘라낸다 (기준 박스는 안에 있음)', () => {
+    expect(computeCropRect(r(0, 0, 1440, 100), 1440, 2000)).toEqual(r(0, 0, 1440, 160));
+    expect(computeCropRect(r(0, 0, 100, 844), 390, 844)).toEqual(r(0, 0, 320, 844));
   });
 
-  it('화면 밖으로 나간 요소(음수 x)도 경계 안으로 맞춘다', () => {
-    // 패딩 (-54, 76, 248×148) → 최소 크기 (-90, 70, 320×160) → x를 0으로
-    expect(computeCropRect(r(-30, 100, 200, 100), 390, 844)).toEqual(r(0, 70, 320, 160));
+  // DETECTION_RULES 8.3: 기준 박스가 스크린샷 안에 완전히 들어올 때만 만든다. 일부만 걸치면 null (화면은 배치도)
+  it('기준 박스가 스크린샷 밖으로 걸치면 null', () => {
+    // 왼쪽(음수 x), 오른쪽, 아래쪽으로 걸침
+    expect(computeCropRect(r(-30, 100, 200, 100), 390, 844)).toBeNull();
+    expect(computeCropRect(r(300, 100, 200, 100), 390, 844)).toBeNull();
+    expect(computeCropRect(r(0, 4990, 100, 40), 390, 5000)).toBeNull();
+    expect(computeCropRect(r(0, 0, 100, 900), 390, 844)).toBeNull();
   });
 
   it('대상이 스크린샷 높이 밖이면 null', () => {
     expect(computeCropRect(r(0, 5000, 100, 40), 390, 5000)).toBeNull();
     expect(computeCropRect(r(0, 6000, 100, 40), 390, 5000)).toBeNull();
-    // 걸쳐 있으면 경계 안으로 맞춘다
-    expect(computeCropRect(r(0, 4990, 100, 40), 390, 5000)).toEqual(r(0, 4840, 320, 160));
+  });
+
+  it('서브픽셀 허용치 1px 안의 걸침은 안으로 본다', () => {
+    expect(computeCropRect(r(0, 4960.5, 100, 40.4), 390, 5000)).toEqual(r(0, 4840, 320, 160));
+    expect(computeCropRect(r(-0.5, 0, 390.9, 40), 390, 844)).toEqual(r(0, 0, 390, 160));
   });
 
   it('스크린샷 너비가 layoutWidth보다 넓은 경우(Mobile 축소, P-01 실측 616×1334)', () => {
@@ -119,21 +126,17 @@ describe('cropBasisBox (8.3: 크롭으로 보여줄 범위)', () => {
     expect(cropBasisBox(issue, r(60, 20, 100, 40))).toEqual({ x: 0, y: 0, width: 160, height: 60 });
   });
 
-  it('boundingBox가 스크린샷 밖으로 나간 hidden-clip: 크롭은 스크린샷 안에 머문다', () => {
+  it('boundingBox가 스크린샷 밖으로 나간 hidden-clip: 기준 박스가 걸치므로 cropRect는 null (배치도로 표시)', () => {
     // P-04 desktop: 이미지 (1084, 163.39, 400×300), 오른쪽 끝 1484. rootClip이라 스크린샷 너비는 layoutWidth 1440
     const issue = withMeasured(raw({ type: 'viewport-overflow', subtype: 'hidden-clip', elementIndex: 1, boundingBox: r(1084, 163.39, 400, 300) }), {
       elementLeft: 1084,
       elementRight: 1484,
     });
-    const crop = computeCropRect(cropBasisBox(issue), 1440, 900);
-    expect(crop).toEqual({ x: 992, y: 139.39, width: 448, height: 348 });
-    // 요소 전체가 스크린샷 오른쪽 밖이어도 경계 안으로 당긴다
+    expect(computeCropRect(cropBasisBox(issue), 1440, 900)).toBeNull();
     const beyond = withMeasured(raw({ type: 'viewport-overflow', subtype: 'hidden-clip', elementIndex: 1, boundingBox: r(1500, 100, 200, 50) }), {
       elementLeft: 1500,
       elementRight: 1700,
     });
-    const far = computeCropRect(cropBasisBox(beyond), 1440, 900);
-    // 세로: 패딩 (76, 98) → 최소 160 → y = 76 − 31 = 45
-    expect(far).toEqual({ x: 1120, y: 45, width: 320, height: 160 });
+    expect(computeCropRect(cropBasisBox(beyond), 1440, 900)).toBeNull();
   });
 });

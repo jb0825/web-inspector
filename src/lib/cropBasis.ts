@@ -37,3 +37,20 @@ export function cropBasis(input: CropBasisInput): Box {
   if (input.subtype === 'spill') return extend(m.textLeft, m.textRight, m.textTop, m.textBottom);
   return { ...box };
 }
+
+/** PRD 5.3.1의 서브픽셀 허용치. 측정값(소수 2자리)과 스크린샷 크기(정수)를 비교할 때 쓴다 */
+export const CROP_FIT_TOLERANCE_PX = 1;
+
+/**
+ * DETECTION_RULES 8.3: 크롭 기준 박스(패딩 전)가 스크린샷 [0, width] × [0, height] 안에 **완전히** 들어오는지.
+ * 들어올 때만 사진 크롭을 쓰고, 일부만 걸치거나 밖이면 배치도로 그린다. 서버 cropRect와 화면의 사진/도면 판정이 함께 쓴다.
+ */
+export function cropBasisFitsScreenshot(box: Box, screenshot: { width: number; height: number } | null, tolerance: number = CROP_FIT_TOLERANCE_PX): boolean {
+  if (!screenshot) return false;
+  return (
+    box.x >= -tolerance &&
+    box.y >= -tolerance &&
+    box.x + box.width <= screenshot.width + tolerance &&
+    box.y + box.height <= screenshot.height + tolerance
+  );
+}
