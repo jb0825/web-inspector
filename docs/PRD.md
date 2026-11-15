@@ -11,6 +11,8 @@
 - 측정과 스크린샷 20s → 40s, Desktop에 Mobile 몫(45s)을 남기는 규칙 추가 (8.1.3)
 - canvas가 있고 실제 픽셀이 8,192px를 넘으면 줄인 크기부터 촬영, 스크린샷이 없으면 측정값으로 그린 도면 표시 (5.2.4, 5.4.1)
 - 동시 실행 기본값 2 → 1, 검사 시간 목표에 production 실측값 추가, Chromium core 덤프 정리 (8.4, 8.5)
+- 페이지 구성 도면 `ViewportResult.layoutMap` 추가. 사진이 없는 부분(스크린샷 없음, 잘린 아래쪽, 스크린샷 밖 이슈)은 항상 도면으로 채운다 (8.2, 5.4.1)
+- `cropRect`는 크롭 기준 박스가 스크린샷 안에 완전히 들어올 때만 만든다. 일부만 걸치면 `null`이고 화면은 배치도로 그린다 (5.4.1)
 
 ### Changelog (v1.1 → v1.2)
 
@@ -398,7 +400,7 @@ Confidence 하향 조건:
 **하이라이트 스크린샷**
 - 크롭 이미지를 따로 만들어 업로드하지 않는다. 화면에서 전체 스크린샷을 `cropRect` 영역만 보이게 잘라 표시하고, 그 위에 대상 요소의 박스를 그린다.
 - `cropRect`는 코드(`src/server/evidence/crop.ts`)가 계산한다: `boundingBox`를 사방 24px 넓히고, 최소 크기 320×160px을 보장한 뒤, 실제 스크린샷 경계(`screenshotWidth × screenshotHeight`) 안으로 맞춘다.
-- 대상 요소가 잘린 스크린샷 높이(5.2.4) 밖에 있으면 `cropRect`는 `null`이고, 화면에 "스크린샷 범위 밖" 안내를 표시한다.
+- 크롭 기준 박스(DETECTION_RULES 8.3, 패딩 전)가 스크린샷 `[0, screenshotWidth] × [0, screenshotHeight]` 안에 **완전히** 들어올 때만 `cropRect`를 만든다. 스크린샷 밖이거나 일부만 걸치면 `null`이고, 화면은 측정값으로 그린 배치도(`layoutMap`)에 이슈를 그리고 "이 위치는 스크린샷 범위 밖이라 배치도로 표시합니다."를 안내한다. "스크린샷 범위 밖" 문구만 보여주는 화면은 없다.
 - 스크린샷을 찍지 못한 viewport(`SCREENSHOT_FAILED`, 5.2.4)는 `cropRect`가 모두 `null`이고, 화면은 저장된 측정값으로 그린 이슈 도면을 보여준다(WIREFRAME 5.6, 6.4).
 - 이유: 이슈마다 이미지를 업로드하면 Blob 사용량과 검사 시간이 늘고, 별도 이미지 처리 라이브러리가 필요해진다.
 
@@ -960,6 +962,25 @@ interface ViewportResult {
   elementsTruncated: boolean;
   hasCanvas: boolean;
   overlaysDetected: string[];           // selector 목록
+  layoutMap?: LayoutMap;                // 페이지 구성 도면 (DETECTION_RULES 16장). 스크린샷 성공 여부와 관계없이 항상 저장. 이 필드 전에 저장된 문서에는 없다
+}
+
+// 수집한 후보 요소에서 뽑은 페이지 구성. 브라우저에서 따로 측정하지 않는다. 화면이 사진 없는 부분을 그리는 데 쓴다
+interface LayoutMap {
+  width: number;                        // layoutWidth
+  scrollWidth: number;                  // max(layoutWidth, documentScrollWidth). 화면 밖으로 나간 블록까지 담는 문서 가로 범위
+  height: number;                       // documentHeight (상한 LAYOUT_MAX_HEIGHT, 넘으면 truncated)
+  truncated: boolean;                   // 블록 수나 높이 상한에 걸렸는지
+  blocks: LayoutBlock[];                // 문서 순서, 최대 LAYOUT_MAX_BLOCKS(400)개
+}
+
+interface LayoutBlock {
+  kind: 'header' | 'nav' | 'main' | 'section' | 'footer' | 'aside' | 'form'
+      | 'heading' | 'text' | 'image' | 'button' | 'input'
+      | 'canvas' | 'video' | 'iframe' | 'card';
+  rect: Rect;                           // 문서 기준, 정수, [0, scrollWidth] × [0, height] 안
+  label?: string;                       // 페이지에서 가져온 문자열, 최대 40자. 화면에는 문자열로만 렌더링
+  depth: number;                        // 이 블록을 감싸는 구조 블록 수
 }
 
 interface RelatedElement {

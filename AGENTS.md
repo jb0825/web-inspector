@@ -78,7 +78,7 @@ src/
   components/                           # 여러 feature가 함께 쓰는 UI
     ui/                                 # 도메인을 모르는 UI: Button, Badge, Tabs, Textarea, CopyButton, Notice ...
     layout/                             # Header, PageContainer
-    inspection/                         # 도메인 값 표시 전용: PriorityBadge, ViewportTagBadge, IssueTypeLabel, CertaintyBadge
+    inspection/                         # 도메인 값 표시 전용: PriorityBadge, ViewportTagBadge, IssueTypeLabel, CertaintyBadge, SchematicLayer(배치도 SVG)
     polling/                            # useInspectionPolling (Progress와 결과 화면이 함께 사용, API_SPEC 7장)
     api/                                # 클라이언트 fetch 래퍼 (POST/GET /api/inspections). Home, Progress, polling이 함께 사용
 
@@ -125,6 +125,9 @@ src/
       pipeline.ts                       # buildIssues: 탐지부터 유형 간 연결까지 (DETECTION_RULES 1.3)
       geometry.ts                       # 보이는 영역 계산 (DETECTION_RULES 3.6)
     compare/match.ts                    # Desktop / Mobile 요소 매칭 (PRD 5.6)
+    layout/
+      constants.ts                      # 페이지 구성 도면 상수 (DETECTION_RULES 16.3)
+      buildLayoutMap.ts                 # 수집 데이터 → ViewportResult.layoutMap (순수 함수, DETECTION_RULES 16장)
     analysis/
       rules.ts                          # 규칙 기반 원인 분석 규칙 표 (PRD 5.7.1, DETECTION_RULES 13.1)
       analyze.ts                        # analyzeIssues: 이슈별 analysis/skip 사유. T15에서 AI로 바뀔 자리
@@ -170,13 +173,15 @@ src/
     utils.ts                            # cn() 등
     format.ts                           # 숫자, 날짜, px 표기
     rect.ts                             # 사각형 교집합·합집합
-    cropBasis.ts                        # cropRect 기준 박스(DETECTION_RULES 8.3). 서버 cropRect와 화면 이슈 도면이 함께 쓴다
+    cropBasis.ts                        # cropRect 기준 박스와 완전 포함 판정(DETECTION_RULES 8.3). 서버 cropRect와 화면 이슈 도면이 함께 쓴다
+    schematic.ts                        # 배치도 좌표 변환, label 말줄임, 최소 도면 판정 (WIREFRAME 5.6). 미리보기와 Issue Detail이 함께 쓴다
 
 public/fonts/                           # Noto Sans KR 폰트 파일과 OFL 라이선스 (단일 원본, 7.1)
 public/fixtures/                        # 모든 페이지가 /fonts/의 폰트를 @font-face로 사용 (7.1)
   positive/P-01.html ... P-06.html      # PRD 13.1
   negative/N-01.html ... N-09.html
 public/demo/landing.html                # 샘플 리포트용 검사 대상 데모 페이지. Fixture가 아니다(test:fixtures 판정에 넣지 않음)
+public/demo/canvas-only.html            # canvas 위주 페이지의 배치도 확인용 데모 (이슈 0개 목표). Fixture가 아니다
 public/sample/                          # 샘플 리포트 정적 데이터 (inspection.json, 스크린샷). pnpm import-sample로만 바꾼다
 public/showcase/{before,after}/         # Before/After 사례 정적 데이터. pnpm import-sample --target showcase/…로만 바꾼다
 scripts/                                # 로컬 도구: collect, detect, fixture-screenshots, ui-shots, import-sample(sample/core.ts), compare-inspections(compare/core.ts)
