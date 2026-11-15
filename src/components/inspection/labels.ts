@@ -127,11 +127,14 @@ export const ANALYSIS_UNAVAILABLE_MESSAGES = {
 export const SCOPE_NOTICE_MESSAGES = {
   viewportFailed: (failed: string, reason: string, succeeded: string) => `${failed} 검사에 실패했습니다: ${reason} ${succeeded} 결과만 표시합니다.`,
   /** 스크린샷만 실패한 viewport (SCREENSHOT_FAILED). viewport 실패가 아니다 */
-  screenshotMissing: (viewport: string) => `${viewport} 스크린샷을 찍지 못했습니다. 측정과 이슈는 그대로 볼 수 있지만 화면 위 위치 표시는 없습니다.`,
-  screenshotTruncated: (viewport: string, height: string) => `${viewport} 스크린샷은 ${height}px까지만 저장되었습니다. (측정은 전체 페이지)`,
+  /** viewport: "Desktop", "Mobile" 또는 "Desktop과 Mobile" */
+  screenshotMissing: (viewport: string) => `${viewport} 화면을 저장하지 못해 측정값으로 그린 배치도로 표시합니다. 측정과 이슈는 정상입니다.`,
+  screenshotTruncated: (viewport: string, height: string) => `${viewport} 스크린샷은 ${height}px까지 저장되어, 그 아래는 배치도로 표시합니다.`,
   elementsTruncated: (viewport: string, count: string) => `요소가 많아 ${viewport} 문서 앞쪽 ${count}개만 검사했습니다.`,
   issuesTruncated: (detected: string, shown: string) => `이슈가 ${detected}개 발견되어 우선순위가 높은 상위 ${shown}개만 표시합니다.`,
   canvas: 'canvas 영역 안의 그래픽은 검사하지 않았습니다.',
+  /** canvas가 첫 화면의 절반 이상을 덮는 페이지 (layoutMap 기준) */
+  canvasLarge: '이 페이지는 canvas 영역이 커서, canvas 안의 그래픽은 검사하지 않았습니다.',
   noMetaViewport: (layoutWidth: string) => `이 페이지에는 meta viewport가 없어 Mobile 화면 너비가 ${layoutWidth}px로 측정되었습니다.`,
   analysisFailedWithTasks: '원인 분석을 가져오지 못했습니다. 측정 결과와 태스크는 그대로 사용할 수 있습니다.',
   /** 분석 단계 실패 시 서버는 tasks를 비운다(DETECTION_RULES 13장). 태스크가 없으면 태스크를 언급하지 않는다 */

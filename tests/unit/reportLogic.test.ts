@@ -171,7 +171,7 @@ describe('buildScopeNotices (WIREFRAME 5.4)', () => {
     const texts = buildScopeNotices(doc).map((n) => [n.kind, n.text]);
     expect(texts).toEqual([
       ['viewport-failed', 'Mobile 검사에 실패했습니다: 제한 시간 안에 페이지를 불러오지 못했습니다. Desktop 결과만 표시합니다.'],
-      ['screenshot-truncated', 'Desktop 스크린샷은 10,000px까지만 저장되었습니다. (측정은 전체 페이지)'],
+      ['screenshot-truncated', 'Desktop 스크린샷은 10,000px까지 저장되어, 그 아래는 배치도로 표시합니다.'],
       ['elements-truncated', '요소가 많아 Desktop 문서 앞쪽 3,000개만 검사했습니다.'],
       ['issues-truncated', '이슈가 240개 발견되어 우선순위가 높은 상위 200개만 표시합니다.'],
       ['canvas', SCOPE_NOTICE_MESSAGES.canvas],

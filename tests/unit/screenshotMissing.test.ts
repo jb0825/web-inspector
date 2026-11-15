@@ -44,8 +44,16 @@ describe('검사 범위 안내: 스크린샷 없음', () => {
     const notices = buildScopeNotices(doc);
     expect(notices.map((n) => [n.kind, n.text])).toContainEqual([
       'screenshot-missing',
-      'Desktop 스크린샷을 찍지 못했습니다. 측정과 이슈는 그대로 볼 수 있지만 화면 위 위치 표시는 없습니다.',
+      'Desktop 화면을 저장하지 못해 측정값으로 그린 배치도로 표시합니다. 측정과 이슈는 정상입니다.',
     ]);
     expect(notices.some((n) => n.kind === 'viewport-failed' || n.kind === 'screenshot-truncated')).toBe(false);
+  });
+
+  it('두 viewport 모두 없으면 한 문장으로 알린다', () => {
+    const desktop = buildViewportResult(site('desktop'), null, detection, null);
+    const mobile = buildViewportResult(site('mobile'), null, detection, null);
+    const doc = pendingDoc({ status: 'completed', viewports: { desktop, mobile }, analysis: { status: 'completed', analyzedIssueCount: 0 } });
+    const missing = buildScopeNotices(doc).filter((n) => n.kind === 'screenshot-missing');
+    expect(missing.map((n) => n.text)).toEqual(['Desktop과 Mobile 화면을 저장하지 못해 측정값으로 그린 배치도로 표시합니다. 측정과 이슈는 정상입니다.']);
   });
 });

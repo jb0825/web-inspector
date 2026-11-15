@@ -1,5 +1,5 @@
 import { intersectBox, type Box } from '@/lib/rect';
-import type { Issue, Priority, Viewport, ViewportResult } from '@/types/inspection';
+import type { Issue, Priority, Viewport } from '@/types/inspection';
 import type { ListedIssue } from './issues';
 
 // WIREFRAME 5.6 마커 좌표 규칙. SVG viewBox를 스크린샷 실제 크기(screenshotWidth × screenshotHeight)로 두고
@@ -26,8 +26,7 @@ export interface MarkerLayout {
   issueCount: number;
 }
 
-/** occurrence 박스 하나를 스크린샷 좌표로 바꾼다. 그릴 수 없으면 null */
-/** 마커를 그릴 스크린샷 크기. 스크린샷이 없는 viewport(screenshotUrl = null)에는 마커를 그리지 않는다 */
+/** 마커를 그릴 미리보기 좌표계 크기 (logic/preview.ts의 PreviewGeometry.width × height). 사진만이면 스크린샷 크기다 */
 export interface ScreenshotSize {
   screenshotWidth: number;
   screenshotHeight: number;
@@ -74,24 +73,4 @@ export function layoutMarkers(
     markers.push({ issueId: issue.id, number, priority: issue.priority, needsReview: issue.needsReview, title: issue.title, ...placed });
   }
   return { viewBox: { width: screenshot.screenshotWidth, height: screenshot.screenshotHeight }, markers, outOfRange, issueCount };
-}
-
-/**
- * 스크린샷이 없는 viewport(SCREENSHOT_FAILED)의 미리보기 도면 크기 (WIREFRAME 5.6).
- * 페이지 윤곽(layoutWidth × documentHeight)에 화면 밖으로 나간 이슈 박스까지 들어가게 넓힌다. 마커는 이 크기를 viewBox로 쓴다.
- */
-export function diagramPageSize(
-  result: Pick<ViewportResult, 'layoutWidth' | 'documentHeight'>,
-  listed: { regular: readonly ListedIssue[]; needsReview: readonly ListedIssue[] },
-  viewport: Viewport,
-): ScreenshotSize {
-  let right = result.layoutWidth;
-  let bottom = result.documentHeight;
-  for (const { issue } of [...listed.regular, ...listed.needsReview]) {
-    const box = occurrenceOf(issue, viewport)?.boundingBox;
-    if (!box) continue;
-    right = Math.max(right, box.x + box.width);
-    bottom = Math.max(bottom, box.y + box.height);
-  }
-  return { screenshotWidth: Math.ceil(right), screenshotHeight: Math.ceil(bottom) };
 }

@@ -20,15 +20,8 @@ export function CropView({ occurrence, screenshot, priority, label }: { occurren
       ? { url: screenshot.screenshotUrl, width: screenshot.screenshotWidth, height: screenshot.screenshotHeight }
       : null;
 
-  if (!crop || !image) {
-    // 스크린샷을 찍지 못한 viewport(SCREENSHOT_FAILED)는 cropRect가 모두 null이다(PRD 5.2.4)
-    const missing = screenshot !== null && image === null;
-    return (
-      <div className="flex h-40 items-center justify-center rounded-md bg-background-secondary text-body-sm text-text-secondary">
-        {missing ? '스크린샷 없음' : '스크린샷 범위 밖'}
-      </div>
-    );
-  }
+  // 사진 / 배치도 판정(evidenceView)이 사진일 때만 이 컴포넌트를 쓴다. 크롭이 없으면 그리지 않는다
+  if (!crop || !image) return null;
 
   const view = computeCropView(crop, { width: image.width, height: image.height }, width);
   const target = view ? boxInCrop(occurrence.boundingBox, crop, view.scale) : null;

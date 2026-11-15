@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildIssueDiagram, devtoolsQuery, DIAGRAM_MIN_HEIGHT_PX, DIAGRAM_MIN_WIDTH_PX, DIAGRAM_PADDING_PX, openablePageUrl } from '@/features/issue-detail/diagram';
-import { buildIssueList, EMPTY_FILTER } from '@/features/report/logic/issues';
-import { diagramPageSize, layoutMarkers } from '@/features/report/logic/markers';
-import type { Issue, IssueOccurrence, RelatedElement } from '@/types/inspection';
+import type { IssueOccurrence, RelatedElement } from '@/types/inspection';
 
 // T14 / WIREFRAME 6.4: 스크린샷이 없는 viewport의 이슈 도면. 저장된 측정값만 쓴다.
 // 입력 값은 Fixture 결과(.tmp/fixtures-report)의 실제 occurrence 값이다.
@@ -100,35 +98,27 @@ describe('Issue Detail 도구', () => {
   });
 });
 
-describe('diagramPageSize: 스크린샷 없는 미리보기 도면', () => {
-  const issue = (box: IssueOccurrence['boundingBox']): Issue =>
-    ({
-      id: 'ISS-001',
-      type: 'viewport-overflow',
-      subtype: 'page-scroll',
-      title: 't',
-      viewports: ['mobile'],
-      viewportTag: 'mobile-only',
-      selector: '#a',
-      sourceHints: { htmlSnippet: '', stableAttributes: {}, ancestorPath: '' },
-      occurrences: [{ viewport: 'mobile', boundingBox: box } as IssueOccurrence],
-      relatedIssueIds: [],
-      scores: { severity: 3, impact: 3, reach: 3, score100: 0 },
-      priority: 'P1',
-      confidence: 1,
-      needsReview: false,
-    }) as unknown as Issue;
-
-  it('페이지 윤곽(layoutWidth × documentHeight)에 화면 밖 박스까지 넣고, 마커는 잘리지 않는다', () => {
-    const list = buildIssueList([issue({ x: 16, y: 197.38, width: 600, height: 105.8 })], EMPTY_FILTER);
-    const size = diagramPageSize({ layoutWidth: 390, documentHeight: 1334 }, list, 'mobile');
-    expect(size).toEqual({ screenshotWidth: 616, screenshotHeight: 1334 });
-    const layout = layoutMarkers(list, 'mobile', size, { includeNeedsReview: false });
-    expect(layout.markers[0]).toMatchObject({ clipped: false, rect: { x: 16, width: 600 } });
-    expect(layout.outOfRange).toBe(0);
+describe('buildIssueDiagram: 도면 위 치수 문구 (시안 schematic-issue-types.png)', () => {
+  it('정수 px로 짧게 쓴다', () => {
+    const vo = buildIssueDiagram({ type: 'viewport-overflow', subtype: 'hidden-clip' }, { boundingBox: { x: 1084, y: 163.39, width: 400, height: 300 }, measured: { elementLeft: 1084, elementRight: 1484.4 }, expected: {}, relatedElements: [] }, 1440);
+    expect(vo.shapes.find((s) => s.kind === 'overflow')?.mark).toBe('화면 밖 44px');
+    const clipped = buildIssueDiagram({ type: 'text-overflow', subtype: 'clipped' }, { boundingBox: { x: 40, y: 1050, width: 278, height: 30 }, measured: { scrollWidth: 326 }, expected: { clientWidth: 278 }, relatedElements: [] }, 390);
+    expect(clipped.shapes.find((s) => s.kind === 'overflow')?.mark).toBe('잘린 48px');
+    const spill = buildIssueDiagram(
+      { type: 'text-overflow', subtype: 'spill' },
+      { boundingBox: { x: 20, y: 20, width: 200, height: 150 }, measured: { textBottom: 191.79 }, expected: {}, relatedElements: [related('bordered-ancestor', { x: 10, y: 10, width: 220, height: 140 })] },
+      390,
+    );
+    expect(spill.shapes.find((s) => s.kind === 'overflow')?.mark).toBe('아래쪽 42px 넘침');
   });
 
-  it('박스가 없으면 페이지 크기 그대로', () => {
-    expect(diagramPageSize({ layoutWidth: 1440, documentHeight: 900.4 }, { regular: [], needsReview: [] }, 'desktop')).toEqual({ screenshotWidth: 1440, screenshotHeight: 901 });
+  it('Overlap의 대표 상대 요소(relatedElements[0])를 표시한다', () => {
+    const d = buildIssueDiagram(
+      { type: 'element-overlap', subtype: 'interactive' },
+      { boundingBox: { x: 0, y: 0, width: 100, height: 40 }, measured: {}, expected: {}, relatedElements: [related('overlap-target', { x: 60, y: 20, width: 100, height: 40 }), related('overlap-target', { x: 0, y: 30, width: 50, height: 40 })] },
+      390,
+    );
+    expect(d.shapes.filter((s) => s.partner)).toHaveLength(1);
+    expect(d.shapes.find((s) => s.partner)?.box.x).toBe(60);
   });
 });

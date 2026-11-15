@@ -3,6 +3,8 @@ import { CopyButton } from '@/components/ui/CopyButton';
 import { formatPx } from '@/lib/format';
 import type { Issue, IssueOccurrence, ViewportResult } from '@/types/inspection';
 import { CropView } from './CropView';
+import { Notice } from '@/components/ui/Notice';
+import { evidenceView } from '../diagram';
 import { IssueDiagramView } from './IssueDiagramView';
 
 // WIREFRAME 6.4, DESIGN_GUIDE 9.4: Evidence 문장 → 측정값 표(mono, tabular) → Selector → 관련 요소. 측정한 값만 보여준다
@@ -52,17 +54,25 @@ export function EvidenceBlock({
   const size = screenshot ? `${screenshot.width} × ${screenshot.height}` : null;
   const overlapCount = occurrence.measured.overlapTargetCount;
   const hiddenOverlaps = overlapCount !== undefined && overlapCount > RELATED_ELEMENTS_SHOWN ? overlapCount - RELATED_ELEMENTS_SHOWN : 0;
+  // 크롭 기준 박스가 스크린샷 안에 완전히 들어올 때만 사진, 아니면 배치도 (WIREFRAME 6.4, DETECTION_RULES 8.3)
+  const view = evidenceView(issue, occurrence, screenshot);
 
   return (
     <div className="flex flex-col gap-3">
-      <h4 className="text-label font-medium tracking-wide text-text-secondary uppercase">
-        {label} {size ? <span className="font-mono tabular-nums">{size}</span> : null}
-      </h4>
-      {/* 스크린샷이 있으면 크롭, 없으면(SCREENSHOT_FAILED) 측정값으로 그린 배치도 (WIREFRAME 6.4) */}
-      {screenshot && screenshot.screenshotUrl === null ? (
-        <IssueDiagramView issue={issue} occurrence={occurrence} layoutWidth={screenshot.layoutWidth} label={label} />
-      ) : (
+      <div className="flex items-baseline justify-between gap-2">
+        <h4 className="text-label font-medium tracking-wide text-text-secondary uppercase">
+          {label} {size ? <span className="font-mono tabular-nums">{size}</span> : null}
+        </h4>
+        {view.kind === 'schematic' ? <span className="text-label font-semibold text-accent">배치도</span> : null}
+      </div>
+      {view.kind === 'photo' ? (
         <CropView occurrence={occurrence} screenshot={screenshot} priority={issue.priority} label={label} />
+      ) : (
+        <>
+          {view.outOfRange ? <Notice tone="info">이 위치는 스크린샷 범위 밖이라 배치도로 표시합니다.</Notice> : null}
+          {/* viewport 결과가 없으면 occurrence도 없지만(DOMAIN_MODEL S-3), 타입상 null일 수 있어 대상 박스 오른쪽 끝을 화면 너비로 쓴다 */}
+          <IssueDiagramView issue={issue} occurrence={occurrence} result={screenshot ?? { layoutWidth: occurrence.boundingBox.x + occurrence.boundingBox.width }} label={label} />
+        </>
       )}
       <p className="text-body text-text-primary">{occurrence.evidenceText}</p>
       <MeasurementTable occurrence={occurrence} />
